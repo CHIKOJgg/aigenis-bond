@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aigenis-parser"
+version = "0.1.0"
+description = "Bond Fixed Income Assistant — Aigenis scraper (V1)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "Bond Fixed Income Assistant" }]
+dependencies = [
+    "playwright>=1.49.0",
+    "playwright-stealth>=1.0.6",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "redis>=5.2.0",
+    "apscheduler>=3.10.4",
+    "tenacity>=9.0.0",
+    "beautifulsoup4>=4.12.3",
+    "lxml>=5.3.0",
+    "loguru>=0.7.2",
+    "python-dotenv>=1.0.1",
+    "tqdm>=4.67.0",
+    "aiogram>=3.13.0",
+    "matplotlib>=3.9.0",
+    "numpy>=2.1.0",
+    "scipy>=1.14.0",
+    "scikit-learn>=1.5.0",
+    "pandas>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "pytest-httpserver>=1.0.10",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "types-beautifulsoup4>=4.12.0.20240907",
+]
+
+[project.scripts]
+aigenis-parser = "scraper.__main__:main"
+aigenis-bot = "telegram_bot.bot:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scraper*", "desk*", "forecast*", "ml*", "monitoring*", "notifications*", "portfolio*", "recommendations*", "scoring*", "telegram_bot*", "visualization*"]
+exclude = ["tests*", "alembic*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "smoke: real network calls, skipped in CI",
+]
+filterwarnings = [
+    "ignore::sqlalchemy.exc.SADeprecationWarning",
+    "ignore::DeprecationWarning:.*(distutils|setuptools).*:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = false
+warn_unused_ignores = true
+ignore_missing_imports = true
+files = ["scraper", "desk", "forecast", "ml", "monitoring", "notifications", "portfolio", "recommendations", "scoring", "telegram_bot", "visualization"]
+
+[[tool.mypy.overrides]]
+module = "scraper.models"
+strict = true
+
+[[tool.mypy.overrides]]
+module = "scraper.repositories.*"
+strict = true

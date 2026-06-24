@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: aigenis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aigenis
+      POSTGRES_PASSWORD: aigenis
+      POSTGRES_DB: aigenis
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aigenis -d aigenis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    container_name: aigenis-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  alembic:
+    build: .
+    container_name: aigenis-alembic
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis
+    entrypoint: ["alembic", "upgrade", "head"]
+    profiles: ["init"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  parser:
+    build: .
+    container_name: aigenis-parser
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      alembic:
+        condition: service_completed_successfully
+    environment:
+      AIGENIS_BASE_URL: ${AIGENIS_BASE_URL:-https://aigenis.by}
+      AIGENIS_DATA_API_URL: ${AIGENIS_DATA_API_URL:-}
+      AIGENIS_HEADLESS: ${AIGENIS_HEADLESS:-true}
+      AIGENIS_USE_STEALTH: ${AIGENIS_USE_STEALTH:-true}
+      AIGENIS_DELAY_BETWEEN_REQUESTS: ${AIGENIS_DELAY_BETWEEN_REQUESTS:-2.0}
+      AIGENIS_MAX_CONCURRENCY: ${AIGENIS_MAX_CONCURRENCY:-2}
+      AIGENIS_HISTORY_BACKFILL_DAYS: ${AIGENIS_HISTORY_BACKFILL_DAYS:-1825}
+      AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALERT_CHAT_ID: ${TELEGRAM_ALERT_CHAT_ID:-}
+    volumes:
+      - ./logs:/app/logs
+    command: ["python", "-m", "scraper", "run"]
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  bot:
+    build: .
+    container_name: aigenis-bot
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      alembic:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "telegram_bot.bot"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis
+      AIGENIS_HEADLESS: "true"
+      AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    volumes:
+      - ./logs:/app/logs
+    command: ["python", "-m", "telegram_bot.bot"]
+    profiles: ["bot"]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+volumes:
+  pgdata:
+  redisdata:
