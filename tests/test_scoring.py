@@ -82,9 +82,27 @@ def test_score_byn_inflation_bonus_when_high_ytm() -> None:
 
 def test_score_bonds_bulk() -> None:
     items = [
-        {"internal_id": "A", "yield_to_maturity": 5, "currency": "USD", "maturity_date": date(2028, 1, 1), "status": "active"},
-        {"internal_id": "B", "yield_to_maturity": 7, "currency": "BYN", "maturity_date": date(2030, 1, 1), "status": "active"},
-        {"internal_id": "C", "yield_to_maturity": 2, "currency": "XAU", "maturity_date": date(2026, 1, 1), "status": "active"},
+        {
+            "internal_id": "A",
+            "yield_to_maturity": 5,
+            "currency": "USD",
+            "maturity_date": date(2028, 1, 1),
+            "status": "active",
+        },
+        {
+            "internal_id": "B",
+            "yield_to_maturity": 7,
+            "currency": "BYN",
+            "maturity_date": date(2030, 1, 1),
+            "status": "active",
+        },
+        {
+            "internal_id": "C",
+            "yield_to_maturity": 2,
+            "currency": "XAU",
+            "maturity_date": date(2026, 1, 1),
+            "status": "active",
+        },
     ]
     scored = score_bonds(items)
     assert len(scored) == 3

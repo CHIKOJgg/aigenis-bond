@@ -1,5 +1,3 @@
-"""Интеграционные тесты клиента через mock HTTP-сервер (без обращений к сети)."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +17,6 @@ async def playwright_server(fixtures_dir: Path):
 
     listing_html = (fixtures_dir / "listing.html").read_text(encoding="utf-8")
 
-    # aigenis.by: единый каталог /bonds/ для listing, детальная страница тоже /bonds/
     httpserver.expect_request("/bonds/").respond_with_data(listing_html, content_type="text/html")
     httpserver.expect_request("/bonds").respond_with_data(listing_html, content_type="text/html")
 
@@ -37,18 +34,19 @@ async def test_client_fetches_json(playwright_server) -> None:
     base_url = httpserver.url_for("/")
 
     settings = get_settings()
-    settings.base_url = base_url
-    settings.data_api_url = None
-    settings.use_stealth = False
-    settings.delay_between_requests = 0
-    settings.max_concurrency = 2
+    settings.aigenis.base_url = base_url
+    settings.aigenis.data_api_url = None
+    settings.aigenis.use_stealth = False
+    settings.aigenis.delay_between_requests = 0
+    settings.aigenis.max_concurrency = 2
 
     browser = await pw.chromium.launch(headless=True)
     try:
-        client = AigenisClient(settings)
+        client = AigenisClient(settings.aigenis)
         client._playwright = pw
         client._browser = browser
         client._context = await browser.new_context()
+        client._started = True
         try:
             items = await client.fetch_listing("USD")
             assert isinstance(items, list)

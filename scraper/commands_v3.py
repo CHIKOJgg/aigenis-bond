@@ -135,8 +135,10 @@ async def cmd_rebalance_now() -> int:
         positions = await list_positions(session, user_id)
         bonds_q = await repositories.bonds.get_all_internal_ids(session)
         bonds_orm = (
-            await session.execute(select(BondORM).where(BondORM.internal_id.in_(list(bonds_q))))
-        ).scalars().all()
+            (await session.execute(select(BondORM).where(BondORM.internal_id.in_(list(bonds_q)))))
+            .scalars()
+            .all()
+        )
         from scraper.models import Bond as BondModel
 
         bonds = [

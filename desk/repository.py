@@ -67,9 +67,7 @@ async def save_rv_signals(session: AsyncSession, signals: Iterable[RVSignal]) ->
     return len(rows)
 
 
-async def latest_rv_signals(
-    session: AsyncSession, limit: int = 50
-) -> list[RVSignalORM]:
+async def latest_rv_signals(session: AsyncSession, limit: int = 50) -> list[RVSignalORM]:
     result = await session.execute(
         select(RVSignalORM).order_by(RVSignalORM.created_at.desc()).limit(limit)
     )
@@ -99,19 +97,16 @@ async def save_carry_trades(session: AsyncSession, trades: Iterable[CarryTrade])
 
 
 async def save_repo_deal(session: AsyncSession, deal: RepoDeal) -> None:
-    stmt = (
-        pg_insert(RepoDealORM)
-        .values(
-            internal_id=deal.internal_id,
-            notional=deal.notional,
-            haircut_pct=Decimal(str(deal.haircut_pct)),
-            repo_rate_pct=Decimal(str(deal.repo_rate_pct)),
-            tenor_days=deal.tenor_days,
-            cash_lent=deal.cash_lent,
-            collateral_value=deal.collateral_value,
-            accrued_interest=deal.accrued_interest,
-            asof_date=deal.asof_date,
-        )
+    stmt = pg_insert(RepoDealORM).values(
+        internal_id=deal.internal_id,
+        notional=deal.notional,
+        haircut_pct=Decimal(str(deal.haircut_pct)),
+        repo_rate_pct=Decimal(str(deal.repo_rate_pct)),
+        tenor_days=deal.tenor_days,
+        cash_lent=deal.cash_lent,
+        collateral_value=deal.collateral_value,
+        accrued_interest=deal.accrued_interest,
+        asof_date=deal.asof_date,
     )
     await session.execute(stmt)
 
@@ -137,9 +132,7 @@ async def save_stress_run(session: AsyncSession, result: StressResult) -> int:
     return int(res.scalar_one())
 
 
-async def latest_stress_runs(
-    session: AsyncSession, limit: int = 10
-) -> list[StressRunORM]:
+async def latest_stress_runs(session: AsyncSession, limit: int = 10) -> list[StressRunORM]:
     result = await session.execute(
         select(StressRunORM).order_by(StressRunORM.created_at.desc()).limit(limit)
     )

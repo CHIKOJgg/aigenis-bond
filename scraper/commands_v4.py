@@ -194,10 +194,7 @@ async def cmd_desk_status() -> int:
         rv = await latest_rv_signals(session, limit=5)
         stress_runs = await latest_stress_runs(session, limit=5)
     out = {
-        "rv_top": [
-            {"id": s.internal_id, "z": float(s.z_score), "side": s.side}
-            for s in rv
-        ],
+        "rv_top": [{"id": s.internal_id, "z": float(s.z_score), "side": s.side} for s in rv],
         "stress_recent": [
             {
                 "name": s.scenario_name,

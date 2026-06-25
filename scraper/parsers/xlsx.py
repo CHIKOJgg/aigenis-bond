@@ -93,8 +93,9 @@ def _to_int(v: Any) -> int | None:
     if isinstance(v, str):
         try:
             return int(float(v.strip()))
-        except (ValueError, OverflowError):
+        except ValueError, OverflowError:
             import re
+
             m = re.search(r"\d+", v)
             return int(m.group()) if m else None
     return None
@@ -102,6 +103,7 @@ def _to_int(v: Any) -> int | None:
 
 def _load_workbook(path: str):
     import openpyxl
+
     return openpyxl.load_workbook(path, data_only=True)
 
 
@@ -126,7 +128,14 @@ def parse_calculator_xlsx(filepath: str) -> dict[int, BondXlsxEnrichment]:
     bond_cols = []
     for c in range(4, master_ws.max_column + 1, 2):
         name = str(master_ws.cell(2, c).value or "").strip()
-        if not name or name in ("", " ", "None", "Характеристика", "Характеристикавыпуска", "Характеристика выпуска"):
+        if not name or name in (
+            "",
+            " ",
+            "None",
+            "Характеристика",
+            "Характеристикавыпуска",
+            "Характеристика выпуска",
+        ):
             continue
         bond_cols.append((c, name))
 
@@ -171,13 +180,15 @@ def parse_calculator_xlsx(filepath: str) -> dict[int, BondXlsxEnrichment]:
                     days = _to_int(ws.cell(r, 4).value)
                     amount = _to_decimal(ws.cell(r, 5).value)
                     if period_start and period_end:
-                        periods.append({
-                            "num": _to_int(num),
-                            "start": str(period_start),
-                            "end": str(period_end),
-                            "days": days,
-                            "amount": float(amount) if amount else None,
-                        })
+                        periods.append(
+                            {
+                                "num": _to_int(num),
+                                "start": str(period_start),
+                                "end": str(period_end),
+                                "days": days,
+                                "amount": float(amount) if amount else None,
+                            }
+                        )
                 if periods:
                     bond.coupon_periods = periods
                 break
@@ -211,7 +222,13 @@ def parse_indexed_xlsx(filepath: str) -> dict[str, BondXlsxEnrichment]:
     bond_names = []
     for c in range(2, master_ws.max_column + 1, 2):
         name = _serialize(master_ws.cell(2, c).value)
-        if name and name not in ("", " ", "Характеристика", "Характеристикавыпуска", "Характеристика выпуска"):
+        if name and name not in (
+            "",
+            " ",
+            "Характеристика",
+            "Характеристикавыпуска",
+            "Характеристика выпуска",
+        ):
             bond_names.append((c, name))
 
     param_map = {
@@ -229,13 +246,16 @@ def parse_indexed_xlsx(filepath: str) -> dict[str, BondXlsxEnrichment]:
     for col_idx, bond_name in bond_names:
         # Extract op number (e.g., "Оп17" from "Айгенис Оп17_BYN→USD")
         import re
+
         m = re.search(r"Оп(\d+)", bond_name)
         op_num = m.group(1) if m else None
         if not op_num:
             continue
 
         key = f"Оп{op_num}"
-        bond = BondXlsxEnrichment(issue_number=int(op_num), name=bond_name, indexation_currency="USD")
+        bond = BondXlsxEnrichment(
+            issue_number=int(op_num), name=bond_name, indexation_currency="USD"
+        )
 
         for r in range(3, 13):
             raw_val = master_ws.cell(r, col_idx).value
@@ -272,13 +292,15 @@ def parse_indexed_xlsx(filepath: str) -> dict[str, BondXlsxEnrichment]:
                         days = _to_int(ws.cell(r, 4).value)
                         amount = _to_decimal(ws.cell(r, 5).value)
                         if period_start and period_end:
-                            periods.append({
-                                "num": _to_int(num),
-                                "start": str(period_start),
-                                "end": str(period_end),
-                                "days": days,
-                                "amount": float(amount) if amount else None,
-                            })
+                            periods.append(
+                                {
+                                    "num": _to_int(num),
+                                    "start": str(period_start),
+                                    "end": str(period_end),
+                                    "days": days,
+                                    "amount": float(amount) if amount else None,
+                                }
+                            )
                     if periods:
                         bond.coupon_periods = periods
                     break
@@ -289,7 +311,9 @@ def parse_indexed_xlsx(filepath: str) -> dict[str, BondXlsxEnrichment]:
     return bonds
 
 
-def parse_prices_xlsx(filepath: str, byn_bonds: dict[int, BondXlsxEnrichment]) -> list[BondDailyAccrual]:
+def parse_prices_xlsx(
+    filepath: str, byn_bonds: dict[int, BondXlsxEnrichment]
+) -> list[BondDailyAccrual]:
     """Parse the current prices XLSX for daily accrual data."""
     wb = _load_workbook(filepath)
     sheets = wb.sheetnames
@@ -302,6 +326,7 @@ def parse_prices_xlsx(filepath: str, byn_bonds: dict[int, BondXlsxEnrichment]) -
 
         # Extract issue number from sheet name
         import re
+
         m = re.search(r"(\d+)", sn)
         if not m:
             continue
@@ -322,12 +347,14 @@ def parse_prices_xlsx(filepath: str, byn_bonds: dict[int, BondXlsxEnrichment]) -
                 continue
 
             # We don't have the internal_id here, just issue_number
-            all_accruals.append(BondDailyAccrual(
-                internal_id=str(issue_num),
-                date=d,
-                accrued=accrued,
-                total_value=total,
-            ))
+            all_accruals.append(
+                BondDailyAccrual(
+                    internal_id=str(issue_num),
+                    date=d,
+                    accrued=accrued,
+                    total_value=total,
+                )
+            )
 
     wb.close()
     return all_accruals

@@ -52,7 +52,5 @@ async def list_recent(session: AsyncSession, limit: int = 50) -> list[AlertORM]:
 
 async def cleanup_old(session: AsyncSession, days: int = 30) -> int:
     cutoff = datetime.now(UTC) - timedelta(days=days)
-    result = await session.execute(
-        delete(AlertORM).where(AlertORM.created_at < cutoff)
-    )
+    result = await session.execute(delete(AlertORM).where(AlertORM.created_at < cutoff))
     return int(result.rowcount or 0)

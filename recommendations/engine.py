@@ -63,7 +63,11 @@ def recommend_bonds(
             price=bond.get("price"),
         )
 
-        if prefs.watchlist and bond["internal_id"] not in prefs.watchlist and pred.decision != "buy":
+        if (
+            prefs.watchlist
+            and bond["internal_id"] not in prefs.watchlist
+            and pred.decision != "buy"
+        ):
             continue
 
         currency = str(bond.get("currency", "USD")).upper()

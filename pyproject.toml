@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aigenis-parser"
-version = "0.1.0"
-description = "Bond Fixed Income Assistant — Aigenis scraper (V1)"
+version = "2.0.0"
+description = "Bond Fixed Income Assistant — Production-grade scraper & analytics platform"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
 authors = [{ name = "Bond Fixed Income Assistant" }]
+keywords = ["bonds", "fixed-income", "scraper", "analytics", "belarus"]
+
 dependencies = [
     "playwright>=1.49.0",
     "playwright-stealth>=1.0.6",
@@ -17,8 +19,9 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
+    "aiosqlite>=0.20.0",
     "alembic>=1.14.0",
-    "redis>=5.2.0",
+    "redis[hiredis]>=5.2.0",
     "apscheduler>=3.10.4",
     "tenacity>=9.0.0",
     "beautifulsoup4>=4.12.3",
@@ -32,6 +35,9 @@ dependencies = [
     "scipy>=1.14.0",
     "scikit-learn>=1.5.0",
     "pandas>=2.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "aiohttp>=3.10.0",
 ]
 
 [project.optional-dependencies]
@@ -43,27 +49,41 @@ dev = [
     "ruff>=0.7.0",
     "mypy>=1.13.0",
     "types-beautifulsoup4>=4.12.0.20240907",
+    "bandit>=1.8.0",
+    "pre-commit>=4.0.0",
+]
+prod = [
+    "sentry-sdk>=2.18.0",
+    "gunicorn>=23.0.0",
 ]
 
 [project.scripts]
 aigenis-parser = "scraper.__main__:main"
 aigenis-bot = "telegram_bot.bot:cli"
+aigenis-api = "api.main:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["scraper*", "desk*", "forecast*", "ml*", "monitoring*", "notifications*", "portfolio*", "recommendations*", "scoring*", "telegram_bot*", "visualization*"]
+include = [
+    "scraper*", "desk*", "forecast*", "ml*", "monitoring*",
+    "notifications*", "portfolio*", "recommendations*",
+    "scoring*", "telegram_bot*", "visualization*", "api*",
+]
 exclude = ["tests*", "alembic*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers --tb=short"
 markers = [
     "smoke: real network calls, skipped in CI",
+    "integration: requires database or external services",
+    "slow: long-running tests",
 ]
 filterwarnings = [
     "ignore::sqlalchemy.exc.SADeprecationWarning",
     "ignore::DeprecationWarning:.*(distutils|setuptools).*:",
+    "ignore::DeprecationWarning:.*pkg_resources.*:",
 ]
 
 [tool.ruff]
@@ -71,15 +91,25 @@ line-length = 100
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM"]
-ignore = ["E501"]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM", "ARG", "C4", "RUF"]
+ignore = ["E501", "RUF012"]
+fixable = ["I", "UP", "W"]
+
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.mypy]
 python_version = "3.14"
 strict = false
 warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = false
 ignore_missing_imports = true
-files = ["scraper", "desk", "forecast", "ml", "monitoring", "notifications", "portfolio", "recommendations", "scoring", "telegram_bot", "visualization"]
+files = [
+    "scraper", "desk", "forecast", "ml", "monitoring",
+    "notifications", "portfolio", "recommendations",
+    "scoring", "telegram_bot", "visualization", "api",
+]
 
 [[tool.mypy.overrides]]
 module = "scraper.models"
@@ -88,3 +118,15 @@ strict = true
 [[tool.mypy.overrides]]
 module = "scraper.repositories.*"
 strict = true
+
+[[tool.mypy.overrides]]
+module = "scraper.config"
+strict = true
+
+[tool.coverage.run]
+source = ["scraper", "api", "desk", "forecast", "ml", "monitoring", "notifications", "portfolio", "recommendations", "scoring", "telegram_bot", "visualization"]
+omit = ["*/tests/*", "*/alembic/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 40.0

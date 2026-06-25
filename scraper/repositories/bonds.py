@@ -79,7 +79,9 @@ async def exists(session: AsyncSession, internal_id: str) -> bool:
 
 async def get_by_currency(session: AsyncSession, currency: str) -> Sequence[BondORM]:
     result = await session.execute(
-        select(BondORM).where(BondORM.currency == currency).order_by(BondORM.yield_to_maturity.desc())
+        select(BondORM)
+        .where(BondORM.currency == currency)
+        .order_by(BondORM.yield_to_maturity.desc())
     )
     return result.scalars().all()
 

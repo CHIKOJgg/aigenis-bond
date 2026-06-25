@@ -27,9 +27,7 @@ async def upsert_score(session: AsyncSession, score: BondScore) -> None:
     values = _to_orm(score)
     stmt = pg_insert(BondScoreORM).values(**values)
     update_cols = {c: stmt.excluded[c] for c in values if c != "internal_id"}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[BondScoreORM.internal_id], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[BondScoreORM.internal_id], set_=update_cols)
     await session.execute(stmt)
 
 
@@ -39,16 +37,12 @@ async def upsert_scores_batch(session: AsyncSession, scores: list[BondScore]) ->
     rows = [_to_orm(s) for s in scores]
     stmt = pg_insert(BondScoreORM).values(rows)
     update_cols = {c: stmt.excluded[c] for c in rows[0] if c != "internal_id"}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[BondScoreORM.internal_id], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[BondScoreORM.internal_id], set_=update_cols)
     await session.execute(stmt)
     return len(rows)
 
 
-async def top_scores(
-    session: AsyncSession, limit: int = 20, offset: int = 0
-) -> list[BondScoreORM]:
+async def top_scores(session: AsyncSession, limit: int = 20, offset: int = 0) -> list[BondScoreORM]:
     result = await session.execute(
         select(BondScoreORM).order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
     )

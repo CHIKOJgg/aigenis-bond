@@ -59,7 +59,9 @@ def _train_models():
 def test_recommend_bonds_returns_topk() -> None:
     reg_path, clf_path, bonds = _train_models()
     today = date(2026, 6, 18)
-    prefs = UserPreferences(user_id=1, strategy="Balanced", share_usd=1.0, share_byn=0.0, share_metals=0.0)
+    prefs = UserPreferences(
+        user_id=1, strategy="Balanced", share_usd=1.0, share_byn=0.0, share_metals=0.0
+    )
     bond_dicts = [
         {
             "internal_id": b.internal_id,

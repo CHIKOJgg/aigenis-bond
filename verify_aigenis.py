@@ -29,7 +29,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault("AIGENIS_HEADLESS", "true")
 os.environ.setdefault("AIGENIS_USE_STEALTH", "false")
 os.environ.setdefault("AIGENIS_DELAY_BETWEEN_REQUESTS", "0")
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///file:verify?mode=memory&cache=shared&uri=true")
+os.environ.setdefault(
+    "DATABASE_URL", "sqlite+aiosqlite:///file:verify?mode=memory&cache=shared&uri=true"
+)
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 # Избегаем Alembic при тесте — создаём схему напрямую из Base
@@ -64,6 +66,7 @@ async def _init_db() -> None:
 # =============================================================================
 # Режим 1: MOCK (по фикстурам)
 # =============================================================================
+
 
 async def verify_mock() -> dict:
     """Проверить парсеры на сохранённых фикстурах."""
@@ -103,43 +106,98 @@ async def verify_mock() -> dict:
     detail_payload = json.loads((fx / "detail.json").read_text(encoding="utf-8"))
     bond = parse_detail_payload(detail_payload, "OP-51")
     _check("mock.detail.internal_id", bond.internal_id == "OP-51", bond.internal_id)
-    _check("mock.detail.currency_valid", bond.currency in {"USD", "BYN", "EUR", "XAU", "XAG", "XPT"}, bond.currency)
+    _check(
+        "mock.detail.currency_valid",
+        bond.currency in {"USD", "BYN", "EUR", "XAU", "XAG", "XPT"},
+        bond.currency,
+    )
     _check("mock.detail.nominal_positive", (bond.nominal or 0) > 0, f"nominal={bond.nominal}")
-    _check("mock.detail.yield_in_range", 0 < float(bond.yield_to_maturity or 0) < 50, f"ytm={bond.yield_to_maturity}")
-    _check("mock.detail.coupon_in_range", 0 <= float(bond.coupon_rate or 0) < 100, f"coupon={bond.coupon_rate}")
+    _check(
+        "mock.detail.yield_in_range",
+        0 < float(bond.yield_to_maturity or 0) < 50,
+        f"ytm={bond.yield_to_maturity}",
+    )
+    _check(
+        "mock.detail.coupon_in_range",
+        0 <= float(bond.coupon_rate or 0) < 100,
+        f"coupon={bond.coupon_rate}",
+    )
     _check("mock.detail.price_in_range", 0 < float(bond.price or 0) < 1000, f"price={bond.price}")
-    _check("mock.detail.maturity_future", bond.maturity_date is None or bond.maturity_date > date(2020, 1, 1), f"mat={bond.maturity_date}")
+    _check(
+        "mock.detail.maturity_future",
+        bond.maturity_date is None or bond.maturity_date > date(2020, 1, 1),
+        f"mat={bond.maturity_date}",
+    )
     # Проверка новых полей
-    _check("mock.detail.registration_number", bool(bond.registration_number), f"reg={bond.registration_number}")
+    _check(
+        "mock.detail.registration_number",
+        bool(bond.registration_number),
+        f"reg={bond.registration_number}",
+    )
     _check("mock.detail.issue_volume", (bond.issue_volume or 0) > 0, f"volume={bond.issue_volume}")
     _check("mock.detail.issue_number", (bond.issue_number or 0) > 0, f"issue={bond.issue_number}")
     _check("mock.detail.income_method", bool(bond.income_method), f"method={bond.income_method}")
     _check("mock.detail.in_stock", bond.in_stock is not None, f"stock={bond.in_stock}")
     _check("mock.detail.guarantor", bool(bond.guarantor), f"guarantor={bond.guarantor}")
-    _check("mock.detail.coupon_description", bool(bond.coupon_description), f"desc={bond.coupon_description}")
-    _check("mock.detail.coupon_schedule", bool(bond.coupon_schedule), f"schedule_keys={list((bond.coupon_schedule or {}).keys())}")
+    _check(
+        "mock.detail.coupon_description",
+        bool(bond.coupon_description),
+        f"desc={bond.coupon_description}",
+    )
+    _check(
+        "mock.detail.coupon_schedule",
+        bool(bond.coupon_schedule),
+        f"schedule_keys={list((bond.coupon_schedule or {}).keys())}",
+    )
     result["detail"] = bond.model_dump(mode="json")
 
     # 4. Detail HTML (DOM fallback)
     html = (fx / "detail.html").read_text(encoding="utf-8")
     payload = parse_detail_html(html, internal_id="OP-51")
     _check("mock.detail.dom.name", bool(payload.get("name")), payload.get("name"))
-    _check("mock.detail.dom.registration_number", bool(payload.get("registration_number")), payload.get("registration_number"))
-    _check("mock.detail.dom.issue_number", bool(payload.get("issue_number")), payload.get("issue_number"))
-    _check("mock.detail.dom.issue_volume", bool(payload.get("issue_volume")), payload.get("issue_volume"))
+    _check(
+        "mock.detail.dom.registration_number",
+        bool(payload.get("registration_number")),
+        payload.get("registration_number"),
+    )
+    _check(
+        "mock.detail.dom.issue_number",
+        bool(payload.get("issue_number")),
+        payload.get("issue_number"),
+    )
+    _check(
+        "mock.detail.dom.issue_volume",
+        bool(payload.get("issue_volume")),
+        payload.get("issue_volume"),
+    )
     _check("mock.detail.dom.in_stock", payload.get("in_stock") is not None, payload.get("in_stock"))
     _check("mock.detail.dom.guarantor", bool(payload.get("guarantor")), payload.get("guarantor"))
-    _check("mock.detail.dom.coupon_description", bool(payload.get("coupon_description")), payload.get("coupon_description"))
-    _check("mock.detail.dom.coupon_schedule", bool(payload.get("coupon_schedule")), payload.get("coupon_schedule"))
+    _check(
+        "mock.detail.dom.coupon_description",
+        bool(payload.get("coupon_description")),
+        payload.get("coupon_description"),
+    )
+    _check(
+        "mock.detail.dom.coupon_schedule",
+        bool(payload.get("coupon_schedule")),
+        payload.get("coupon_schedule"),
+    )
     result["detail"]["dom_payload"] = payload
 
     # 5. History JSON
     history_payload = json.loads((fx / "history.json").read_text(encoding="utf-8"))
     rows = parse_history_payload(history_payload, "OP-51")
     _check("mock.history.count", len(rows) >= 1, f"rows={len(rows)}")
-    _check("mock.history.dates_valid", all(r.date <= date.today() for r in rows), f"dates={[r.date for r in rows]}")
+    _check(
+        "mock.history.dates_valid",
+        all(r.date <= date.today() for r in rows),
+        f"dates={[r.date for r in rows]}",
+    )
     _check("mock.history.has_yield", all(r.yield_ is not None for r in rows))
-    result["history"] = [{"date": r.date.isoformat(), "price": float(r.price or 0), "yield": float(r.yield_ or 0)} for r in rows]
+    result["history"] = [
+        {"date": r.date.isoformat(), "price": float(r.price or 0), "yield": float(r.yield_ or 0)}
+        for r in rows
+    ]
 
     return result
 
@@ -147,6 +205,7 @@ async def verify_mock() -> dict:
 # =============================================================================
 # Режим 2: SQLITE end-to-end
 # =============================================================================
+
 
 async def verify_sqlite() -> dict:
     """Сквозной pipeline на SQLite in-memory: listing → details → history → DB → Score."""
@@ -157,6 +216,7 @@ async def verify_sqlite() -> dict:
 
     # Подменяем client.fetch_* методами, читающими фикстуры
     from scraper.client import AigenisClient
+
     fx = PROJECT_ROOT / "tests" / "fixtures"
 
     async def fake_listing(self, currency):
@@ -181,9 +241,21 @@ async def verify_sqlite() -> dict:
     async with AigenisClient(settings) as client:
         summary = await run_once(client, settings.currencies)
 
-    _check("sqlite.pipeline.listing_total", summary["listing_total"] >= 1, f"total={summary['listing_total']}")
-    _check("sqlite.pipeline.details_ok", summary["details_ok"] >= 1, f"ok={summary['details_ok']}, err={summary['details_err']}")
-    _check("sqlite.pipeline.history_rows", summary["history_rows"] >= 1, f"rows={summary['history_rows']}")
+    _check(
+        "sqlite.pipeline.listing_total",
+        summary["listing_total"] >= 1,
+        f"total={summary['listing_total']}",
+    )
+    _check(
+        "sqlite.pipeline.details_ok",
+        summary["details_ok"] >= 1,
+        f"ok={summary['details_ok']}, err={summary['details_err']}",
+    )
+    _check(
+        "sqlite.pipeline.history_rows",
+        summary["history_rows"] >= 1,
+        f"rows={summary['history_rows']}",
+    )
     _check("sqlite.pipeline.scored", summary["scored"] >= 1, f"scored={summary['scored']}")
 
     # Проверяем, что данные реально в БД
@@ -192,6 +264,7 @@ async def verify_sqlite() -> dict:
         total_history = await repositories.history.count_history(session)
         latest = await repositories.bonds.latest_fetched_at(session)
         from scoring.repository import top_scores
+
         top = await top_scores(session, limit=10)
 
     _check("sqlite.db.bonds_count", total_bonds >= 1, f"count={total_bonds}")
@@ -207,14 +280,24 @@ async def verify_sqlite() -> dict:
         res = await session.execute(select(BondORM))
         bond = res.scalars().first()
 
-    _check("sqlite.db.bond_fields", bond is not None and bond.currency in {"USD", "BYN", "EUR", "XAU", "XAG", "XPT"}, f"currency={bond.currency if bond else None}")
-    _check("sqlite.db.bond_yield_range", bond is not None and 0 <= float(bond.yield_to_maturity or 0) <= 100, f"ytm={bond.yield_to_maturity if bond else None}")
+    _check(
+        "sqlite.db.bond_fields",
+        bond is not None and bond.currency in {"USD", "BYN", "EUR", "XAU", "XAG", "XPT"},
+        f"currency={bond.currency if bond else None}",
+    )
+    _check(
+        "sqlite.db.bond_yield_range",
+        bond is not None and 0 <= float(bond.yield_to_maturity or 0) <= 100,
+        f"ytm={bond.yield_to_maturity if bond else None}",
+    )
 
     # Score top
     _check("sqlite.scoring.top_count", len(top) >= 1, f"top_count={len(top)}")
     if top:
         scores = [float(s.score) for s in top]
-        _check("sqlite.scoring.scores_in_range", all(0 <= s <= 200 for s in scores), f"scores={scores}")
+        _check(
+            "sqlite.scoring.scores_in_range", all(0 <= s <= 200 for s in scores), f"scores={scores}"
+        )
 
     # Desk V4 проверка
     from desk import duration, relative_value, stress, yield_curve
@@ -252,7 +335,11 @@ async def verify_sqlite() -> dict:
     ]
     if bonds:
         rep = duration.duration_report(bonds[0])
-        _check("sqlite.desk.duration", rep.modified_duration > 0, f"mod_dur={rep.modified_duration:.3f}")
+        _check(
+            "sqlite.desk.duration",
+            rep.modified_duration > 0,
+            f"mod_dur={rep.modified_duration:.3f}",
+        )
         curve = yield_curve.curve_from_bonds(bonds)
         _check("sqlite.desk.curve", len(curve.points) >= 1, f"points={len(curve.points)}")
         signals = relative_value.relative_value_signals(bonds)
@@ -271,6 +358,7 @@ async def verify_sqlite() -> dict:
 # =============================================================================
 # Режим 3: LIVE (реальный сайт)
 # =============================================================================
+
 
 async def verify_live() -> dict:
     """Попытка реального парсинга aigenis.by (с HTTP-проверкой доступности)."""
@@ -316,9 +404,7 @@ async def verify_live() -> dict:
                 usd_count = page_html.count("usd") + page_html.count("доллар")
                 byn_count = page_html.count("byn") + page_html.count("белорусск")
                 metal_count = (
-                    page_html.count("золот")
-                    + page_html.count("серебр")
-                    + page_html.count("платин")
+                    page_html.count("золот") + page_html.count("серебр") + page_html.count("платин")
                 )
                 result["bond_pages"][page] = {
                     "status": r.status_code,
@@ -383,7 +469,9 @@ async def verify_live() -> dict:
                         _check(f"live.listing.{currency}", False, "timeout 30s")
                     except Exception as e:  # noqa: BLE001
                         result["currencies"][currency] = {"ok": False, "error": str(e)[:200]}
-                        _check(f"live.listing.{currency}", False, f"{type(e).__name__}: {str(e)[:120]}")
+                        _check(
+                            f"live.listing.{currency}", False, f"{type(e).__name__}: {str(e)[:120]}"
+                        )
         except Exception as e:  # noqa: BLE001
             result["client_error"] = str(e)[:200]
             _check("live.client_init", False, f"{type(e).__name__}: {str(e)[:120]}")
@@ -397,6 +485,7 @@ async def verify_live() -> dict:
 # =============================================================================
 # Main
 # =============================================================================
+
 
 async def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "all"

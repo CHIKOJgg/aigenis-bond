@@ -30,9 +30,7 @@ async def upsert_position(
     await session.execute(stmt)
 
 
-async def remove_position(
-    session: AsyncSession, user_id: int, internal_id: str
-) -> None:
+async def remove_position(session: AsyncSession, user_id: int, internal_id: str) -> None:
     pos = await get_position(session, user_id, internal_id)
     if pos is None:
         return
@@ -98,7 +96,5 @@ async def mark_rebalance_applied(session: AsyncSession, plan_id: int) -> None:
     from sqlalchemy import update
 
     await session.execute(
-        update(RebalanceHistoryORM)
-        .where(RebalanceHistoryORM.id == plan_id)
-        .values(applied=True)
+        update(RebalanceHistoryORM).where(RebalanceHistoryORM.id == plan_id).values(applied=True)
     )

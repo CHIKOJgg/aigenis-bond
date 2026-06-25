@@ -70,7 +70,9 @@ def test_yield_curve_nelson_siegel() -> None:
     ]
     params = yield_curve.fit_nelson_siegel(points)
     rate_3y = yield_curve.interpolate(
-        yield_curve.YieldCurve(currency="USD", observed_at=__import__("datetime").datetime.now(), points=points),
+        yield_curve.YieldCurve(
+            currency="USD", observed_at=__import__("datetime").datetime.now(), points=points
+        ),
         params,
         "3Y",
     )
@@ -120,7 +122,9 @@ def test_carry_ranking() -> None:
 
 def test_repo_deal_basic() -> None:
     bond = _bond("A", 5.0, issuer="Министерство финансов")
-    deal = repo.repo_deal(bond, notional=Decimal("1000"), haircut_pct=1.0, repo_rate_pct=5.0, tenor_days=30)
+    deal = repo.repo_deal(
+        bond, notional=Decimal("1000"), haircut_pct=1.0, repo_rate_pct=5.0, tenor_days=30
+    )
     assert deal.cash_lent == Decimal("990.00")
     assert deal.accrued_interest > 0
 

@@ -117,7 +117,11 @@ async def detect_fx_changes(session: AsyncSession) -> MonitoringResult:
             continue
         change = _pct_change(float(prev.rate), float(cur.rate))
         if abs(change) >= THRESHOLDS["fx_change_pct"]:
-            kind = "fx_usd_byn" if "USD" in pair and "BYN" in pair else f"fx_{pair.replace('/', '_').lower()}"
+            kind = (
+                "fx_usd_byn"
+                if "USD" in pair and "BYN" in pair
+                else f"fx_{pair.replace('/', '_').lower()}"
+            )
             alert_id = await add_alert(
                 session,
                 {

@@ -36,9 +36,7 @@ class ScoreBreakdown(BaseModel):
     inflation_component: float = 0.0
 
     def total(self) -> float:
-        return float(
-            sum(self.model_dump().values())
-        )
+        return float(sum(self.model_dump().values()))
 
 
 class BondScore(BaseModel):

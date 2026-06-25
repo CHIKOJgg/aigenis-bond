@@ -20,7 +20,7 @@ def _safe_float(v) -> float:
         return float(v)
     try:
         return float(v)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
 
 
@@ -74,7 +74,9 @@ def build_features(
         maturity = None
     issuer = (bond_dict.get("issuer") or "").lower()
     is_gov = int(
-        any(k in issuer for k in ("министерство", "республика", "государ", "treasury", "government"))
+        any(
+            k in issuer for k in ("министерство", "республика", "государ", "treasury", "government")
+        )
     )
     is_active = int(str(bond_dict.get("status", "")).lower() == "active")
 

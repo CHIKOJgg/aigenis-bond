@@ -46,9 +46,7 @@ async def upsert_preferences(session: AsyncSession, prefs: UserPreferences) -> N
     values = _to_orm(prefs)
     stmt = pg_insert(UserPreferencesORM).values(**values)
     update_cols = {c: stmt.excluded[c] for c in values if c != "user_id"}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[UserPreferencesORM.user_id], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[UserPreferencesORM.user_id], set_=update_cols)
     await session.execute(stmt)
 
 
@@ -62,7 +60,9 @@ async def get_preferences(session: AsyncSession, user_id: int) -> UserPreference
     return _from_orm(orm)
 
 
-async def add_to_watchlist(session: AsyncSession, user_id: int, internal_id: str) -> UserPreferences:
+async def add_to_watchlist(
+    session: AsyncSession, user_id: int, internal_id: str
+) -> UserPreferences:
     prefs = await get_preferences(session, user_id)
     if internal_id not in prefs.watchlist:
         prefs.watchlist.append(internal_id)

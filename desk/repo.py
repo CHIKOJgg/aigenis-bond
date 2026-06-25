@@ -21,7 +21,13 @@ def repo_deal(
     """Смоделировать сделку РЕПО: сколько кэша дадим под залог облигации."""
     asof = asof or date.today()
     collateral_value = notional * (Decimal("1") - Decimal(str(haircut_pct)) / Decimal("100"))
-    accrued = collateral_value * Decimal(str(repo_rate_pct)) / Decimal("100") * Decimal(tenor_days) / Decimal("365")
+    accrued = (
+        collateral_value
+        * Decimal(str(repo_rate_pct))
+        / Decimal("100")
+        * Decimal(tenor_days)
+        / Decimal("365")
+    )
     return RepoDeal(
         internal_id=bond.internal_id,
         notional=notional,

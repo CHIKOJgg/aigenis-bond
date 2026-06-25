@@ -39,7 +39,9 @@ def _price_from_yield(flows: list[tuple[float, float]], ytm_pct: float, freq: in
     return sum(cf / ((1 + y / freq) ** (freq * t)) for t, cf in flows)
 
 
-def _price_shift(flows: list[tuple[float, float]], ytm_pct: float, shift_bps: float, freq: int = 2) -> float:
+def _price_shift(
+    flows: list[tuple[float, float]], ytm_pct: float, shift_bps: float, freq: int = 2
+) -> float:
     return _price_from_yield(flows, ytm_pct + shift_bps / 100, freq=freq)
 
 
@@ -110,10 +112,7 @@ def convexity(
     price = _price_from_yield(flows, ytm_pct, freq=coupon_frequency)
     freq = coupon_frequency
     y_per = ytm_pct / 100 / freq
-    cvx = sum(
-        cf * t * (t + 1 / freq) / ((1 + y_per) ** (freq * t + 2))
-        for t, cf in flows
-    )
+    cvx = sum(cf * t * (t + 1 / freq) / ((1 + y_per) ** (freq * t + 2)) for t, cf in flows)
     return cvx / price
 
 
@@ -173,7 +172,7 @@ def key_rate_durations(
             bumped.append((time, cf / ((1 + (ytm_pct / 100 + bump) / freq) ** (freq * time))))
         bumped_price = sum(cf for _, cf in bumped)
         krd = -(bumped_price - base_price) / (base_price * 0.0001) if base_price else 0.0
-        out[f"{int(t)}Y" if t >= 1 else f"{int(t*12)}M"] = round(krd, 4)
+        out[f"{int(t)}Y" if t >= 1 else f"{int(t * 12)}M"] = round(krd, 4)
     return out
 
 
@@ -253,7 +252,13 @@ def portfolio_duration(
 ) -> DurationReport:
     """Взвешенный по весам duration-отчёт по портфелю."""
     if not bonds:
-        return DurationReport(modified_duration=0.0, macaulay_duration=0.0, convexity=0.0, dv01=0.0, asof_date=asof or date.today())
+        return DurationReport(
+            modified_duration=0.0,
+            macaulay_duration=0.0,
+            convexity=0.0,
+            dv01=0.0,
+            asof_date=asof or date.today(),
+        )
 
     if weights is None:
         w = 1.0 / len(bonds)
@@ -261,22 +266,25 @@ def portfolio_duration(
 
     total_w = sum(weights.get(b.internal_id, 0.0) for b in bonds) or 1.0
     reports = {b.internal_id: duration_report(b, asof=asof) for b in bonds}
-    mod = sum(
-        weights.get(b.internal_id, 0.0) * reports[b.internal_id].modified_duration
-        for b in bonds
-    ) / total_w
-    mac = sum(
-        weights.get(b.internal_id, 0.0) * reports[b.internal_id].macaulay_duration
-        for b in bonds
-    ) / total_w
-    cvx = sum(
-        weights.get(b.internal_id, 0.0) * reports[b.internal_id].convexity
-        for b in bonds
-    ) / total_w
-    dv = sum(
-        weights.get(b.internal_id, 0.0) * reports[b.internal_id].dv01
-        for b in bonds
-    ) / total_w
+    mod = (
+        sum(
+            weights.get(b.internal_id, 0.0) * reports[b.internal_id].modified_duration
+            for b in bonds
+        )
+        / total_w
+    )
+    mac = (
+        sum(
+            weights.get(b.internal_id, 0.0) * reports[b.internal_id].macaulay_duration
+            for b in bonds
+        )
+        / total_w
+    )
+    cvx = (
+        sum(weights.get(b.internal_id, 0.0) * reports[b.internal_id].convexity for b in bonds)
+        / total_w
+    )
+    dv = sum(weights.get(b.internal_id, 0.0) * reports[b.internal_id].dv01 for b in bonds) / total_w
     krds: dict[str, float] = {}
     for b in bonds:
         rep = reports[b.internal_id]

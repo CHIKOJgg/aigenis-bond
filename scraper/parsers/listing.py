@@ -215,7 +215,9 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                 elif el.name == "p" and current_key:
                     value = el.get_text(strip=True)
 
-                    if "номер" in current_key and ("регистрац" in current_key or "регистр" in current_key):
+                    if "номер" in current_key and (
+                        "регистрац" in current_key or "регистр" in current_key
+                    ):
                         if not payload.get("registration_number"):
                             payload["registration_number"] = value
                         if not payload.get("internal_id"):
@@ -224,14 +226,28 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                     elif "номинал" in current_key:
                         m = re.search(r"([\d\s,]+)", value)
                         if m:
-                            payload["nominal"] = m.group(1).strip().replace(" ", "").replace("\xa0", "").replace(",", ".")
+                            payload["nominal"] = (
+                                m.group(1)
+                                .strip()
+                                .replace(" ", "")
+                                .replace("\xa0", "")
+                                .replace(",", ".")
+                            )
 
                     elif "объем" in current_key:
                         m = re.search(r"([\d\s,]+)", value)
                         if m:
-                            payload["issue_volume"] = m.group(1).strip().replace(" ", "").replace("\xa0", "").replace(",", ".")
+                            payload["issue_volume"] = (
+                                m.group(1)
+                                .strip()
+                                .replace(" ", "")
+                                .replace("\xa0", "")
+                                .replace(",", ".")
+                            )
 
-                    elif "способ" in current_key or "выплат" in current_key or "доход" in current_key:
+                    elif (
+                        "способ" in current_key or "выплат" in current_key or "доход" in current_key
+                    ):
                         payload["income_method"] = value
                         # Также парсим coupon_rate из описания "Купон, номинирована в EUR"
                         if not payload.get("coupon_rate"):

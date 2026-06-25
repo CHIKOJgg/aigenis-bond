@@ -61,9 +61,7 @@ def _to_pred(p: Prediction) -> dict:
 async def upsert_model_version(session: AsyncSession, mv: ModelVersion) -> None:
     stmt = pg_insert(ModelVersionORM).values(**_to_mv(mv))
     update_cols = {c: stmt.excluded[c] for c in _to_mv(mv) if c != "version"}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[ModelVersionORM.version], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[ModelVersionORM.version], set_=update_cols)
     await session.execute(stmt)
 
 

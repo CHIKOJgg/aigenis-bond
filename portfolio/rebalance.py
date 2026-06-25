@@ -139,9 +139,7 @@ async def maybe_auto_rebalance(
                 if a.side == "buy":
                     await upsert_position(session, user_id, a.internal_id, a.amount)
                 elif a.side == "sell":
-                    pos = next(
-                        (p for p in positions if p.internal_id == a.internal_id), None
-                    )
+                    pos = next((p for p in positions if p.internal_id == a.internal_id), None)
                     if pos is not None:
                         new_amount = pos.amount - a.amount
                         if new_amount > 0:

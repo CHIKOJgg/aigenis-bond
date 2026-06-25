@@ -64,6 +64,7 @@ from visualization.charts import (
 
 class ThrottlingMiddleware(BaseMiddleware):
     """Limits user requests to N per interval."""
+
     def __init__(self, rate: int = 3, per_seconds: int = 1) -> None:
         self.rate = rate
         self.per_seconds = per_seconds
@@ -85,6 +86,7 @@ class ThrottlingMiddleware(BaseMiddleware):
 
 class RequestIdMiddleware(BaseMiddleware):
     """Adds request_id to handlers data for tracing."""
+
     async def __call__(self, handler, event, data):
         data["request_id"] = uuid.uuid4().hex[:8]
         return await handler(event, data)
@@ -97,9 +99,9 @@ _PAGE_SIZE = 10
 def _paginate_kb(prefix: str, page: int, total: int) -> InlineKeyboardMarkup | None:
     buttons = []
     if page > 0:
-        buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"page:{prefix}:{page-1}"))
+        buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"page:{prefix}:{page - 1}"))
     if page < total - 1:
-        buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"page:{prefix}:{page+1}"))
+        buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"page:{prefix}:{page + 1}"))
     if not buttons:
         return None
     return InlineKeyboardMarkup(inline_keyboard=[buttons])
@@ -227,8 +229,11 @@ async def cmd_top(message: Message, page: int = 0) -> None:
         for i, s in enumerate(top, page * _PAGE_SIZE + 1):
             lines.append(f"{i}. <code>{s.internal_id}</code> — Score: {float(s.score):.0f}")
         total = page + 1 if len(top) == _PAGE_SIZE else page + 1
-        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML,
-                             reply_markup=_paginate_kb("top", page, total))
+        await message.answer(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            reply_markup=_paginate_kb("top", page, total),
+        )
 
 
 async def _currency_view(message: Message, currency: str, title: str, page: int = 0) -> None:
@@ -262,13 +267,16 @@ async def _currency_view(message: Message, currency: str, title: str, page: int 
     safe_ytm = []
     for iid, _sc, ytm, _name in rows[:15]:
         try:
-            val = float(ytm.rstrip('%'))
-        except (ValueError, AttributeError):
+            val = float(ytm.rstrip("%"))
+        except ValueError, AttributeError:
             val = 0.0
         safe_ytm.append((iid, val))
     png = plot_yield_distribution(safe_ytm)
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML,
-                         reply_markup=_paginate_kb(prefix[:3], page, total_pages))
+    await message.answer(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_paginate_kb(prefix[:3], page, total_pages),
+    )
     await message.answer_photo(BufferedInputFile(png, filename="yields.png"))
 
 
@@ -320,9 +328,7 @@ async def cmd_metals(message: Message) -> None:
 @router.message(Command("new"))
 async def cmd_new(message: Message) -> None:
     async with session_scope() as session:
-        res = await session.execute(
-            select(BondORM).order_by(desc(BondORM.fetched_at)).limit(10)
-        )
+        res = await session.execute(select(BondORM).order_by(desc(BondORM.fetched_at)).limit(10))
         bonds = list(res.scalars().all())
         if not bonds:
             await message.answer("Нет данных.")
@@ -375,7 +381,9 @@ async def cmd_rebalance(message: Message) -> None:
     if not bonds:
         await message.answer("Нет данных.")
         return
-    current = {iid: prefs.initial_capital / Decimal("10") for iid in [b.internal_id for b in bonds[:10]]}
+    current = {
+        iid: prefs.initial_capital / Decimal("10") for iid in [b.internal_id for b in bonds[:10]]
+    }
     target, deltas = rebalance(current, bonds, prefs)
     if not deltas:
         await message.answer("Ребалансировка не требуется.")
@@ -443,11 +451,7 @@ async def cmd_buy(message: Message) -> None:
         return
     lines = ["<b>🛒 Рекомендации (Score + ML)</b>\n"]
     for r in recs:
-        ret = (
-            f", +{r.predicted_return_pct:.2f}%"
-            if r.predicted_return_pct is not None
-            else ""
-        )
+        ret = f", +{r.predicted_return_pct:.2f}%" if r.predicted_return_pct is not None else ""
         lines.append(
             f"#{r.rank} <code>{r.internal_id}</code> {r.name} — "
             f"<b>{r.decision.upper()}</b> (conf {r.confidence:.2f}, score {r.score:.0f}{ret})"
@@ -496,9 +500,7 @@ async def cmd_ml(message: Message) -> None:
             parts.append(f"• <b>{kind}</b>: не обучена. Запустите `python -m scraper ml-train`")
             continue
         metrics = ", ".join(f"{k}={float(v):.3f}" for k, v in mv.metrics.items())
-        parts.append(
-            f"• <b>{kind}</b> v{mv.version} ({mv.train_rows} строк)\n  {metrics}"
-        )
+        parts.append(f"• <b>{kind}</b> v{mv.version} ({mv.train_rows} строк)\n  {metrics}")
     await message.answer("\n".join(parts), parse_mode=ParseMode.HTML)
 
 
@@ -535,10 +537,10 @@ async def cmd_rebalance_auto(message: Message) -> None:
         positions = await list_positions(session, user_id)
         bonds_q = await repositories.bonds.get_all_internal_ids(session)
         bonds_orm = (
-            await session.execute(
-                select(BondORM).where(BondORM.internal_id.in_(list(bonds_q)))
-            )
-        ).scalars().all()
+            (await session.execute(select(BondORM).where(BondORM.internal_id.in_(list(bonds_q)))))
+            .scalars()
+            .all()
+        )
         bonds = [
             Bond(
                 internal_id=b.internal_id,
@@ -600,12 +602,17 @@ async def cmd_watch(message: Message) -> None:
     iid = args[1].strip()
     async with session_scope() as session:
         if not await repositories.bonds.exists(session, iid):
-            await message.answer(f"❌ Облигация <code>{iid}</code> не найдена в БД", parse_mode=ParseMode.HTML)
+            await message.answer(
+                f"❌ Облигация <code>{iid}</code> не найдена в БД", parse_mode=ParseMode.HTML
+            )
             return
     user_id = message.from_user.id if message.from_user else 0
     async with session_scope() as session:
         prefs = await add_to_watchlist(session, user_id, iid)
-    await message.answer(f"✅ <code>{iid}</code> добавлен в watchlist ({len(prefs.watchlist)} шт.)", parse_mode=ParseMode.HTML)
+    await message.answer(
+        f"✅ <code>{iid}</code> добавлен в watchlist ({len(prefs.watchlist)} шт.)",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.message(Command("unwatch"))
@@ -617,7 +624,9 @@ async def cmd_unwatch(message: Message) -> None:
     iid = args[1].strip()
     async with session_scope() as session:
         if not await repositories.bonds.exists(session, iid):
-            await message.answer(f"❌ Облигация <code>{iid}</code> не найдена в БД", parse_mode=ParseMode.HTML)
+            await message.answer(
+                f"❌ Облигация <code>{iid}</code> не найдена в БД", parse_mode=ParseMode.HTML
+            )
             return
     user_id = message.from_user.id if message.from_user else 0
     async with session_scope() as session:
@@ -690,7 +699,9 @@ async def cmd_curve(message: Message) -> None:
         if not curve.points:
             continue
         params = desk_curve.fit_nelson_siegel(curve.points)
-        lines.append(f"<b>{cur}</b> — slope {curve.slope():.2f}%, β0={params.beta0:.2f}, β1={params.beta1:.2f}, β2={params.beta2:.2f}")
+        lines.append(
+            f"<b>{cur}</b> — slope {curve.slope():.2f}%, β0={params.beta0:.2f}, β1={params.beta1:.2f}, β2={params.beta2:.2f}"
+        )
         for p in curve.points:
             lines.append(f"  {p.tenor}: {p.rate_pct:.2f}%")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -708,9 +719,14 @@ async def cmd_rv(message: Message, page: int = 0) -> None:
     lines = [f"<b>⚖️ Relative Value</b> (стр. {page + 1}/{total_pages})\n"]
     for s in page_slice:
         sign = "🟢 BUY" if s.side == "buy" else ("🔴 SELL" if s.side == "sell" else "⚪ HOLD")
-        lines.append(f"{sign} <code>{s.internal_id}</code> (Z={s.z_score:+.2f}, spread {s.spread_pct:+.2f}%)")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML,
-                         reply_markup=_paginate_kb("rv", page, total_pages))
+        lines.append(
+            f"{sign} <code>{s.internal_id}</code> (Z={s.z_score:+.2f}, spread {s.spread_pct:+.2f}%)"
+        )
+    await message.answer(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_paginate_kb("rv", page, total_pages),
+    )
 
 
 @router.message(Command("duration"))
@@ -762,8 +778,11 @@ async def cmd_carry(message: Message, page: int = 0) -> None:
             f"{sign} <code>{t.internal_id}</code>: купон {t.coupon_pct:.2f}%, "
             f"rolldown {t.rolldown_bps:+.1f}bp, P&L {t.expected_pnl_pct:+.3f}%"
         )
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML,
-                         reply_markup=_paginate_kb("carry", page, total_pages))
+    await message.answer(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=_paginate_kb("carry", page, total_pages),
+    )
 
 
 @router.message(Command("repo"))
@@ -806,10 +825,7 @@ async def cmd_stress(message: Message) -> None:
     lines = ["<b>⚠️ Stress-тесты (Δ P&L)</b>\n"]
     for name, scn in desk_stress.PRESET_SCENARIOS.items():
         res = desk_stress.run_stress(scn, [(b, weights[b.internal_id]) for b in bonds])
-        lines.append(
-            f"• <b>{name}</b> ({scn.kind}): {res.pnl_pct:+.3f}% "
-            f"({float(res.pnl):+.0f})"
-        )
+        lines.append(f"• <b>{name}</b> ({scn.kind}): {res.pnl_pct:+.3f}% ({float(res.pnl):+.0f})")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -841,16 +857,20 @@ async def cmd_settings(message: Message) -> None:
     )
     rows = []
     for label, (usd, byn, metals, eur) in _PRESETS.items():
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{label} ({usd:.0%}/{byn:.0%}/{metals:.0%}/{eur:.0%})",
-                callback_data=f"preset:{label}",
-            ),
-        ])
-    rows.append([
-        InlineKeyboardButton(text="Капитал", callback_data="edit:capital"),
-        InlineKeyboardButton(text="Пополнение", callback_data="edit:contribution"),
-    ])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{label} ({usd:.0%}/{byn:.0%}/{metals:.0%}/{eur:.0%})",
+                    callback_data=f"preset:{label}",
+                ),
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(text="Капитал", callback_data="edit:capital"),
+            InlineKeyboardButton(text="Пополнение", callback_data="edit:contribution"),
+        ]
+    )
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
@@ -992,8 +1012,7 @@ async def _run_monitoring(session) -> str:
     fx = await detect_fx_changes(session)
     met = await detect_metal_changes(session)
     return (
-        f"Мониторинг выполнен: bonds={bond.new_alerts}, "
-        f"fx={fx.new_alerts}, metals={met.new_alerts}"
+        f"Мониторинг выполнен: bonds={bond.new_alerts}, fx={fx.new_alerts}, metals={met.new_alerts}"
     )
 
 

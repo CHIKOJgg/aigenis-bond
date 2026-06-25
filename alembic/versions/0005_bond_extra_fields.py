@@ -5,13 +5,15 @@ Revises: 0004_v4
 Create Date: 2026-06-20 21:00:00
 
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0005_bond_extra_fields"
 down_revision: str | None = "0004_v4"
@@ -30,7 +32,9 @@ def upgrade() -> None:
     op.add_column("bonds", sa.Column("coupon_description", sa.String(256), nullable=True))
     op.add_column(
         "bonds",
-        sa.Column("coupon_schedule", postgresql.JSONB().with_variant(sa.JSON(), "sqlite"), nullable=True),
+        sa.Column(
+            "coupon_schedule", postgresql.JSONB().with_variant(sa.JSON(), "sqlite"), nullable=True
+        ),
     )
 
 

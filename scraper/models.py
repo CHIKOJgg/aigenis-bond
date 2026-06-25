@@ -1,10 +1,9 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
-
-import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -64,11 +63,21 @@ class Bond(BaseModel):
     income_method: IncomeMethod | None = Field(None, description="Способ выплаты дохода")
     in_stock: bool | None = Field(None, description="В наличии (data-stock)")
     guarantor: str | None = Field(None, description="Организация/гарант")
-    maturity_term_text: str | None = Field(None, description="Срок погашения (текст, из data-vterm)")
-    coupon_description: str | None = Field(None, description="Полное описание купона (ставка + периодичность)")
-    coupon_schedule: dict[str, list[str]] | None = Field(None, description="График купонных выплат по годам")
-    indexation_currency: str | None = Field(None, description="Валюта индексации (для индексируемых облигаций)")
-    exchange_rate_on_start: Decimal | None = Field(None, description="Курс валюты на дату начала обращения")
+    maturity_term_text: str | None = Field(
+        None, description="Срок погашения (текст, из data-vterm)"
+    )
+    coupon_description: str | None = Field(
+        None, description="Полное описание купона (ставка + периодичность)"
+    )
+    coupon_schedule: dict[str, list[str]] | None = Field(
+        None, description="График купонных выплат по годам"
+    )
+    indexation_currency: str | None = Field(
+        None, description="Валюта индексации (для индексируемых облигаций)"
+    )
+    exchange_rate_on_start: Decimal | None = Field(
+        None, description="Курс валюты на дату начала обращения"
+    )
     term_days: int | None = Field(None, description="Срок обращения в днях")
 
     raw: dict[str, Any] = Field(default_factory=dict)
@@ -94,7 +103,15 @@ class Bond(BaseModel):
         }
         return mapping.get(s, s)
 
-    @field_validator("coupon_rate", "yield_to_maturity", "price", "nominal", "issue_volume", "exchange_rate_on_start", mode="before")
+    @field_validator(
+        "coupon_rate",
+        "yield_to_maturity",
+        "price",
+        "nominal",
+        "issue_volume",
+        "exchange_rate_on_start",
+        mode="before",
+    )
     @classmethod
     def _decimal_field(cls, v: Any) -> Decimal | None:
         return _to_decimal(v)

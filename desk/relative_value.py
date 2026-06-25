@@ -17,9 +17,7 @@ def _bucket_by_tenor(years_to_maturity: float) -> str:
     return "long"
 
 
-def _bucket_zscore(
-    ytm_pcts: list[float], value: float
-) -> tuple[float, float]:
+def _bucket_zscore(ytm_pcts: list[float], value: float) -> tuple[float, float]:
     if len(ytm_pcts) < 3:
         return 0.0, value
     avg = fmean(ytm_pcts)
@@ -57,10 +55,14 @@ def relative_value_signals(
             spread = value - fair_avg
             if z >= z_threshold:
                 side = "sell"
-                rationale = f"Z={z:+.2f}: богаче peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                rationale = (
+                    f"Z={z:+.2f}: богаче peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                )
             elif z <= -z_threshold:
                 side = "buy"
-                rationale = f"Z={z:+.2f}: дешевле peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                rationale = (
+                    f"Z={z:+.2f}: дешевле peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                )
             else:
                 side = "hold"
                 rationale = f"Z={z:+.2f}: fair value"

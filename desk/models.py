@@ -8,9 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-CurveTenor = Literal[
-    "1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"
-]
+CurveTenor = Literal["1M", "3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y"]
 StressKind = Literal["parallel", "steepener", "flattener", "inversion", "credit_shock", "fx_shock"]
 RVSide = Literal["buy", "sell", "hold"]
 

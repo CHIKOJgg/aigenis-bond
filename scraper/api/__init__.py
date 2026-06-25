@@ -32,7 +32,9 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
     for it in items:
         if not isinstance(it, dict):
             continue
-        internal_id = it.get("id") or it.get("internal_id") or it.get("slug") or it.get("registration_number")
+        internal_id = (
+            it.get("id") or it.get("internal_id") or it.get("slug") or it.get("registration_number")
+        )
         if not internal_id:
             continue
         out.append(
@@ -85,7 +87,9 @@ def parse_bond_payload(
         nominal=payload.get("nominal"),
         coupon_rate=_first_not_none(payload.get("coupon_rate"), payload.get("coupon")),
         coupon_frequency=_first_not_none(payload.get("coupon_frequency"), payload.get("frequency")),
-        maturity_date=_coerce_date(_first_not_none(payload.get("maturity_date"), payload.get("maturity"))),
+        maturity_date=_coerce_date(
+            _first_not_none(payload.get("maturity_date"), payload.get("maturity"))
+        ),
         price=payload.get("price"),
         yield_to_maturity=_first_not_none(
             payload.get("yield_to_maturity"), payload.get("ytm"), payload.get("yield")

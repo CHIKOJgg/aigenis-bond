@@ -58,7 +58,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("score", help="Пересчитать Reward/Risk Score")
     sub.add_parser("monitor", help="Запустить мониторинг и сформировать алерты")
 
-    sub.add_parser("ml-train", help="Обучить ML-модели (регрессия YTM + классификатор buy/hold/wait/avoid)")
+    sub.add_parser(
+        "ml-train", help="Обучить ML-модели (регрессия YTM + классификатор buy/hold/wait/avoid)"
+    )
     sub.add_parser("ml-predict", help="Сделать прогнозы по всем облигациям")
     sub.add_parser("ml-status", help="Показать текущие версии моделей и метрики")
     sub.add_parser("recs", help="Получить рекомендации к покупке")
@@ -86,9 +88,9 @@ async def _cmd_once(currencies_csv: str) -> int:
     currencies = (
         [c.strip().upper() for c in currencies_csv.split(",") if c.strip()]
         if currencies_csv
-        else settings.currencies
+        else settings.aigenis.currencies
     )
-    async with AigenisClient(settings) as client:
+    async with AigenisClient(settings.aigenis) as client:
         summary = await run_once(client, currencies)
     print(summary)
     return 0
@@ -103,11 +105,11 @@ async def _cmd_backfill(currencies_csv: str, days: int | None) -> int:
     async with session_scope() as session:
         existing = await repositories.bonds.get_all_internal_ids(session)
 
-    async with AigenisClient(settings) as client:
+    async with AigenisClient(settings.aigenis) as client:
         ok, err = await backfill_history(
             client,
             list(existing),
-            days=days or settings.history_backfill_days,
+            days=days or settings.aigenis.history_backfill_days,
         )
     print({"history_rows": ok, "history_err": err})
     return 0

@@ -57,7 +57,9 @@ class BondORM(Base):
     guarantor: Mapped[str | None] = mapped_column(String(256), nullable=True)
     maturity_term_text: Mapped[str | None] = mapped_column(String(64), nullable=True)
     coupon_description: Mapped[str | None] = mapped_column(String(256), nullable=True)
-    coupon_schedule: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    coupon_schedule: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
     indexation_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     exchange_rate_on_start: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
     term_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -92,9 +94,7 @@ class BondHistoryORM(Base):
     coupon: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="unknown")
 
-    __table_args__ = (
-        Index("ix_history_id_date", "internal_id", "date"),
-    )
+    __table_args__ = (Index("ix_history_id_date", "internal_id", "date"),)
 
 
 class BondDailyAccrualORM(Base):
@@ -110,9 +110,7 @@ class BondDailyAccrualORM(Base):
     accrued: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
     total_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
 
-    __table_args__ = (
-        Index("ix_accrual_id_date", "internal_id", "date"),
-    )
+    __table_args__ = (Index("ix_accrual_id_date", "internal_id", "date"),)
 
 
 class ParseErrorORM(Base):
@@ -122,7 +120,9 @@ class ParseErrorORM(Base):
     internal_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_type: Mapped[str] = mapped_column(String(64), nullable=False)
     message: Mapped[str] = mapped_column(String(2048), nullable=False)
-    payload: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    payload: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -143,9 +143,7 @@ class BondScoreORM(Base):
     )
     score: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     tier: Mapped[str | None] = mapped_column(String(4), nullable=True)
-    breakdown: Mapped[dict] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=False
-    )
+    breakdown: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -234,9 +232,7 @@ class ModelVersionORM(Base):
 
     version: Mapped[str] = mapped_column(String(64), primary_key=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    metrics: Mapped[dict] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=False
-    )
+    metrics: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)
     trained_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -328,9 +324,7 @@ class RebalanceHistoryORM(Base):
     max_drift_observed: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False)
     expected_return: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     estimated_cost: Mapped[Decimal | None] = mapped_column(Numeric(20, 4), nullable=True)
-    actions: Mapped[list] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=False
-    )
+    actions: Mapped[list] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -435,9 +429,7 @@ class StressRunORM(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     scenario_name: Mapped[str] = mapped_column(String(64), nullable=False)
     scenario_kind: Mapped[str] = mapped_column(String(32), nullable=False)
-    scenario: Mapped[dict] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=False
-    )
+    scenario: Mapped[dict] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=False)
     portfolio_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     stressed_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     pnl: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)

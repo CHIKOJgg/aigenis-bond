@@ -1,25 +1,65 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 class ScraperError(Exception):
-    """Базовый класс ошибок парсера."""
+    """Base scraper exception."""
+
+    def __init__(
+        self, message: str, *, cause: Exception | None = None, context: dict[str, Any] | None = None
+    ) -> None:
+        self.message = message
+        self.cause = cause
+        self.context = context or {}
+        super().__init__(message)
 
 
 class TransientError(ScraperError):
-    """Временная ошибка: таймаут, 5xx, сетевая. Подлежит retry."""
+    """Temporary: timeout, 5xx, network. Eligible for retry."""
 
 
 class FatalError(ScraperError):
-    """Неустранимая ошибка: капча, блокировка, изменение структуры. Алерт + стоп."""
+    """Permanent: captcha, block, structural change. Alert + stop."""
 
 
 class NotFoundError(ScraperError):
-    """Запрашиваемая сущность не найдена (например, облигация снята с торгов)."""
+    """Entity not found (bond delisted, missing page)."""
 
 
-class HistoryUnavailable(ScraperError):
-    """История недоступна для данной облигации (не отдаётся API)."""
+class HistoryUnavailableError(ScraperError):
+    """History API unavailable for this bond."""
+
+
+HistoryUnavailable = HistoryUnavailableError
 
 
 class ParseError(ScraperError):
-    """Не удалось распарсить ответ — структура изменилась или данные грязные."""
+    """Failed to parse response — structure changed or data dirty."""
+
+
+class ValidationError(ScraperError):
+    """Data validation failed."""
+
+
+class DatabaseError(ScraperError):
+    """Database operation error."""
+
+
+class ConfigError(ScraperError):
+    """Configuration error (missing env, bad value)."""
+
+
+class CircuitBreakerOpenError(ScraperError):
+    """Circuit breaker is open — service unavailable."""
+
+
+class RateLimitError(TransientError):
+    """Rate limited by upstream."""
+
+
+class BrowserNotAvailableError(TransientError):
+    """Playwright browser not available."""
+
+
+BrowserNotAvailable = BrowserNotAvailableError

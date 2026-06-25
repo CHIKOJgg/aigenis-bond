@@ -1,55 +1,62 @@
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import event
+from sqlalchemy.exc import OperationalError, TimeoutError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
-SLOW_QUERY_THRESHOLD_S = float(os.getenv("SLOW_QUERY_THRESHOLD_S", "0.1"))
+from scraper.config import get_settings
+from scraper.logging import get_logger
 
-
-def _log_slow_query(conn, cursor, statement, parameters, context, executemany):
-    """Log queries that exceed the threshold."""
-    total = getattr(context, "get_total_execution_time", lambda: 0)()
-    if total and total >= SLOW_QUERY_THRESHOLD_S:
-        from loguru import logger
-
-        logger.warning(
-            "slow_query",
-            duration_s=round(total, 3),
-            statement=statement[:200],
-        )
+logger = get_logger("scraper.db")
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
 
+def _log_slow_query(_conn, _cursor, statement, _parameters, context, _executemany):
+    threshold = get_settings().database.slow_query_threshold_s
+    total = getattr(context, "get_total_execution_time", lambda: 0)()
+    if total and total >= threshold:
+        logger.warning("slow_query", duration_s=round(total, 3), statement=statement[:200])
+
+
 def _build_dsn() -> str:
-    dsn = os.getenv("DATABASE_URL")
-    if not dsn:
-        raise RuntimeError("DATABASE_URL is not set")
-    return dsn
+    return get_settings().database.url
 
 
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
+        db_settings = get_settings().database
         dsn = _build_dsn()
         is_sqlite = dsn.startswith("sqlite")
         is_memory = ":memory:" in dsn or "mode=memory" in dsn
-        kwargs: dict[str, Any] = {"future": True, "pool_pre_ping": True}
+        kwargs: dict[str, Any] = {
+            "future": True,
+            "pool_pre_ping": True,
+            "echo": db_settings.echo,
+        }
         if not is_sqlite:
-            kwargs["pool_size"] = int(os.getenv("DB_POOL_SIZE", "10"))
-            kwargs["max_overflow"] = int(os.getenv("DB_POOL_OVERFLOW", "20"))
-            kwargs["pool_timeout"] = float(os.getenv("DB_POOL_TIMEOUT", "30.0"))
+            kwargs["pool_size"] = db_settings.pool_size
+            kwargs["max_overflow"] = db_settings.max_overflow
+            kwargs["pool_timeout"] = db_settings.pool_timeout
+            kwargs["pool_recycle"] = db_settings.pool_recycle
         if is_sqlite and is_memory:
             from sqlalchemy.pool import StaticPool
 
@@ -57,6 +64,12 @@ def get_engine() -> AsyncEngine:
             kwargs["connect_args"] = {"check_same_thread": False}
         _engine = create_async_engine(dsn, **kwargs)
         event.listen(_engine.sync_engine, "after_cursor_execute", _log_slow_query)
+        logger.info(
+            "engine_created",
+            dsn_type="sqlite" if is_sqlite else "postgresql",
+            pool_size=kwargs.get("pool_size"),
+            max_overflow=kwargs.get("max_overflow"),
+        )
     return _engine
 
 
@@ -83,9 +96,42 @@ async def session_scope(**kwargs: Any) -> AsyncIterator[AsyncSession]:
             raise
 
 
+@asynccontextmanager
+async def session_scope_with_retry(**kwargs: Any) -> AsyncIterator[AsyncSession]:
+    """Session scope with automatic retry on deadlock / serialization errors."""
+    db_settings = get_settings().database
+    async for attempt in AsyncRetrying(
+        stop=stop_after_attempt(db_settings.max_retries),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((OperationalError, TimeoutError)),
+        before_sleep=before_sleep_log(logger, 30),
+        reraise=True,
+    ):
+        with attempt:
+            async with session_scope(**kwargs) as session:
+                yield session
+
+
+async def check_db_health() -> dict[str, Any]:
+    """Check database connectivity and return status."""
+    from sqlalchemy import text as sa_text
+
+    result: dict[str, Any] = {"status": "ok", "error": None}
+    try:
+        async with session_scope() as session:
+            await session.execute(sa_text("SELECT 1"))
+            result["status"] = "ok"
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = str(e)
+        logger.error("db_health_check_failed", error=str(e))
+    return result
+
+
 async def dispose() -> None:
     global _engine, _session_factory
     if _engine is not None:
         await _engine.dispose()
+        logger.info("engine_disposed")
     _engine = None
     _session_factory = None

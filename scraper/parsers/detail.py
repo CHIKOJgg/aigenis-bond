@@ -154,14 +154,18 @@ def _parse_dom(html: str, internal_id: str) -> dict[str, Any]:
         code_num = re.sub(r"[^0-9]", "", block_code)
         reg_num = re.sub(r"[^0-9]", "", block_reg)
         matches = False
-        if id_num and (id_num in code_num or id_num in reg_num or code_num in id_num or reg_num in id_num):
+        if id_num and (
+            id_num in code_num or id_num in reg_num or code_num in id_num or reg_num in id_num
+        ):
             matches = True
         if "aigenis-bounds" in str(soup).lower() and not matches:
             continue
 
         # data-* атрибуты
         payload.setdefault("registration_number", block.get("data-reg"))
-        payload.setdefault("in_stock", (block.get("data-stock") == "true") if block.get("data-stock") else None)
+        payload.setdefault(
+            "in_stock", (block.get("data-stock") == "true") if block.get("data-stock") else None
+        )
         payload.setdefault("end_date", block.get("data-eterm"))
         payload.setdefault("maturity_term_text", block.get("data-vterm"))
 
@@ -194,11 +198,25 @@ def _parse_dom(html: str, internal_id: str) -> dict[str, Any]:
                     elif "номинал" in current_key:
                         m = re.search(r"([\d\s,]+)", value)
                         if m:
-                            payload.setdefault("nominal", m.group(1).strip().replace(" ", "").replace("\xa0", "").replace(",", "."))
+                            payload.setdefault(
+                                "nominal",
+                                m.group(1)
+                                .strip()
+                                .replace(" ", "")
+                                .replace("\xa0", "")
+                                .replace(",", "."),
+                            )
                     elif "объем" in current_key or "эмисс" in current_key:
                         m = re.search(r"([\d\s,]+)", value)
                         if m:
-                            payload.setdefault("issue_volume", m.group(1).strip().replace(" ", "").replace("\xa0", "").replace(",", "."))
+                            payload.setdefault(
+                                "issue_volume",
+                                m.group(1)
+                                .strip()
+                                .replace(" ", "")
+                                .replace("\xa0", "")
+                                .replace(",", "."),
+                            )
                     elif "способ" in current_key or "выплат" in current_key:
                         payload.setdefault("income_method", value)
 

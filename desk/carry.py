@@ -22,11 +22,7 @@ def carry_for_bond(
     asof: date | None = None,
 ) -> CarryTrade | None:
     """Оценить carry-P&L для одной облигации."""
-    if (
-        bond.yield_to_maturity is None
-        or bond.maturity_date is None
-        or bond.coupon_rate is None
-    ):
+    if bond.yield_to_maturity is None or bond.maturity_date is None or bond.coupon_rate is None:
         return None
 
     asof = asof or date.today()

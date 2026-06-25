@@ -5,13 +5,15 @@ Revises: 0003_v3
 Create Date: 2026-06-18 21:00:00
 
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0004_v4"
 down_revision: str | None = "0003_v3"

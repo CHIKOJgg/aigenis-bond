@@ -1,5 +1,3 @@
-"""Бизнес-логика сбора данных (run-once + backfill)."""
-
 from __future__ import annotations
 
 import asyncio
@@ -15,9 +13,15 @@ from scraper.api.history import parse_history_payload
 from scraper.api.listing import parse_listing_payload
 from scraper.client import AigenisClient
 from scraper.db import session_scope
-from scraper.errors import HistoryUnavailable, NotFoundError, ParseError, TransientError
+from scraper.errors import (
+    HistoryUnavailable,
+    NotFoundError,
+    ParseError,
+    ScraperError,
+    TransientError,
+)
 from scraper.logging import get_logger
-from scraper.models import Bond
+from scraper.models import Bond, BondDailyAccrual
 from scraper.orm import BondORM
 from scraper.parsers.xlsx import XlsxParseResult, parse_all
 from scraper.validation import validate_detail, validate_listing
@@ -26,7 +30,6 @@ logger = get_logger("scraper.pipeline")
 
 
 async def collect_listing(client: AigenisClient, currencies: Iterable[str]) -> list[str]:
-    """Собрать internal_id по всем валютам. Возвращает уникальный список."""
     seen: set[str] = set()
     tasks = [client.fetch_listing(cur) for cur in currencies]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -35,7 +38,11 @@ async def collect_listing(client: AigenisClient, currencies: Iterable[str]) -> l
         if isinstance(res, BaseException):
             logger.error("listing_failed", currency=currency, error=str(res))
             continue
-        items = validate_listing(parse_listing_payload(res, currency))
+        try:
+            items = validate_listing(parse_listing_payload(res, currency))
+        except ScraperError as e:
+            logger.error("listing_parse_failed", currency=currency, error=str(e))
+            continue
         for it in items:
             iid = it["internal_id"]
             if iid not in seen:
@@ -51,7 +58,6 @@ async def collect_details(
     *,
     batch_size: int = 50,
 ) -> tuple[int, int]:
-    """Скачать и сохранить детали. Возвращает (успешно, ошибок)."""
     ok, err = 0, 0
     sem = asyncio.Semaphore(client.settings.max_concurrency)
 
@@ -74,8 +80,8 @@ async def collect_details(
             except (TransientError, ParseError) as e:
                 logger.warning("detail_failed", internal_id=iid, error=str(e))
                 return iid, "error"
-            except Exception as e:  # noqa: BLE001
-                logger.exception("detail_unexpected", internal_id=iid, error=str(e))
+            except Exception:
+                logger.exception("detail_unexpected", internal_id=iid)
                 return iid, "error"
 
     async def _runner() -> None:
@@ -84,7 +90,7 @@ async def collect_details(
             chunk = internal_ids[i : i + batch_size]
             results = await tqdm.gather(
                 *[_one(iid) for iid in chunk],
-                desc=f"details {i}-{i+len(chunk)}",
+                desc=f"details {i}-{i + len(chunk)}",
                 total=len(chunk),
             )
             for _, status in results:
@@ -97,9 +103,7 @@ async def collect_details(
     return ok, err
 
 
-def _delisted_placeholder(internal_id: str, currency: str = "unknown"):
-from scraper.models import Bond, BondDailyAccrual
-
+def _delisted_placeholder(internal_id: str, currency: str = "unknown") -> Bond:
     return Bond(
         internal_id=internal_id,
         name=internal_id,
@@ -116,7 +120,6 @@ async def backfill_history(
     days: int,
     end_date: date | None = None,
 ) -> tuple[int, int]:
-    """Догрузить историю за последние `days` дней."""
     today = end_date or date.today()
     since_default = today - timedelta(days=days)
     ok, err = 0, 0
@@ -133,7 +136,6 @@ async def backfill_history(
             try:
                 payload = await client.fetch_history(iid, since, today)
             except HistoryUnavailable:
-                logger.info("history_unavailable", internal_id=iid)
                 return
             except NotFoundError:
                 return
@@ -141,8 +143,8 @@ async def backfill_history(
                 logger.warning("history_failed", internal_id=iid, error=str(e))
                 err += 1
                 return
-            except Exception as e:  # noqa: BLE001
-                logger.exception("history_unexpected", internal_id=iid, error=str(e))
+            except Exception:
+                logger.exception("history_unexpected", internal_id=iid)
                 err += 1
                 return
             rows = parse_history_payload(payload, iid)
@@ -157,7 +159,6 @@ async def backfill_history(
 
 
 async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str, int]:
-    """Обогатить данные облигаций из XLSX-файлов."""
     if xlsx_data is None:
         try:
             xlsx_data = parse_all()
@@ -167,12 +168,11 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
 
     enriched = 0
     async with session_scope() as session:
-        # Get all bonds from DB
         from sqlalchemy import select as sa_select
+
         result = await session.execute(sa_select(BondORM))
         all_bonds = result.scalars().all()
 
-        # Enrich BYN bonds by issue_number
         for bond_orm in all_bonds:
             issue_num = bond_orm.issue_number
             if issue_num is None:
@@ -199,7 +199,6 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
             if enrichment.indexation_currency:
                 updates["indexation_currency"] = enrichment.indexation_currency
 
-            # Enrich coupon_schedule from coupon_periods
             if enrichment.coupon_periods and not bond_orm.coupon_schedule:
                 schedule: dict[str, list[str]] = {}
                 for p in enrichment.coupon_periods:
@@ -216,21 +215,18 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
 
         await session.flush()
 
-        # Write daily accruals
         accruals_written = 0
         if xlsx_data.daily_accruals:
-            # Map issue_number → real internal_id for all bonds
             issue_to_iid: dict[int, str] = {}
             for bond_orm in all_bonds:
                 if bond_orm.issue_number is not None:
                     issue_to_iid[bond_orm.issue_number] = bond_orm.internal_id
 
-            # Remap and write accruals
             remapped: list[BondDailyAccrual] = []
             for acc in xlsx_data.daily_accruals:
                 try:
                     issue_num = int(acc.internal_id)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
                 real_iid = issue_to_iid.get(issue_num)
                 if real_iid is None:
@@ -245,7 +241,9 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
                 )
 
             if remapped:
-                accruals_written = await repositories.history.upsert_accruals_batch(session, remapped)
+                accruals_written = await repositories.history.upsert_accruals_batch(
+                    session, remapped
+                )
 
         await session.commit()
 
