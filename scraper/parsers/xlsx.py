@@ -93,7 +93,7 @@ def _to_int(v: Any) -> int | None:
     if isinstance(v, str):
         try:
             return int(float(v.strip()))
-        except ValueError, OverflowError:
+        except (ValueError, OverflowError):
             import re
 
             m = re.search(r"\d+", v)

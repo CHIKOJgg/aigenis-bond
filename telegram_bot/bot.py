@@ -268,7 +268,7 @@ async def _currency_view(message: Message, currency: str, title: str, page: int 
     for iid, _sc, ytm, _name in rows[:15]:
         try:
             val = float(ytm.rstrip("%"))
-        except ValueError, AttributeError:
+        except (ValueError, AttributeError):
             val = 0.0
         safe_ytm.append((iid, val))
     png = plot_yield_distribution(safe_ytm)

@@ -226,7 +226,7 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
             for acc in xlsx_data.daily_accruals:
                 try:
                     issue_num = int(acc.internal_id)
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     continue
                 real_iid = issue_to_iid.get(issue_num)
                 if real_iid is None:

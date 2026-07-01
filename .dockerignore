@@ -1,10 +1,55 @@
+# Git
 .git
+.gitignore
+.gitattributes
+.github
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Python
 __pycache__
 *.pyc
+*.pyo
 .pytest_cache
 .ruff_cache
-logs
-ml/artifacts
-.env
-*.md
+.mypy_cache
+*.egg-info
+dist
+build
 .venv
+venv
+
+# Logs
+logs
+
+# ML artifacts
+ml/artifacts
+
+# Secrets
+.env
+*.env.local
+
+# Documentation
+*.md
+DEPLOYMENT_RU.md
+GUIDE_RU.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+Makefile
+docker/
+
+# Other
+verify_aigenis.py
+verify_report.json
+.python-version

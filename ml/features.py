@@ -20,7 +20,7 @@ def _safe_float(v) -> float:
         return float(v)
     try:
         return float(v)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0.0
 
 

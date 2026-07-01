@@ -1,66 +1,88 @@
+# =============================================================================
+# Aigenis Parser v2 — Docker Compose
+# =============================================================================
+# Быстрый старт:
+#   docker compose up -d                        # postgres + redis + parser
+#   docker compose --profile bot up -d          # + telegram-bot
+#   docker compose --profile api up -d          # + REST API
+#   docker compose --profile all up -d          # всё сразу
+#
+# Однократные команды:
+#   docker compose run --rm parser once         # сбор данных
+#   docker compose run --rm parser health       # health-check
+#   docker compose run --rm parser desk-curve   # кривая доходности
+# =============================================================================
+
 services:
+  # --------------------------------------------------------------------------
+  # PostgreSQL 16
+  # --------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
     container_name: aigenis-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: aigenis
-      POSTGRES_PASSWORD: aigenis
-      POSTGRES_DB: aigenis
+      POSTGRES_USER: ${POSTGRES_USER:-aigenis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aigenis}
+      POSTGRES_DB: ${POSTGRES_DB:-aigenis}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aigenis -d aigenis"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aigenis} -d ${POSTGRES_DB:-aigenis}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
+    networks:
+      - aigenis-net
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: ${POSTGRES_MEM_LIMIT:-512M}
         reservations:
-          memory: 256M
+          memory: ${POSTGRES_MEM_RESERVE:-256M}
 
+  # --------------------------------------------------------------------------
+  # Redis 7
+  # --------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: aigenis-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory ${REDIS_MAX_MEMORY:-256mb}
+      --maxmemory-policy ${REDIS_MAXMEM_POLICY:-allkeys-lru}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - aigenis-net
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: ${REDIS_MEM_LIMIT:-256M}
         reservations:
-          memory: 128M
+          memory: ${REDIS_MEM_RESERVE:-128M}
 
-  alembic:
-    build: .
-    container_name: aigenis-alembic
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis
-    entrypoint: ["alembic", "upgrade", "head"]
-    profiles: ["init"]
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
+  # --------------------------------------------------------------------------
+  # Парсер (основной сервис — сбор данных, планировщик, аналитика)
+  # --------------------------------------------------------------------------
   parser:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aigenis-parser:latest
     container_name: aigenis-parser
     restart: unless-stopped
     depends_on:
@@ -68,61 +90,156 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      alembic:
-        condition: service_completed_successfully
     environment:
+      # --- Scraper ---
       AIGENIS_BASE_URL: ${AIGENIS_BASE_URL:-https://aigenis.by}
       AIGENIS_DATA_API_URL: ${AIGENIS_DATA_API_URL:-}
       AIGENIS_HEADLESS: ${AIGENIS_HEADLESS:-true}
       AIGENIS_USE_STEALTH: ${AIGENIS_USE_STEALTH:-true}
       AIGENIS_DELAY_BETWEEN_REQUESTS: ${AIGENIS_DELAY_BETWEEN_REQUESTS:-2.0}
       AIGENIS_MAX_CONCURRENCY: ${AIGENIS_MAX_CONCURRENCY:-2}
+      AIGENIS_MAX_RETRIES: ${AIGENIS_MAX_RETRIES:-3}
+      AIGENIS_TIMEOUT: ${AIGENIS_TIMEOUT:-30}
       AIGENIS_HISTORY_BACKFILL_DAYS: ${AIGENIS_HISTORY_BACKFILL_DAYS:-1825}
+      AIGENIS_CURRENCIES: ${AIGENIS_CURRENCIES:-USD,BYN,EUR,XAU,XAG,XPT}
+      # --- Logging ---
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
-      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis
-      REDIS_URL: redis://redis:6379/0
+      AIGENIS_LOG_JSON: ${AIGENIS_LOG_JSON:-true}
+      AIGENIS_LOG_FILE: /app/logs/scraper.log
+      AIGENIS_LOG_ROTATION: ${AIGENIS_LOG_ROTATION:-100 MB}
+      AIGENIS_LOG_RETENTION: ${AIGENIS_LOG_RETENTION:-14 days}
+      # --- Sentry ---
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      AIGENIS_ENVIRONMENT: ${AIGENIS_ENVIRONMENT:-production}
+      # --- Database ---
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
+      DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:-postgresql://aigenis:aigenis@postgres:5432/aigenis}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_POOL_OVERFLOW: ${DB_POOL_OVERFLOW:-20}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30.0}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-3600}
+      DB_SLOW_QUERY_THRESHOLD_S: ${DB_SLOW_QUERY_THRESHOLD_S:-0.1}
+      # --- Redis ---
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-20}
+      # --- Telegram ---
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_ALERT_CHAT_ID: ${TELEGRAM_ALERT_CHAT_ID:-}
+      TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
     volumes:
-      - ./logs:/app/logs
-    command: ["python", "-m", "scraper", "run"]
+      - logs:/app/logs
+    networks:
+      - aigenis-net
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: ${PARSER_MEM_LIMIT:-2G}
         reservations:
-          memory: 1G
+          memory: ${PARSER_MEM_RESERVE:-1G}
 
+  # --------------------------------------------------------------------------
+  # Telegram-бот (профиль: bot)
+  # --------------------------------------------------------------------------
   bot:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aigenis-parser:latest
     container_name: aigenis-bot
     restart: unless-stopped
+    profiles:
+      - bot
+      - all
     depends_on:
       postgres:
         condition: service_healthy
-      alembic:
-        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
+      AIGENIS_HEADLESS: "true"
+      AIGENIS_USE_STEALTH: "false"
+      AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      WEBHOOK_PATH: ${WEBHOOK_PATH:-/webhook}
+      WEBHOOK_PORT: ${WEBHOOK_PORT:-8080}
+    volumes:
+      - logs:/app/logs
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "telegram_bot.bot"]
+      test: ["CMD-SHELL", "pgrep -f 'telegram_bot.bot' || exit 1"]
       interval: 60s
       timeout: 10s
       retries: 3
-    environment:
-      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis
-      AIGENIS_HEADLESS: "true"
-      AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-    volumes:
-      - ./logs:/app/logs
+      start_period: 15s
+    networks:
+      - aigenis-net
     command: ["python", "-m", "telegram_bot.bot"]
-    profiles: ["bot"]
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: ${BOT_MEM_LIMIT:-512M}
         reservations:
-          memory: 256M
+          memory: ${BOT_MEM_RESERVE:-256M}
 
+  # --------------------------------------------------------------------------
+  # REST API (профиль: api)
+  # --------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aigenis-parser:latest
+    container_name: aigenis-api
+    restart: unless-stopped
+    profiles:
+      - api
+      - all
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
+      AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+    volumes:
+      - logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - aigenis-net
+    command: >
+      python -m uvicorn api.main:app
+      --host 0.0.0.0
+      --port 8000
+      --workers ${API_WORKERS:-2}
+      --log-level info
+    deploy:
+      resources:
+        limits:
+          memory: ${API_MEM_LIMIT:-512M}
+        reservations:
+          memory: ${API_MEM_RESERVE:-256M}
+
+# --------------------------------------------------------------------------
+# Сети
+# --------------------------------------------------------------------------
+networks:
+  aigenis-net:
+    name: aigenis-net
+    driver: bridge
+
+# --------------------------------------------------------------------------
+# Тома
+# --------------------------------------------------------------------------
 volumes:
   pgdata:
+    name: aigenis-pgdata
   redisdata:
+    name: aigenis-redisdata
+  logs:
+    name: aigenis-logs
