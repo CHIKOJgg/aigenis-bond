@@ -75,6 +75,7 @@ include = [
     "notifications*", "portfolio*", "recommendations*",
     "scoring*", "telegram_bot*", "visualization*", "api*",
     "api/auth*", "api/billing*", "api/admin*",
+    "api/admin/templates/*",
 ]
 exclude = ["tests*", "alembic*"]
 
