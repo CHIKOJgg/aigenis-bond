@@ -1,6 +1,5 @@
 """Тесты forecast: прогноз капитала."""
 
-from __future__ import annotations
 
 from decimal import Decimal
 

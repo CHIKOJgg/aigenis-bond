@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -59,7 +59,7 @@ def _make_result(scalars_return=None):
 
 @pytest.fixture(autouse=True)
 def _patch_db():
-    with patch("telegram_bot.bot.session_scope") as mock_scope:
+    with patch("telegram_bot.handlers.session_scope") as mock_scope:
         mock_session = AsyncMock()
         mock_session.execute.return_value = _make_result([])
         mock_scope.return_value.__aenter__.return_value = mock_session
@@ -69,15 +69,15 @@ def _patch_db():
 @pytest.fixture(autouse=True)
 def _patch_repositories():
     defaults = [
-        patch("telegram_bot.bot.top_scores", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot.repositories.bonds.get_by_currency", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.top_scores", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.repositories.bonds.get_by_currency", AsyncMock(return_value=[])),
         patch(
-            "telegram_bot.bot.repositories.bonds.get_all_internal_ids",
+            "telegram_bot.handlers.repositories.bonds.get_all_internal_ids",
             AsyncMock(return_value=set()),
         ),
-        patch("telegram_bot.bot.repositories.bonds.exists", AsyncMock(return_value=True)),
+        patch("telegram_bot.handlers.repositories.bonds.exists", AsyncMock(return_value=True)),
         patch(
-            "telegram_bot.bot.get_preferences",
+            "telegram_bot.preferences_repository.get_preferences",
             AsyncMock(
                 return_value=type(
                     "P",
@@ -97,22 +97,22 @@ def _patch_repositories():
                 )()
             ),
         ),
-        patch("telegram_bot.bot.score_bond", return_value=type("S", (), {"score": 75.0})()),
-        patch("telegram_bot.bot.plot_yield_distribution", return_value=b"png"),
-        patch("telegram_bot.bot.get_score", AsyncMock(return_value=None)),
+        patch("telegram_bot.handlers.score_bond", return_value=type("S", (), {"score": 75.0})()),
+        patch("telegram_bot.handlers.plot_yield_distribution", return_value=b"png"),
+        patch("telegram_bot.handlers.get_score", AsyncMock(return_value=None)),
         patch(
-            "telegram_bot.bot.add_to_watchlist",
+            "telegram_bot.preferences_repository.add_to_watchlist",
             AsyncMock(return_value=type("P", (), {"watchlist": ["OP-51"]})()),
         ),
-        patch("telegram_bot.bot.remove_from_watchlist", AsyncMock()),
-        patch("telegram_bot.bot.list_recent", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot.latest_model_version", AsyncMock(return_value=None)),
-        patch("telegram_bot.bot.predictions_for_bond", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot.list_positions", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot.total_value", return_value=Decimal("0")),
-        patch("telegram_bot.bot.build_plan", return_value=None),
+        patch("telegram_bot.preferences_repository.remove_from_watchlist", AsyncMock()),
+        patch("telegram_bot.handlers.list_recent", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.latest_model_version", AsyncMock(return_value=None)),
+        patch("telegram_bot.handlers.predictions_for_bond", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.list_positions", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.total_value", return_value=Decimal("0")),
+        patch("telegram_bot.handlers.build_plan", return_value=None),
         patch(
-            "telegram_bot.bot.allocate",
+            "telegram_bot.handlers.allocate",
             return_value=type(
                 "A",
                 (),
@@ -127,27 +127,27 @@ def _patch_repositories():
                 },
             )(),
         ),
-        patch("telegram_bot.bot.forecast_horizons", return_value=[]),
-        patch("telegram_bot.bot.plot_portfolio_pie", return_value=b"png"),
-        patch("telegram_bot.bot.plot_capital_forecast", return_value=b"png"),
+        patch("telegram_bot.handlers.forecast_horizons", return_value=[]),
+        patch("telegram_bot.handlers.plot_portfolio_pie", return_value=b"png"),
+        patch("telegram_bot.handlers.plot_capital_forecast", return_value=b"png"),
         patch(
-            "telegram_bot.bot.latest_fx",
+            "notifications.fx_repository.latest_fx",
             AsyncMock(return_value=type("F", (), {"rate": Decimal("3.30")})()),
         ),
-        patch("telegram_bot.bot.run_all_scenarios", return_value=[]),
-        patch("telegram_bot.bot.recommend_bonds", return_value=[]),
-        patch("telegram_bot.bot.rebalance", return_value=({}, {})),
+        patch("telegram_bot.handlers.run_all_scenarios", return_value=[]),
+        patch("telegram_bot.handlers.recommend_bonds", return_value=[]),
+        patch("telegram_bot.handlers.rebalance", return_value=({}, {})),
         patch(
-            "telegram_bot.bot.desk_curve.curve_from_bonds",
+            "telegram_bot.handlers.desk_curve.curve_from_bonds",
             return_value=type("C", (), {"points": [], "slope": lambda: 0.0})(),
         ),
         patch(
-            "telegram_bot.bot.desk_curve.fit_nelson_siegel",
+            "telegram_bot.handlers.desk_curve.fit_nelson_siegel",
             return_value=type("P", (), {"beta0": 0, "beta1": 0, "beta2": 0})(),
         ),
-        patch("telegram_bot.bot.desk_rv.relative_value_signals", return_value=[]),
+        patch("telegram_bot.handlers.desk_rv.relative_value_signals", return_value=[]),
         patch(
-            "telegram_bot.bot.desk_duration.duration_report",
+            "telegram_bot.handlers.desk_duration.duration_report",
             return_value=type(
                 "R",
                 (),
@@ -161,7 +161,7 @@ def _patch_repositories():
             )(),
         ),
         patch(
-            "telegram_bot.bot.desk_duration.portfolio_duration",
+            "telegram_bot.handlers.desk_duration.portfolio_duration",
             return_value=type(
                 "R",
                 (),
@@ -174,10 +174,10 @@ def _patch_repositories():
                 },
             )(),
         ),
-        patch("telegram_bot.bot.desk_carry.rank_carry", return_value=[]),
-        patch("telegram_bot.bot.desk_repo.haircut_by_issuer", return_value=0.05),
+        patch("telegram_bot.handlers.desk_carry.rank_carry", return_value=[]),
+        patch("telegram_bot.handlers.desk_repo.haircut_by_issuer", return_value=0.05),
         patch(
-            "telegram_bot.bot.desk_repo.repo_deal",
+            "telegram_bot.handlers.desk_repo.repo_deal",
             return_value=type(
                 "D",
                 (),
@@ -191,20 +191,20 @@ def _patch_repositories():
                 },
             )(),
         ),
-        patch("telegram_bot.bot.desk_stress.PRESET_SCENARIOS", {}),
+        patch("telegram_bot.handlers.desk_stress.PRESET_SCENARIOS", {}),
         patch(
-            "telegram_bot.bot.desk_stress.run_stress",
+            "telegram_bot.handlers.desk_stress.run_stress",
             return_value=type("R", (), {"pnl_pct": -0.5, "pnl": -50})(),
         ),
-        patch("telegram_bot.bot.latest_rv_signals", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot.latest_stress_runs", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot._fetch_bonds_by_currency", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot._fetch_all_bonds", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot._fetch_bonds_with_history", AsyncMock(return_value=([], {}))),
-        patch("telegram_bot.bot._bonds_for_bot", AsyncMock(return_value=[])),
-        patch("telegram_bot.bot.repositories.bonds.count_bonds", AsyncMock(return_value=42)),
+        patch("telegram_bot.handlers.latest_rv_signals", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.latest_stress_runs", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.fetch_bonds_by_currency", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.fetch_all_bonds", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.fetch_bonds_with_history", AsyncMock(return_value=([], {}))),
+        patch("telegram_bot.handlers.bonds_for_bot", AsyncMock(return_value=[])),
+        patch("telegram_bot.handlers.repositories.bonds.count_bonds", AsyncMock(return_value=42)),
         patch(
-            "telegram_bot.bot.repositories.bonds.latest_fetched_at", AsyncMock(return_value=None)
+            "telegram_bot.handlers.repositories.bonds.latest_fetched_at", AsyncMock(return_value=None)
         ),
     ]
     for p in defaults:
@@ -238,7 +238,7 @@ class TestBotTop:
 
     async def test_top_with_data(self, msg) -> None:
         fake = type("S", (), {"internal_id": "OP-51", "score": Decimal("85.0")})
-        with patch("telegram_bot.bot.top_scores", AsyncMock(return_value=[fake])):
+        with patch("telegram_bot.handlers.top_scores", AsyncMock(return_value=[fake])):
             await bot_mod.cmd_top(msg)
         assert "OP-51" in msg.answers[0]["text"]
 
@@ -247,7 +247,7 @@ class TestBotTop:
             type("S", (), {"internal_id": f"OP-{i}", "score": Decimal(str(100 - i * 5))})
             for i in range(5)
         ]
-        with patch("telegram_bot.bot.top_scores", AsyncMock(return_value=scores)):
+        with patch("telegram_bot.handlers.top_scores", AsyncMock(return_value=scores)):
             await bot_mod.cmd_top(msg)
         for i in range(5):
             assert f"OP-{i}" in msg.answers[0]["text"]
@@ -316,13 +316,13 @@ class TestBotWatchlist:
 
     async def test_watch_not_found(self, msg) -> None:
         msg.text = "/watch OP-99"
-        with patch("telegram_bot.bot.repositories.bonds.exists", AsyncMock(return_value=False)):
+        with patch("telegram_bot.handlers.repositories.bonds.exists", AsyncMock(return_value=False)):
             await bot_mod.cmd_watch(msg)
         assert "не найдена" in msg.answers[0]["text"]
 
     async def test_unwatch_not_found(self, msg) -> None:
         msg.text = "/unwatch OP-99"
-        with patch("telegram_bot.bot.repositories.bonds.exists", AsyncMock(return_value=False)):
+        with patch("telegram_bot.handlers.repositories.bonds.exists", AsyncMock(return_value=False)):
             await bot_mod.cmd_unwatch(msg)
         assert "не найдена" in msg.answers[0]["text"]
 
@@ -359,9 +359,9 @@ class TestBotWatchlist:
             },
         )
         with (
-            patch("telegram_bot.bot.get_preferences", AsyncMock(return_value=prefs)),
+            patch("telegram_bot.preferences_repository.get_preferences", AsyncMock(return_value=prefs)),
             patch(
-                "telegram_bot.bot.get_score",
+                "telegram_bot.handlers.get_score",
                 AsyncMock(return_value=type("S", (), {"score": Decimal("85.0")})()),
             ),
         ):
@@ -377,7 +377,7 @@ class TestBotAlerts:
 
     async def test_alerts_with_data(self, msg) -> None:
         alert = type("A", (), {"title": "New Bond", "message": "OP-51 появилась"})
-        with patch("telegram_bot.bot.list_recent", AsyncMock(return_value=[alert])):
+        with patch("telegram_bot.handlers.list_recent", AsyncMock(return_value=[alert])):
             await bot_mod.cmd_alerts(msg)
         assert "New Bond" in msg.answers[0]["text"]
 
@@ -449,7 +449,7 @@ class TestBotPredict:
                 "explanation": ["YTM выше среднего"],
             },
         )
-        with patch("telegram_bot.bot.predictions_for_bond", AsyncMock(return_value=[pred])):
+        with patch("telegram_bot.handlers.predictions_for_bond", AsyncMock(return_value=[pred])):
             await bot_mod.cmd_predict(msg)
         assert "Прогноз OP-51" in msg.answers[0]["text"]
         assert "buy" in msg.answers[0]["text"]
@@ -468,31 +468,31 @@ class TestBotSettings:
 
     async def test_set_capital(self, msg) -> None:
         msg.text = "/set capital 50000"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "capital" in msg.answers[0]["text"]
 
     async def test_set_contribution(self, msg) -> None:
         msg.text = "/set contribution 2000"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "contribution" in msg.answers[0]["text"]
 
     async def test_set_strategy(self, msg) -> None:
         msg.text = "/set strategy Aggressive"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "strategy" in msg.answers[0]["text"]
 
     async def test_set_share(self, msg) -> None:
         msg.text = "/set share_usd 0.5"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "share_usd" in msg.answers[0]["text"]
 
     async def test_set_share_warns_on_sum_mismatch(self, msg) -> None:
         msg.text = "/set share_usd 0.8"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "100%" in msg.answers[0]["text"]
 
@@ -503,12 +503,12 @@ class TestBotSettings:
 
     async def test_set_invalid_field(self, msg) -> None:
         msg.text = "/set foo bar"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "Неизвестное поле" in msg.answers[0]["text"]
 
     async def test_set_invalid_value(self, msg) -> None:
         msg.text = "/set capital abc"
-        with patch("telegram_bot.bot.upsert_preferences", AsyncMock()):
+        with patch("telegram_bot.preferences_repository.upsert_preferences", AsyncMock()):
             await bot_mod.cmd_set(msg)
         assert "Ошибка" in msg.answers[0]["text"]

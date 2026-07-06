@@ -21,6 +21,12 @@ def _set_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 async def _reset_db_engine() -> None:
     from scraper import db as scraper_db
+    from scraper.orm import Base
+
+    # Create all tables for in-memory SQLite
+    engine = scraper_db.get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
     yield
 
