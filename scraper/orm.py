@@ -196,6 +196,28 @@ class UserORM(Base):
     )
 
 
+class SubscriptionORM(Base):
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="incomplete")
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_subscriptions_user_id", "user_id"),
+        Index("ix_subscriptions_stripe_customer", "stripe_customer_id"),
+        Index("ix_subscriptions_plan", "plan"),
+    )
+
+
 class UserPreferencesORM(Base):
     __tablename__ = "user_preferences"
 
