@@ -13,3 +13,5 @@ htmlcov/
 coverage.xml
 dist/
 build/
+ml/artifacts/
+*.pkl
