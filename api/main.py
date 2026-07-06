@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
 
+from api.auth.router import router as auth_router
 from scraper.config import get_settings
 from scraper.db import check_db_health, dispose, session_scope
 from scraper.errors import ScraperError
@@ -32,6 +33,9 @@ app = FastAPI(
 
 settings = get_settings()
 _cors_origins = os.environ.get("CORS_ORIGINS", "").split(",") if os.environ.get("CORS_ORIGINS") else ["*"]
+
+# Include auth router
+app.include_router(auth_router)
 
 # --- Rate limiting ---
 
