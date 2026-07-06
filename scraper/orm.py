@@ -173,6 +173,29 @@ class AlertORM(Base):
     )
 
 
+class UserORM(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    google_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, server_default="user")
+    subscription_tier: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_users_email", "email"),
+        Index("ix_users_google_id", "google_id"),
+        Index("ix_users_role", "role"),
+        Index("ix_users_subscription_tier", "subscription_tier"),
+    )
+
+
 class UserPreferencesORM(Base):
     __tablename__ = "user_preferences"
 
