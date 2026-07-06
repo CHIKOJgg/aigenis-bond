@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aigenis-parser"
-version = "2.0.0"
+version = "3.0.0"
 description = "Bond Fixed Income Assistant — Production-grade scraper & analytics platform"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -38,6 +38,12 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "aiohttp>=3.10.0",
+    "stripe>=11.0.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "httpx>=0.27.0",
+    "jinja2>=3.1.0",
+    "aiofiles>=24.1.0",
 ]
 
 [project.optional-dependencies]
@@ -68,6 +74,7 @@ include = [
     "scraper*", "desk*", "forecast*", "ml*", "monitoring*",
     "notifications*", "portfolio*", "recommendations*",
     "scoring*", "telegram_bot*", "visualization*", "api*",
+    "api/auth*", "api/billing*", "api/admin*",
 ]
 exclude = ["tests*", "alembic*"]
 
@@ -125,7 +132,7 @@ strict = true
 
 [tool.coverage.run]
 source = ["scraper", "api", "desk", "forecast", "ml", "monitoring", "notifications", "portfolio", "recommendations", "scoring", "telegram_bot", "visualization"]
-omit = ["*/tests/*", "*/alembic/*", "*/__pycache__/*"]
+omit = ["*/tests/*", "*/alembic/*", "*/__pycache__/*", "*/templates/*"]
 
 [tool.coverage.report]
 show_missing = true

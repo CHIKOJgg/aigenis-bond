@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import os
 import time
+from collections import defaultdict
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
 
+from scraper.config import get_settings
 from scraper.db import check_db_health, dispose, session_scope
 from scraper.errors import ScraperError
 from scraper.logging import get_logger
@@ -20,15 +24,40 @@ logger = get_logger("api")
 app = FastAPI(
     title="Aigenis Bonds API",
     description="Production-grade REST API for bond fixed income data",
-    version="2.0.0",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
 
+settings = get_settings()
+_cors_origins = os.environ.get("CORS_ORIGINS", "").split(",") if os.environ.get("CORS_ORIGINS") else ["*"]
+
+# --- Rate limiting ---
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+_RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "60"))
+_RATE_WINDOW = int(os.environ.get("API_RATE_WINDOW", "60"))
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    if request.url.path in ("/health", "/ready", "/openapi.json", "/docs", "/redoc"):
+        return await call_next(request)
+    client = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+    timestamps = _rate_limit_store[client]
+    cutoff = now - _RATE_WINDOW
+    timestamps[:] = [t for t in timestamps if t > cutoff]
+    if len(timestamps) >= _RATE_LIMIT:
+        return JSONResponse(status_code=429, content={"error": "Too many requests", "retry_after": _RATE_WINDOW})
+    timestamps.append(now)
+    return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,7 +91,7 @@ class HealthResponse(BaseModel):
     status: str
     db: str
     uptime_seconds: float | None = None
-    version: str = "2.0.0"
+    version: str = "3.0.0"
 
 
 class ErrorResponse(BaseModel):
@@ -217,6 +246,14 @@ def _bond_to_response(b: BondORM) -> BondResponse:
         issuer=b.issuer,
         fetched_at=b.fetched_at.isoformat() if b.fetched_at else None,
     )
+
+
+# --- Static files (frontend) ---
+
+_frontend_dir = os.environ.get("FRONTEND_DIR", "")
+if _frontend_dir and os.path.isdir(_frontend_dir):
+    app.mount("/", StaticFiles(directory=_frontend_dir, html=True), name="frontend")
+    logger.info("frontend_mounted", directory=_frontend_dir)
 
 
 @app.on_event("shutdown")
