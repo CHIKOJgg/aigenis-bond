@@ -48,23 +48,23 @@ import sys
 sys.path.insert(0, '/app')
 from scraper.db import session_scope
 from scraper.orm import UserORM
-from passlib.context import CryptContext
+import bcrypt
 
 async def create_admin():
     async with session_scope() as session:
-        # Check if admin exists
         from sqlalchemy import select
         result = await session.execute(select(UserORM).where(UserORM.email == os.getenv('ADMIN_EMAIL')))
         existing = result.scalar_one_or_none()
         if existing:
             print('Admin user already exists:', existing.email)
             return
-        
-        pwd_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
+
+        password = os.getenv('ADMIN_PASSWORD', '').encode('utf-8')
+        hashed = bcrypt.hashpw(password, bcrypt.gensalt()).decode('utf-8')
         admin = UserORM(
             email=os.getenv('ADMIN_EMAIL'),
             name='System Administrator',
-            password_hash=pwd_context.hash(os.getenv('ADMIN_PASSWORD')),
+            password_hash=hashed,
             role='admin',
             subscription_tier='enterprise',
             is_active=True,
@@ -78,6 +78,6 @@ asyncio.run(create_admin())
 " || echo "[entrypoint] WARNING: Admin user creation failed (may already exist)"
 fi
 
-# 4. Execute specified command
-echo "[entrypoint] Executing: \$@"
-exec "\$@"
+# 5. Execute specified command
+echo "[entrypoint] Executing: $@"
+exec "$@"

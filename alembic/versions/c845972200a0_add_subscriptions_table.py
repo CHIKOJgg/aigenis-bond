@@ -30,9 +30,9 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=32), server_default='incomplete', nullable=False),
     sa.Column('current_period_start', sa.DateTime(timezone=True), nullable=True),
     sa.Column('current_period_end', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('cancel_at_period_end', sa.Boolean(), server_default=sa.text('(false())'), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=False),
+    sa.Column('cancel_at_period_end', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('user_id')
     )

@@ -25,8 +25,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-aigenis}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aigenis}
       POSTGRES_DB: ${POSTGRES_DB:-aigenis}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # ports only needed for host access; internal networking uses 5432
+    # ports:
+    #   - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -57,8 +58,9 @@ services:
       --appendonly yes
       --maxmemory ${REDIS_MAX_MEMORY:-256mb}
       --maxmemory-policy ${REDIS_MAXMEM_POLICY:-allkeys-lru}
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # ports only needed for host access; internal networking uses 6379
+    # ports:
+    #   - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -215,8 +217,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    ports:
-      - "${API_PORT:-8000}:8000"
+    # ports:
+    #   - "${API_PORT:-8000}:8000"
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
@@ -251,12 +253,19 @@ services:
       start_period: 15s
     networks:
       - aigenis-net
-    command: >
-      python -m uvicorn api.main:app
-      --host 0.0.0.0
-      --port 8000
-      --workers ${API_WORKERS:-2}
-      --log-level info
+    command:
+      - python
+      - -m
+      - uvicorn
+      - api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "2"
+      - --log-level
+      - info
     deploy:
       resources:
         limits:
