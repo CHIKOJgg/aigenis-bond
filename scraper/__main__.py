@@ -103,7 +103,14 @@ async def _cmd_backfill(currencies_csv: str, days: int | None) -> int:
     settings = get_settings()
 
     async with session_scope() as session:
-        existing = await repositories.bonds.get_all_internal_ids(session)
+        if currencies_csv:
+            currencies = [c.strip().upper() for c in currencies_csv.split(",") if c.strip()]
+            existing: list[str] = []
+            for cur in currencies:
+                bonds = await repositories.bonds.get_by_currency(session, cur)
+                existing.extend(b.internal_id for b in bonds)
+        else:
+            existing = list(await repositories.bonds.get_all_internal_ids(session))
 
     async with AigenisClient(settings.aigenis) as client:
         ok, err = await backfill_history(

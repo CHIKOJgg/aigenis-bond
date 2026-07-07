@@ -23,6 +23,11 @@ _templates_dir = Path(__file__).parent / "templates"
 _templates = Jinja2Templates(directory=str(_templates_dir))
 
 
+async def _get_session():
+    async with session_scope() as session:
+        yield session
+
+
 async def _require_admin(request: Request, session: AsyncSession = Depends(_get_session)) -> UserORM:
     token = request.cookies.get("admin_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
     user_id = _verify_admin_token(token)
@@ -40,11 +45,6 @@ def _verify_admin_token(token: str) -> int | None:
     if not payload or payload.get("type") != "access":
         return None
     return int(payload["sub"])
-
-
-async def _get_session():
-    async with session_scope() as session:
-        yield session
 
 
 @router.get("/login")

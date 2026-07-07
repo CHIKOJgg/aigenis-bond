@@ -35,19 +35,19 @@ def run_scenario(
 
     usd_impact = usd_share * fx_change
     byn_impact = byn_share * (-fx_change)
-    portfolio_change = usd_impact + byn_impact
+    metals_impact = metals_share * fx_change * 0.3
+    eur_impact = eur_share * fx_change * 0.8
+    portfolio_change = usd_impact + byn_impact + metals_impact + eur_impact
 
-    worst: str | None = None
+    raw = {"USD": usd_impact, "BYN": byn_impact, "Metals": metals_impact, "EUR": eur_impact}
+    worst = min(raw, key=raw.get) if any(raw.values()) else None
     notes: list[str] = []
     if scenario == "Bull USD":
         notes.append("USD-активы выигрывают, BYN-активы теряют в USD-эквиваленте")
-        worst = "BYN"
     elif scenario == "Bull BYN":
         notes.append("BYN-активы выигрывают, USD-нагрузка снижается")
-        worst = "USD"
     elif scenario == "Stress":
         notes.append("Стресс-сценарий: резкое ослабление BYN, рост доходностей USD")
-        worst = "BYN"
     else:
         notes.append("Нейтральный сценарий: курс стабилен")
 

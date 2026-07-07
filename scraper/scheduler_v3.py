@@ -16,7 +16,7 @@ async def scheduled_ml_train() -> int:
         if rc == 0:
             await cmd_ml_predict()
         logger.info("scheduled_ml_train_done", rc=rc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("scheduled_ml_train_failed", error=str(e))
     return 0
 
@@ -27,6 +27,6 @@ async def scheduled_auto_rebalance() -> int:
     try:
         rc = await cmd_rebalance_now()
         logger.info("scheduled_auto_rebalance_done", rc=rc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("scheduled_auto_rebalance_failed", error=str(e))
     return 0

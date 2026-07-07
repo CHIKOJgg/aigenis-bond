@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     timeout: int = 30
     browser_health_interval_s: int = 300
 
+    ignore_https_errors: bool = False
+
     currencies: list[Currency] = Field(
         default_factory=lambda: ["USD", "BYN", "EUR", "XAU", "XAG", "XPT"]
     )

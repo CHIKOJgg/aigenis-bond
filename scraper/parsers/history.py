@@ -15,7 +15,7 @@ def _try_state(soup: BeautifulSoup) -> list[dict[str, Any]] | None:
     if tag and tag.string:
         try:
             data = json.loads(tag.string)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return None
         props = data.get("props", {}).get("pageProps", {})
         candidates = props.get("history") or props.get("items")
@@ -36,13 +36,13 @@ def _parse_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
         date_text = cells[0]
         try:
             d = datetime.fromisoformat(date_text.replace("Z", "+00:00")).date()
-        except Exception:  # noqa: BLE001
+        except Exception:
             m = re.search(r"\d{4}-\d{2}-\d{2}", date_text)
             if not m:
                 continue
             try:
                 d = datetime.strptime(m.group(0), "%Y-%m-%d").date()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
         out.append(
             {

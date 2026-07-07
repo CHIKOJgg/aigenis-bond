@@ -3,13 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from __future__ import annotations
-
-from collections.abc import AsyncIterator
-
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from api.auth.deps import _get_current_user
 from api.auth.schemas import (
     GoogleAuthRequest,

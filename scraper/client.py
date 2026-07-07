@@ -120,7 +120,7 @@ class AigenisClient:
             user_agent=self.settings.user_agent,
             locale="ru-RU",
             timezone_id="Europe/Minsk",
-            ignore_https_errors=True,
+            ignore_https_errors=self.settings.ignore_https_errors,
         )
         if self._stealth is not None:
             try:

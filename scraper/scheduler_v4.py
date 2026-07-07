@@ -13,7 +13,7 @@ async def scheduled_curve() -> int:
     try:
         rc = await cmd_desk_curve()
         logger.info("scheduled_curve_done", rc=rc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("scheduled_curve_failed", error=str(e))
     return 0
 
@@ -23,7 +23,7 @@ async def scheduled_rv() -> int:
     try:
         rc = await cmd_desk_rv()
         logger.info("scheduled_rv_done", rc=rc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("scheduled_rv_failed", error=str(e))
     return 0
 
@@ -33,6 +33,6 @@ async def scheduled_stress() -> int:
     try:
         rc = await cmd_desk_stress()
         logger.info("scheduled_stress_done", rc=rc)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.exception("scheduled_stress_failed", error=str(e))
     return 0

@@ -1,10 +1,9 @@
-from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
-from pathlib import Path
+
 from typing import Any
 
 from scraper.models import BondDailyAccrual
@@ -209,14 +208,12 @@ def parse_indexed_xlsx(filepath: str) -> dict[str, BondXlsxEnrichment]:
 
     bonds: dict[str, BondXlsxEnrichment] = {}
 
-    param_rows = {}
     for r in range(3, 12):
         param_name = _serialize(master_ws.cell(r, 1).value)
         if not param_name:
             continue
-        values = []
         for c in range(2, master_ws.max_column + 1):
-            values.append(master_ws.cell(c if c % 2 == 0 else c, r).value)
+            master_ws.cell(c, r)
 
     # Better approach: read the master table more carefully
     bond_names = []

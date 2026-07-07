@@ -91,7 +91,7 @@ def _parse_coupon_frequency_from_description(text: str) -> int | None:
     m = re.search(r"1\s+раз\s+в\s+(\d+)\s+месяц", text_lower)
     if m:
         months = int(m.group(1))
-        return {1: 12, 2: 6, 3: 4, 4: 3, 6: 2, 12: 1}.get(months, None)
+        return {1: 12, 2: 6, 3: 4, 4: 3, 6: 2, 12: 1}.get(months)
     return None
 
 
@@ -198,7 +198,6 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
     content_div = block.find("div", class_="content")
     if content_div:
         # Секция "Основное"
-        h4_els = content_div.find_all("h4")
         rows = content_div.find_all("div", class_="col-md-4")
 
         for row in rows:

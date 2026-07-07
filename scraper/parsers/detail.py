@@ -147,8 +147,9 @@ def _parse_dom(html: str, internal_id: str) -> dict[str, Any]:
     for block in soup.select("div.wp-block-aigenis-bounds"):
         block_reg = (block.get("data-reg") or "").strip()
         block_code = (block.get("data-code") or "").strip()
-        block_currency = (block.get("data-curency") or "").strip().upper()
-        # Сопоставление: ищем совпадение internal_id с reg-номером или кодом выпуска.
+        block_currency_val = (block.get("data-curency") or "").strip().upper()
+        if block_currency_val and block_currency_val in ("USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT"):
+            payload.setdefault("currency", block_currency_val)
         # Извлекаем числовую часть internal_id (напр. "OP-51" → "51")
         id_num = re.sub(r"[^0-9]", "", internal_id)
         code_num = re.sub(r"[^0-9]", "", block_code)
