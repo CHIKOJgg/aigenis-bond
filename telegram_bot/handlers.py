@@ -24,6 +24,7 @@ from desk import yield_curve as desk_curve
 from desk.repository import latest_rv_signals, latest_stress_runs
 from forecast.engine import forecast_horizons
 from ml.repository import latest_model_version, predictions_for_bond
+from notifications.fx_repository import latest_fx, latest_metal
 from notifications.repository import list_recent
 from portfolio.optimizer import allocate, rebalance
 from portfolio.positions_repository import list_positions, total_value
@@ -84,6 +85,22 @@ async def cb_paginate(callback_query) -> None:
 
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
+    unlocked = await _is_unlocked(message)
+    if not unlocked:
+        await message.answer(
+            "👋 <b>Bond Fixed Income Assistant</b>\n\n"
+            "🔒 База облигаций пока пуста.\n"
+            "Нажмите <b>🚀 Старт парсинга</b> (или отправьте /parse), чтобы загрузить "
+            "облигации и курсы валют с aigenis.by / НБ РБ. После этого откроются все команды.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🚀 Старт парсинга", callback_data="cmd_parse")]
+                ]
+            ),
+        )
+        return
+
     text = (
         "👋 <b>Bond Fixed Income Assistant</b>\n\n"
         "V4 — Mini Fixed Income Desk:\n"
@@ -105,6 +122,7 @@ async def cmd_start(message: Message) -> None:
         "/portfolio /rebalance /forecast /scenario\n"
         "/watchlist /watch ID /unwatch ID\n\n"
         "Сервис:\n"
+        "/rates — курсы валют и металлов\n"
         "/alerts — последние алерты\n"
         "/help — список команд"
     )
@@ -122,6 +140,9 @@ async def cmd_start(message: Message) -> None:
                 InlineKeyboardButton(text="🛒 Buy", callback_data="cmd_buy"),
                 InlineKeyboardButton(text="📈 Forecast", callback_data="cmd_forecast"),
             ],
+            [
+                InlineKeyboardButton(text="💱 Rates", callback_data="cmd_rates"),
+            ],
         ]
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -130,6 +151,95 @@ async def cmd_start(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await cmd_start(message)
+
+
+# ---------------------------------------------------------------------------
+# Parse gate: until parsing is done, user can only run /parse
+# ---------------------------------------------------------------------------
+
+_PARSED_USERS: set[int] = set()
+
+
+def _user_id(message: Message) -> int:
+    return message.from_user.id if message.from_user else 0
+
+
+async def _is_unlocked(message: Message) -> bool:
+    uid = _user_id(message)
+    if uid in _PARSED_USERS:
+        return True
+    async with session_scope() as session:
+        count = await repositories.bonds.count_bonds(session)
+    return count > 0
+
+
+def _locked_message() -> str:
+    return (
+        "🔒 База облигаций пуста.\n"
+        "Сначала запустите парсинг командой /parse (или кнопкой 🚀 Старт парсинга), "
+        "после этого станут доступны остальные команды."
+    )
+
+
+@router.message(Command("parse"))
+async def cmd_parse(message: Message) -> None:
+    uid = _user_id(message)
+    await message.answer(
+        "🚀 Запускаю парсинг облигаций с aigenis.by (USD/BYN/EUR/RUB/CNY)…\n"
+        "Это может занять несколько минут."
+    )
+    try:
+        from scraper.fx import fetch_and_save_bonds, fetch_and_save_rates, fetch_and_save_metal_prices
+
+        _PARSED_USERS.add(uid)
+        await fetch_and_save_bonds()
+        rates = await fetch_and_save_rates()
+        metals = await fetch_and_save_metal_prices()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("parse_failed", error=str(exc))
+        await message.answer(f"❌ Ошибка парсинга: {exc}")
+        return
+    await message.answer(
+        "✅ Парсинг завершён.\n"
+        f"Курсы валют: {', '.join(f'{k}={v:.4f}' for k, v in sorted(rates.items()))}\n"
+        f"Металлы (BYN/oz): {', '.join(f'{k}={v:.2f}' for k, v in sorted(metals.items()))}\n\n"
+        "Теперь доступны все команды. Отправьте /start для меню."
+    )
+
+
+@router.message(Command("rates"))
+async def cmd_rates(message: Message) -> None:
+    if not await _is_unlocked(message):
+        await message.answer(_locked_message())
+        return
+    lines = ["<b>💱 Курсы валют (НБ РБ)</b>\n"]
+    for pair in ("USD/BYN", "EUR/BYN", "RUB/BYN", "CNY/BYN"):
+        fx = await latest_fx(pair)
+        if fx:
+            lines.append(f"• {pair}: <b>{float(fx.rate):.4f}</b>  ({fx.observed_at:%Y-%m-%d})")
+        else:
+            lines.append(f"• {pair}: — (нет данных)")
+    lines.append("\n<b>🪙 Драгметаллы (BYN/oz)</b>")
+    for code, title in (("XAU", "Золото"), ("XAG", "Серебро"), ("XPT", "Платина")):
+        m = await latest_metal(code)
+        if m:
+            lines.append(f"• {title} ({code}): <b>{float(m.price):.2f}</b>")
+        else:
+            lines.append(f"• {title} ({code}): — (нет данных)")
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+_ALLOWED_BEFORE_PARSE = {"start", "help", "parse", "rates"}
+
+
+@router.message(lambda m: bool(m.text and m.text.startswith("/")))
+async def _gate_commands(message: Message) -> None:
+    cmd = (message.text or "").split(maxsplit=1)[0].lstrip("/").lower()
+    if cmd in _ALLOWED_BEFORE_PARSE:
+        return
+    if await _is_unlocked(message):
+        return
+    await message.answer(_locked_message())
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +253,8 @@ _DESK_HANDLER_MAP = {
     "cmd_curve": "cmd_curve",
     "cmd_buy": "cmd_buy",
     "cmd_forecast": "cmd_forecast",
+    "cmd_rates": "cmd_rates",
+    "cmd_parse": "cmd_parse",
 }
 
 
@@ -155,6 +267,8 @@ async def cb_generic(callback_query) -> None:
         "cmd_curve": cmd_curve,
         "cmd_buy": cmd_buy,
         "cmd_forecast": cmd_forecast,
+        "cmd_rates": cmd_rates,
+        "cmd_parse": cmd_parse,
     }
     handler = handler_map.get(callback_query.data)
     if handler:

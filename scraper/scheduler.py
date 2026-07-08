@@ -58,6 +58,14 @@ def build_scheduler() -> AsyncIOScheduler:
         logger.warning("scheduler_v3_not_available")
 
     try:
+        from scraper.fx import fetch_and_save_rates, fetch_and_save_metal_prices
+
+        jobs.append(("fx_fetch_daily", "0 7 * * *", fetch_and_save_rates, 1800))
+        jobs.append(("fx_metals_daily", "30 7 * * *", fetch_and_save_metal_prices, 1800))
+    except ImportError:
+        logger.warning("fx_module_not_available")
+
+    try:
         from scraper.scheduler_v4 import scheduled_curve, scheduled_rv, scheduled_stress
 
         jobs.append(("desk_curve_daily", "30 4 * * *", scheduled_curve, 1800))

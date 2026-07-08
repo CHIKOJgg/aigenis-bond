@@ -79,6 +79,9 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("desk-stress", help="Стресс-тестирование (все пресеты)")
     sub.add_parser("desk-status", help="Сводка по desk-данным")
 
+    sub.add_parser("fx-fetch", help="Загрузить курсы валют с сайта Нацбанка РБ")
+    sub.add_parser("fx-metals", help="Загрузить цены на драгметаллы с сайта Нацбанка РБ")
+
     sub.add_parser("health", help="Health-check")
     return parser
 
@@ -129,6 +132,24 @@ async def _cmd_run() -> int:
     return 0
 
 
+async def _cmd_fx_fetch() -> int:
+    from scraper.fx import fetch_and_save_rates
+
+    rates = await fetch_and_save_rates()
+    for k, v in sorted(rates.items()):
+        print(f"{k}: {v}")
+    return 0
+
+
+async def _cmd_fx_metals() -> int:
+    from scraper.fx import fetch_and_save_metal_prices
+
+    prices = await fetch_and_save_metal_prices()
+    for k, v in sorted(prices.items()):
+        print(f"{k}/BYN: {v} per troy oz")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
     parser = _build_parser()
@@ -170,6 +191,10 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_desk_stress())
     if args.command == "desk-status":
         return asyncio.run(cmd_desk_status())
+    if args.command == "fx-fetch":
+        return asyncio.run(_cmd_fx_fetch())
+    if args.command == "fx-metals":
+        return asyncio.run(_cmd_fx_metals())
     parser.print_help()
     return 1
 
