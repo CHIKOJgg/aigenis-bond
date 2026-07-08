@@ -34,6 +34,7 @@ from scoring.engine import score_bond
 from scoring.repository import get_score, top_scores
 from scraper import repositories
 from scraper.db import session_scope
+from scraper.models import Bond
 from scraper.orm import BondORM
 from telegram_bot.helpers import (
     bonds_for_bot,

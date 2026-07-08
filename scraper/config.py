@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,9 +31,19 @@ class Settings(BaseSettings):
 
     ignore_https_errors: bool = False
 
-    currencies: list[Currency] = Field(
-        default_factory=lambda: ["USD", "BYN", "EUR", "XAU", "XAG", "XPT"]
-    )
+    currencies_raw: str = Field(default="", validation_alias="AIGENIS_CURRENCIES")
+
+    @property
+    def currencies(self) -> list[Currency]:
+        if not self.currencies_raw.strip():
+            return ["USD", "BYN", "EUR", "XAU", "XAG", "XPT"]
+        import json as _json
+
+        try:
+            return _json.loads(self.currencies_raw)
+        except (_json.JSONDecodeError, TypeError):
+            pass
+        return [c.strip().upper() for c in self.currencies_raw.split(",") if c.strip()]
 
     history_backfill_days: int = 1825
 
@@ -124,7 +134,19 @@ class TelegramSettings(BaseSettings):
 
     bot_token: str = Field(default="", validation_alias="TELEGRAM_BOT_TOKEN")
     alert_chat_id: str = Field(default="", validation_alias="TELEGRAM_ALERT_CHAT_ID")
-    admin_ids: list[int] = Field(default_factory=list, validation_alias="TELEGRAM_ADMIN_IDS")
+    admin_ids_raw: str = Field(default="", validation_alias="TELEGRAM_ADMIN_IDS")
+
+    @property
+    def admin_ids(self) -> list[int]:
+        if not self.admin_ids_raw.strip():
+            return []
+        import json as _json
+        try:
+            return _json.loads(self.admin_ids_raw)
+        except (_json.JSONDecodeError, TypeError):
+            pass
+        return [int(x.strip()) for x in self.admin_ids_raw.split(",") if x.strip()]
+
     webhook_url: str = Field(default="", validation_alias="WEBHOOK_URL")
     webhook_path: str = Field(default="/webhook", validation_alias="WEBHOOK_PATH")
     webhook_port: int = Field(default=8080, validation_alias="WEBHOOK_PORT")

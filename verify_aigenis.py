@@ -238,8 +238,8 @@ async def verify_sqlite() -> dict:
     # Запускаем pipeline
     from scraper.pipeline import run_once
 
-    async with AigenisClient(settings) as client:
-        summary = await run_once(client, settings.currencies)
+    async with AigenisClient(settings.aigenis) as client:
+        summary = await run_once(client, settings.aigenis.currencies)
 
     _check(
         "sqlite.pipeline.listing_total",
