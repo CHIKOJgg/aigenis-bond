@@ -77,7 +77,10 @@ async def cb_paginate(callback_query) -> None:
     }
     handler = dispatch.get(prefix)
     if handler:
-        await handler(callback_query.message, page=page)
+        if prefix in ("top", "carry", "rv"):
+            await handler(callback_query.message, page=page)
+        else:
+            await handler(callback_query.message)
 
 
 # ---------------------------------------------------------------------------
@@ -227,20 +230,21 @@ async def cmd_rates(message: Message) -> None:
     if not await _is_unlocked(message):
         await message.answer(_locked_message())
         return
-    lines = ["<b>💱 Курсы валют (НБ РБ)</b>\n"]
-    for pair in ("USD/BYN", "EUR/BYN", "RUB/BYN", "CNY/BYN"):
-        fx = await latest_fx(pair)
-        if fx:
-            lines.append(f"• {pair}: <b>{float(fx.rate):.4f}</b>  ({fx.observed_at:%Y-%m-%d})")
-        else:
-            lines.append(f"• {pair}: — (нет данных)")
-    lines.append("\n<b>🪙 Драгметаллы (BYN/oz)</b>")
-    for code, title in (("XAU", "Золото"), ("XAG", "Серебро"), ("XPT", "Платина")):
-        m = await latest_metal(code)
-        if m:
-            lines.append(f"• {title} ({code}): <b>{float(m.price):.2f}</b>")
-        else:
-            lines.append(f"• {title} ({code}): — (нет данных)")
+    async with session_scope() as session:
+        lines = ["<b>💱 Курсы валют (НБ РБ)</b>\n"]
+        for pair in ("USD/BYN", "EUR/BYN", "RUB/BYN", "CNY/BYN"):
+            fx = await latest_fx(session, pair)
+            if fx:
+                lines.append(f"• {pair}: <b>{float(fx.rate):.4f}</b>  ({fx.observed_at:%Y-%m-%d})")
+            else:
+                lines.append(f"• {pair}: — (нет данных)")
+        lines.append("\n<b>🪙 Драгметаллы (BYN/oz)</b>")
+        for code, title in (("XAU", "Золото"), ("XAG", "Серебро"), ("XPT", "Платина")):
+            m = await latest_metal(session, code)
+            if m:
+                lines.append(f"• {title} ({code}): <b>{float(m.price):.2f}</b>")
+            else:
+                lines.append(f"• {title} ({code}): — (нет данных)")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -1201,7 +1205,7 @@ async def cmd_stats(message: Message) -> None:
 
 @router.errors(ExceptionTypeFilter(Exception))
 async def global_error_handler(event: ErrorEvent):
-    logger.exception("bot_handler_error", update=event.update, error=str(event.exception))
+    logger.exception("bot_handler_error", error=str(event.exception))
     if event.update.message:
         await event.update.message.answer(
             "❌ Внутренняя ошибка. Попробуйте позже или напишите /help.",
