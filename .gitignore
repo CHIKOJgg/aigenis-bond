@@ -15,3 +15,7 @@ dist/
 build/
 ml/artifacts/
 *.pkl
+
+# build/log artifacts
+deploy_build.log
+*.log
