@@ -10,18 +10,48 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 
-def _try_json_state(soup: BeautifulSoup) -> dict[str, Any] | None:
+def _id_matches(candidate: dict[str, Any], internal_id: str | None) -> bool:
+    target = (internal_id or "").strip().lower()
+    if not target:
+        return False
+    target_num = re.sub(r"[^0-9]", "", target)
+    for key in ("internal_id", "id", "registration_number", "isin", "slug"):
+        val = candidate.get(key)
+        if val is None:
+            continue
+        val = str(val).strip().lower()
+        if val == target or val.replace("-", "") == target.replace("-", ""):
+            return True
+        if target_num and re.sub(r"[^0-9]", "", val) == target_num:
+            return True
+    return False
+
+
+def _try_json_state(soup: BeautifulSoup, internal_id: str | None = None) -> dict[str, Any] | None:
     tag = soup.find("script", id="__NEXT_DATA__")
     if tag and tag.string:
         try:
             data = json.loads(tag.string)
-            props = data.get("props", {}).get("pageProps", {})
-            bond = props.get("bond") or props.get("item")
-            if isinstance(bond, dict):
-                return bond
         except Exception:
             return None
+        props = data.get("props", {}).get("pageProps", {})
 
+        # Одна облигация (страница деталей)
+        bond = props.get("bond") or props.get("item")
+        if isinstance(bond, dict):
+            bond.setdefault("id", internal_id)
+            return bond
+
+        # Страница листинга: список облигаций — ищем свою по id
+        for key in ("bonds", "items", "data", "results"):
+            candidates = props.get(key)
+            if isinstance(candidates, dict):
+                candidates = candidates.get("items") or candidates.get("data") or []
+            if isinstance(candidates, list):
+                for c in candidates:
+                    if isinstance(c, dict) and _id_matches(c, internal_id):
+                        c.setdefault("id", internal_id)
+                        return c
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string or "")
@@ -38,18 +68,14 @@ def _try_json_state(soup: BeautifulSoup) -> dict[str, Any] | None:
     return None
 
 
-def _coerce(value: str | None) -> str | None:
-    if value is None:
-        return None
-    s = value.strip()
-    return s or None
-
-
 def _find_label(soup: BeautifulSoup, label_patterns: list[str]) -> str | None:
     for pat in label_patterns:
         for el in soup.find_all(string=re.compile(pat, re.IGNORECASE)):
             parent = el.parent
             if parent is None:
+                continue
+            # Не тащим мусор из <script>/<style> (там JSON-LD / Next-data)
+            if parent.name in ("script", "style"):
                 continue
             nxt = parent.find_next_sibling()
             if nxt:
@@ -60,6 +86,13 @@ def _find_label(soup: BeautifulSoup, label_patterns: list[str]) -> str | None:
             if ":" in txt:
                 return txt.split(":", 1)[1].strip()
     return None
+
+
+def _coerce(value: str | None) -> str | None:
+    if value is None:
+        return None
+    s = value.strip()
+    return s or None
 
 
 def _parse_coupon_rate_from_description(text: str) -> str | None:
@@ -258,9 +291,31 @@ def _parse_dom(html: str, internal_id: str) -> dict[str, Any]:
 def parse_detail_html(html: str, internal_id: str) -> dict[str, Any]:
     soup = BeautifulSoup(html, "lxml")
 
-    state = _try_json_state(soup)
+    # Primary path: the listing page carries one wp-block-aigenis-bounds block
+    # per bond. Reuse the same clean block parser as the listing (it yields
+    # currency / coupon / nominal / etc. from data-* attributes), matching the
+    # requested bond by its internal_id (== data-reg).
+    from scraper.parsers.listing import _parse_aigenis_bond_block
+
+    target_num = re.sub(r"[^0-9]", "", internal_id or "")
+    for block in soup.select("div.wp-block-aigenis-bounds"):
+        cand_id = (block.get("data-reg") or block.get("data-code") or "").strip()
+        if not cand_id:
+            continue
+        cand_num = re.sub(r"[^0-9]", "", cand_id)
+        if (internal_id and internal_id.lower() in cand_id.lower()) or (
+            target_num and cand_num and target_num == cand_num
+        ):
+            payload = _parse_aigenis_bond_block(block, "ALL")
+            if payload:
+                payload["internal_id"] = internal_id
+                return payload
+
+    # JSON state (Next.js detail pages)
+    state = _try_json_state(soup, internal_id)
     if state and isinstance(state, dict):
         state.setdefault("id", internal_id)
         return state
 
+    # Last resort: generic DOM walk
     return _parse_dom(html, internal_id)

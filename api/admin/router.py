@@ -57,7 +57,7 @@ async def admin_login(request: Request, session: AsyncSession = Depends(_get_ses
     form = await request.form()
     email = form.get("email", "")
     password = form.get("password", "")
-    from api.auth.service import login_user, create_access_token
+    from api.auth.service import create_access_token, login_user
     user, error = await login_user(session, email, password)
     if error or not user:
         return _templates.TemplateResponse("login.html", {"request": request, "error": "Invalid credentials"}, status_code=401)

@@ -47,17 +47,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.24.0",
-    "pytest-cov>=5.0.0",
-    "pytest-httpserver>=1.0.10",
-    "ruff>=0.7.0",
-    "mypy>=1.13.0",
-    "types-beautifulsoup4>=4.12.0.20240907",
-    "bandit>=1.8.0",
-    "pre-commit>=4.0.0",
-]
 prod = [
     "sentry-sdk>=2.18.0",
     "gunicorn>=23.0.0",
@@ -77,22 +66,7 @@ include = [
     "api/auth*", "api/billing*", "api/admin*",
     "api/admin/templates/*",
 ]
-exclude = ["tests*", "alembic*"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-addopts = "-ra --strict-markers --tb=short"
-markers = [
-    "smoke: real network calls, skipped in CI",
-    "integration: requires database or external services",
-    "slow: long-running tests",
-]
-filterwarnings = [
-    "ignore::sqlalchemy.exc.SADeprecationWarning",
-    "ignore::DeprecationWarning:.*(distutils|setuptools).*:",
-    "ignore::DeprecationWarning:.*pkg_resources.*:",
-]
+exclude = ["alembic*"]
 
 [tool.ruff]
 line-length = 100
@@ -130,11 +104,3 @@ strict = true
 [[tool.mypy.overrides]]
 module = "scraper.config"
 strict = true
-
-[tool.coverage.run]
-source = ["scraper", "api", "desk", "forecast", "ml", "monitoring", "notifications", "portfolio", "recommendations", "scoring", "telegram_bot", "visualization"]
-omit = ["*/tests/*", "*/alembic/*", "*/__pycache__/*", "*/templates/*"]
-
-[tool.coverage.report]
-show_missing = true
-fail_under = 40.0

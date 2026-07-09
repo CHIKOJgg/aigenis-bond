@@ -2,14 +2,14 @@
 # Crypto Payment Gateway API
 # =============================================================================
 # Handles crypto (Lightning + Solana) payments for subscription access
-# 
+#
 # Features:
 # - Lightning Network rapid payments
 # - Solana wallet integration
 # - Multi-sig wallet support for enterprise
 # - Real-time payment verification
 # - Transaction history tracking
-# 
+#
 # Endpoints:
 # - POST /api/crypto/wallet          - Create/connect crypto wallet
 # - POST /api/crypto/pay             - Initiate Lightning payment
@@ -21,22 +21,21 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
+from loguru import logger
 from pydantic import BaseModel, Field, validator
 from sqlalchemy.ext.asyncio import AsyncSession
-from loguru import logger
 
 from api.auth.deps import _get_current_user
 from api.crypto.service import (
-    process_lightning_payment,
+    buy_crypto_from_fiat,
     create_solana_wallet,
     get_wallet_balance,
-    get_transaction_history,
-    buy_crypto_from_fiat,
+    process_lightning_payment,
     verify_payment_confirmation,
 )
 from scraper.db import session_scope
@@ -48,8 +47,8 @@ class CreateWalletRequest(BaseModel):
     """Request to create a new crypto wallet"""
     wallet_type: str = Field("solana", description="Wallet type: solana, lightning")
     network: str = Field("mainnet", description="Network: mainnet, devnet, testnet")
-    multi_sig_parties: Optional[int] = Field(None, description="Number of parties for multi-sig")
-    recovery_addresses: Optional[List[str]] = Field(None, description="Recovery addresses for multi-sig")
+    multi_sig_parties: int | None = Field(None, description="Number of parties for multi-sig")
+    recovery_addresses: list[str] | None = Field(None, description="Recovery addresses for multi-sig")
 
 
 class CreateWalletResponse(BaseModel):
@@ -70,7 +69,7 @@ class CryptoPaymentRequest(BaseModel):
     amount: float = Field(..., gt=0, description="Payment amount in USD")
     target_tier: str = Field("pro", description="Target subscription tier: free, pro, enterprise")
     payment_method: str = Field("lightning", description="Payment method: lightning, solana, onramp")
-    wallet_address: Optional[str] = Field(None, description="Target wallet address")
+    wallet_address: str | None = Field(None, description="Target wallet address")
     invoice_description: str = Field("Subscription payment", description="Invoice description")
     expiry_minutes: int = Field(30, ge=5, le=1440, description="Payment expiry in minutes")
 
@@ -109,8 +108,8 @@ class SolanaPaymentRequest(BaseModel):
     """Request for Solana-based payment"""
     recipient_address: str = Field(..., description="Solana wallet address")
     amount_lamports: int = Field(..., gt=0, description="Amount in lamports (1 SOL = 1,000,000,000 lamports)")
-    memo: Optional[str] = Field(None, description="Payment memo for identification")
-    reference_id: Optional[str] = Field(None, description="Reference ID for matching")
+    memo: str | None = Field(None, description="Payment memo for identification")
+    reference_id: str | None = Field(None, description="Reference ID for matching")
 
 
 class LightningPaymentResponse(BaseModel):
@@ -119,7 +118,7 @@ class LightningPaymentResponse(BaseModel):
     bolt11: str
     amount_msat: int
     expiry: int
-    routes: List[Dict[str, Any]]
+    routes: list[dict[str, Any]]
 
 
 # =============================================================================
@@ -300,7 +299,7 @@ async def get_crypto_balance(
 async def get_transaction_history(
     limit: int = 50,
     offset: int = 0,
-    transaction_type: Optional[str] = None,
+    transaction_type: str | None = None,
     current_user_id: int = Depends(_get_current_user),
 ):
     """
@@ -396,7 +395,7 @@ async def crypto_websocket_endpoint(websocket):
                 payload = decode_token(token)
                 if payload:
                     user_id = int(payload["sub"])
-        except:
+        except Exception:
             pass
 
         logger.info(f"WebSocket connected: user {user_id}")

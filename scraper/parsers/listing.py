@@ -190,7 +190,7 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
             if "доход" in title:
                 # Это ставка купона (coupon_rate), не YTM!
                 rate_str = text.replace("%", "").replace(",", ".").strip()
-                if rate_str and rate_str != "—":
+                if rate_str and rate_str != "—" and re.fullmatch(r"\d+([.,]\d+)?", rate_str):
                     payload["coupon_rate"] = rate_str
                     payload["coupon_description"] = text
 

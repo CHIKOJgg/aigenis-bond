@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +60,7 @@ PLANS = {
 async def get_available_plans() -> List[Dict[str, Any]]:
     """Return pricing plans for frontend display"""
     plans = []
-    
+
     for plan_id, plan_data in PLANS.items():
         if plan_id == "free":
             price = 0
@@ -68,8 +69,8 @@ async def get_available_plans() -> List[Dict[str, Any]]:
         else:
             price = plan_data["price"]
             price_display = f"${price / 100:.2f}"
-            price_note = f"per month"
-        
+            price_note = "per month"
+
         plans.append({
             "id": plan_id,
             "name": plan_data.get("name", plan_id.capitalize()),
@@ -81,7 +82,7 @@ async def get_available_plans() -> List[Dict[str, Any]]:
             "features": plan_data["features"],
             "popular": plan_id == "pro",
         })
-    
+
     return plans
 
 
@@ -91,10 +92,10 @@ async def get_current_plan(user_id: int, session: AsyncSession) -> Dict[str, Any
         select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
     )
     subscription = result.scalar_one_or_none()
-    
+
     if not subscription:
         return PLANS["free"]
-    
+
     return PLANS.get(subscription.plan, PLANS["free"])
 
 
@@ -104,32 +105,32 @@ async def can_user_access_feature(user_id: int, feature: str, session: AsyncSess
         select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
     )
     subscription = subscription_result.scalar_one_or_none()
-    
+
     if not subscription:
         tier = "free"
     else:
         tier = subscription.plan
-    
+
     available_plans = PLANS
     if tier in available_plans and feature in available_plans[tier]["features"]:
         return True
-    
+
     return False
 
 
 async def get_user_usage_stats(user_id: int, session: AsyncSession) -> Dict[str, Any]:
     """Get usage statistics for a user based on their current plan"""
     current_plan = await get_current_plan(user_id, session)
-    
+
     # Count bonds accessed by the user (example)
     # This would need to be implemented with actual data collection
     bonds_accessed = 0
     max_bonds = current_plan["features"]["max_bonds"]
     bonds_remaining = max_bonds - bonds_accessed if max_bonds > 0 else None
-    
+
     # Current tier
     tier = await _get_user_tier(session, user_id)
-    
+
     return {
         "current_tier": tier,
         "current_plan": current_plan["name"],
@@ -156,10 +157,10 @@ async def _get_next_billing_date(session: AsyncSession, user_id: int) -> Optiona
         select(SubscriptionORM.current_period_end).where(SubscriptionORM.user_id == user_id)
     )
     next_billing = result.scalar_one_or_none()
-    
+
     if next_billing:
         return next_billing.isoformat()
-    
+
     return None
 
 
@@ -167,30 +168,30 @@ async def calculate_upgrade_cost(from_plan: str, to_plan: str) -> Dict[str, Any]
     """Calculate the cost difference between two plans"""
     if from_plan == to_plan:
         return {"difference": 0, "price_change": 0, "upgrade": False}
-    
+
     from_cost = PLANS[from_plan]["price"]
     to_cost = PLANS[to_plan]["price"]
-    
+
     price_diff = to_cost - from_cost
-    
+
     # Find the best plan to upgrade to (considering interval)
     from_interval = PLANS[from_plan]["interval"]
     to_interval = PLANS[to_plan]["interval"]
-    
+
     if from_interval != to_interval:
         if from_interval == "month" and to_interval == "month":
             rate = 1.0
-        elif from_interval == "month" and to_interval == None:
+        elif from_interval == "month" and to_interval is None:
             rate = 12.0  # month to year
-        elif from_interval == None and to_interval == "month":
+        elif from_interval is None and to_interval == "month":
             rate = 1.0 / 12.0  # year to month
         else:
             rate = 1.0
     else:
         rate = 1.0
-    
+
     effective_diff = price_diff * rate
-    
+
     return {
         "difference": to_cost - from_cost,
         "price_change": price_diff,

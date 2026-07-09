@@ -213,6 +213,28 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
                     setattr(bond_orm, key, val)
                 enriched += 1
 
+            if enrichment.name and enrichment.name != bond_orm.name:
+                readable = enrichment.name.strip()
+                if readable.endswith(".xlsx"):
+                    readable = readable.rsplit(".", 1)[0]
+                from scraper.repositories.bonds import register_xlsx_names, update_bond_name
+
+                register_xlsx_names({bond_orm.internal_id: readable})
+                await update_bond_name(session, bond_orm.internal_id, readable)
+
+        # Apply indexed bond names from XLSX
+        for iid, enrichment in (xlsx_data.indexed_bonds or {}).items():
+            if enrichment.name:
+                from scraper.repositories.bonds import register_xlsx_names, update_bond_name
+
+                # Find bond by internal_id like "Оп17" or issue_number
+                for bond_orm in all_bonds:
+                    if bond_orm.internal_id.lower().replace("-", "").replace(" ", "") == iid.lower():
+                        readable = enrichment.name.strip()
+                        register_xlsx_names({bond_orm.internal_id: readable})
+                        await update_bond_name(session, bond_orm.internal_id, readable)
+                        break
+
         await session.flush()
 
         accruals_written = 0

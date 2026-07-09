@@ -1,7 +1,0 @@
-{
-    "items": [
-        {"date": "2026-06-01", "price": 97.8, "yield": 5.6, "coupon": 5.25, "status": "active"},
-        {"date": "2026-06-02", "price": 98.0, "yield": 5.55, "coupon": 5.25, "status": "active"},
-        {"date": "2026-06-03", "price": 98.5, "yield": 5.47, "coupon": 5.25, "status": "active"}
-    ]
-}

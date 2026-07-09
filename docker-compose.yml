@@ -2,10 +2,8 @@
 # Aigenis Parser v2 — Docker Compose
 # =============================================================================
 # Быстрый старт:
-#   docker compose up -d                        # postgres + redis + parser + API
-#   docker compose --profile bot up -d          # + telegram-bot
+#   docker compose up -d                        # всё: postgres + redis + parser + API + bot
 #   docker compose up -d frontend               # + frontend (nginx)
-#   docker compose --profile all up -d          # всё сразу
 #
 # Однократные команды:
 #   docker compose run --rm parser once         # сбор данных
@@ -104,6 +102,10 @@ services:
       AIGENIS_TIMEOUT: ${AIGENIS_TIMEOUT:-30}
       AIGENIS_HISTORY_BACKFILL_DAYS: ${AIGENIS_HISTORY_BACKFILL_DAYS:-1825}
       AIGENIS_CURRENCIES: ${AIGENIS_CURRENCIES:-USD,BYN,EUR,XAU,XAG,XPT}
+      # --- API Auth (invest.aigenis.by) ---
+      AIGENIS_WEB_URL: ${AIGENIS_WEB_URL:-}
+      AIGENIS_WEB_USERNAME: ${AIGENIS_WEB_USERNAME:-}
+      AIGENIS_WEB_PASSWORD: ${AIGENIS_WEB_PASSWORD:-}
       # --- Logging ---
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
       AIGENIS_LOG_JSON: ${AIGENIS_LOG_JSON:-true}
@@ -156,9 +158,6 @@ services:
     image: aigenis-parser:latest
     container_name: aigenis-bot
     restart: unless-stopped
-    profiles:
-      - bot
-      - all
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,6 +165,9 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
       AIGENIS_HEADLESS: "true"
       AIGENIS_USE_STEALTH: "false"
+      AIGENIS_WEB_URL: ${AIGENIS_WEB_URL:-}
+      AIGENIS_WEB_USERNAME: ${AIGENIS_WEB_USERNAME:-}
+      AIGENIS_WEB_PASSWORD: ${AIGENIS_WEB_PASSWORD:-}
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}

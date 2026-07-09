@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Sequence
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -9,12 +11,70 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from scraper.models import Bond
 from scraper.orm import BondORM
 
+# Маппинг internal_id → читаемое имя облигации.
+# Заполняется из XLSX-данных при enrich_from_xlsx(), плюс хардкоженные
+# известные сопоставления на случай, если XLSX недоступен.
+BOND_NAME_MAP: dict[str, str] = {
+    "OP-30": "iGenis OP30",
+    "OP-43": "iGenis OP43",
+    "OP-51": "iGenis OP51",
+    "OP-17": "Айгенис Оп17",
+    "OP-33": "Айгенис Оп33",
+    "OP-35": "Айгенис Оп35",
+}
+
+
+def _is_technical_name(name: str) -> bool:
+    """Проверяет, похоже ли имя на технический код (без человекочитаемых слов)."""
+    if not name:
+        return True
+    # Только цифры, тире, слеши, подчёркивания
+    cleaned = re.sub(r"[0-9\-_/]", "", name).strip()
+    # Если после удаления тех.символов осталось < 2 букв — это тех.код
+    return len(cleaned) < 2 or cleaned.isupper() and len(cleaned) < 5
+
+
+def _enrich_bond_name(bond: Bond) -> str:
+    """Построить читаемое имя облигации из доступных полей."""
+    # 1. Если есть прямой маппинг по internal_id
+    if bond.internal_id in BOND_NAME_MAP:
+        return BOND_NAME_MAP[bond.internal_id]
+
+    # 2. Если имя уже читаемое — оставляем
+    if bond.name and not _is_technical_name(bond.name):
+        return bond.name
+
+    # 3. Если есть issuer — строим "Issuer #N"
+    if bond.issuer and not _is_technical_name(bond.issuer):
+        base = bond.issuer.strip()
+        if _is_technical_name(base):
+            return bond.internal_id
+        # Убираем юр.форму для краткости
+        base = re.sub(
+            r"^\s*(ОАО|ЗАО|ООО|ОДО|ИП|СООО|УП|АО)\s+",
+            "",
+            base,
+        ).strip()
+        if bond.issue_number is not None:
+            return f"{base} #{bond.issue_number}"
+        return base
+
+    # 4. Fallback — делаем internal_id более читаемым
+    iid = bond.internal_id
+    # MF-LB-USD-0265 → MF LB USD 0265
+    iid = iid.replace("-", " ").replace("_", " ")
+    # Если короткий номер — "iGenis #N"
+    if re.fullmatch(r"\d+", iid):
+        return f"Выпуск #{iid}"
+    return iid
+
 
 def _bond_to_orm(bond: Bond) -> dict:
+    enriched_name = _enrich_bond_name(bond)
     return {
         "internal_id": bond.internal_id,
         "isin": bond.isin,
-        "name": bond.name,
+        "name": enriched_name,
         "issuer": bond.issuer,
         "currency": bond.currency,
         "nominal": bond.nominal,
@@ -63,6 +123,24 @@ async def upsert_bonds_batch(session: AsyncSession, bonds: Iterable[Bond]) -> in
     stmt = stmt.on_conflict_do_update(index_elements=[BondORM.internal_id], set_=update_cols)
     await session.execute(stmt)
     return len(rows)
+
+
+async def update_bond_name(session: AsyncSession, internal_id: str, name: str) -> None:
+    """Обновить поле name для облигации (используется при обогащении из XLSX)."""
+    stmt = (
+        pg_insert(BondORM)
+        .values(internal_id=internal_id, name=name)
+        .on_conflict_do_update(
+            index_elements=[BondORM.internal_id],
+            set_={"name": name},
+        )
+    )
+    await session.execute(stmt)
+
+
+def register_xlsx_names(xlsx_names: dict[str, str]) -> None:
+    """Зарегистрировать человеческие имена из XLSX в общем маппинге."""
+    BOND_NAME_MAP.update(xlsx_names)
 
 
 async def get_all_internal_ids(session: AsyncSession) -> Sequence[str]:

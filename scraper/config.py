@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     )
 
     base_url: str = "https://aigenis.by"
+    web_url: str = "https://web.aigenis.by"
+    web_username: str = ""
+    web_password: str = ""
     data_api_url: str | None = None
 
     headless: bool = True

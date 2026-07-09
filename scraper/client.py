@@ -31,11 +31,14 @@ from scraper.errors import (
     CircuitBreakerOpenError,
     FatalError,
     NotFoundError,
+    ParseError,
     TransientError,
 )
 from scraper.logging import get_logger
 
 logger = get_logger("scraper.client")
+
+API_BASE = "https://invest.aigenis.by/api"
 
 
 class _CircuitBreaker:
@@ -95,6 +98,10 @@ class AigenisClient:
         self._circuit_breaker = _CircuitBreaker()
         self._last_health_check = 0.0
         self._started = False
+        self._token: str | None = None
+        self._token_expires: float = 0.0
+        self._auth_lock = asyncio.Lock()
+        self._id_by_internal: dict[str, int] = {}
 
     async def __aenter__(self) -> AigenisClient:
         await self.start()
@@ -204,6 +211,76 @@ class AigenisClient:
     def clear_cache(self) -> None:
         self._html_cache.clear()
 
+    async def _login(self) -> str:
+        if self._context is None:
+            raise RuntimeError("Client not started")
+        username = self.settings.web_username
+        password = self.settings.web_password
+        if not username or not password:
+            raise FatalError("AIGENIS_WEB_USERNAME/PASSWORD not set")
+        page = await self._new_page()
+        try:
+            resp = await page.request.post(
+                f"{API_BASE}/v4/user/sign-in/",
+                data={"identifier": username, "password": password},
+            )
+            if resp.status != 200:
+                raise FatalError(
+                    f"API login failed: {resp.status} {await resp.text()[:200]}"
+                )
+            data = await resp.json()
+            token = data.get("access")
+            if not token:
+                raise FatalError("No access token in login response")
+            self._token = token
+            self._token_expires = time.monotonic() + 43200  # 12 hours
+            logger.info("api_login_success")
+            return token
+        finally:
+            await page.close()
+
+    async def _ensure_authenticated(self, force: bool = False) -> None:
+        async with self._auth_lock:
+            if force or not self._token or time.monotonic() >= self._token_expires:
+                await self._login()
+
+    async def _api_request(
+        self,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | list[Any]:
+        await self._ensure_browser()
+        await self._ensure_authenticated()
+        if self._context is None:
+            raise RuntimeError("Client not started")
+        page = await self._new_page()
+        url = f"{API_BASE}{path}"
+        try:
+            opts: dict[str, Any] = {
+                "headers": {"Authorization": f"JWT {self._token}"},
+            }
+            if params:
+                opts["params"] = params
+            if method.upper() == "GET":
+                resp = await page.request.get(url, **opts)
+            elif method.upper() == "POST":
+                resp = await page.request.post(url, **opts)
+            else:
+                raise ValueError(f"unsupported method {method}")
+            if resp.status == 404:
+                raise NotFoundError(f"{url} returned 404")
+            if resp.status == 401:
+                logger.warning("api_token_expired_renewing")
+                await self._login()
+                opts["headers"] = {"Authorization": f"JWT {self._token}"}
+                resp = await page.request.get(url, **opts)
+            if resp.status >= 400:
+                raise FatalError(f"API returned {resp.status}: {await resp.text()[:200]}")
+            return await resp.json()
+        finally:
+            await page.close()
+
     async def _retrying(self, func, *args, **kwargs):
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.settings.max_retries),
@@ -297,40 +374,197 @@ class AigenisClient:
                 await self._sleep()
 
     async def fetch_listing(self, currency: str) -> list[dict[str, Any]]:
-        await self._ensure_browser()
         if self.settings.data_api_url:
-            url = f"{self.settings.data_api_url.rstrip('/')}/bonds?currency={currency}"
-            try:
-                data = await self._fetch_json(url)
-                items = data.get("items") or data.get("data") or data
-                if isinstance(items, dict):
-                    items = items.get("items", [])
-                return [it for it in items if isinstance(it, dict)]
-            except NotFoundError:
-                raise
-            except Exception as e:
-                logger.warning("api_listing_failed", currency=currency, error=str(e))
+            return await self._legacy_fetch_listing(currency)
+        return await self._api_fetch_listing(currency)
+
+    async def _legacy_fetch_listing(self, currency: str) -> list[dict[str, Any]]:
+        await self._ensure_browser()
+        url = f"{self.settings.data_api_url.rstrip('/')}/bonds?currency={currency}"
+        try:
+            data = await self._fetch_json(url)
+            items = data.get("items") or data.get("data") or data
+            if isinstance(items, dict):
+                items = items.get("items", [])
+            return [it for it in items if isinstance(it, dict)]
+        except NotFoundError:
+            raise
+        except Exception as e:
+            logger.warning("api_listing_failed", currency=currency, error=str(e))
         url = f"{self.settings.base_url.rstrip('/')}/bonds/"
         html = await self._fetch_html_cached(url)
         from scraper.parsers.listing import parse_listing_html
 
         return parse_listing_html(html, currency=currency)
 
+    async def _api_fetch_listing(self, currency: str) -> list[dict[str, Any]]:
+        self._id_by_internal.clear()
+        page_num = 1
+        all_normalized: list[dict[str, Any]] = []
+        while True:
+            data = await self._api_request(
+                "GET",
+                "/v1/security_definition/bonds/",
+                params={"page": page_num, "page_size": 100},
+            )
+            items = data.get("results") if isinstance(data, dict) else data
+            if not items or not isinstance(items, list):
+                break
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                # Currency filter: settl_currency at top level, or definition.currency
+                item_currency = (
+                    item.get("settl_currency")
+                    or item.get("definition", {}).get("currency")
+                    or ""
+                )
+                if item_currency.upper() != currency.upper():
+                    continue
+                # internal_id from definition.state_security_id, or parse from symbol (id/state_security_id)
+                defn = item.get("definition") or {}
+                iid = defn.get("state_security_id")
+                if not iid:
+                    sym = item.get("symbol", "")
+                    if "/" in sym:
+                        iid = sym.rsplit("/", 1)[-1]
+                    else:
+                        iid = sym
+                if not iid:
+                    continue
+                self._id_by_internal[str(iid)] = item.get("id")
+                normalized = self._normalize_listing_item(item, currency)
+                if normalized:
+                    all_normalized.append(normalized)
+            # API does not return count; stop when page has fewer items than page_size
+            if len(items) < 100:
+                break
+            page_num += 1
+        logger.info(
+            "api_listing_fetched",
+            currency=currency,
+            count=len(all_normalized),
+        )
+        return all_normalized
+
+    def _normalize_listing_item(
+        self,
+        item: dict[str, Any],
+        currency: str,
+    ) -> dict[str, Any] | None:
+        from datetime import UTC, datetime
+
+        defn = item.get("definition") or {}
+        iid = defn.get("state_security_id") or item.get("symbol", "")
+        if "/" in iid and defn.get("state_security_id"):
+            iid = defn["state_security_id"]
+        elif "/" in iid:
+            iid = iid.rsplit("/", 1)[-1]
+        if not iid:
+            return None
+        return {
+            "internal_id": str(iid),
+            "name": str(defn.get("parent_symbol") or item.get("name_of_security") or iid),
+            "currency": str(item.get("settl_currency") or defn.get("currency") or currency).upper(),
+            "isin": item.get("isin"),
+            "nominal": defn.get("nominal"),
+            "coupon_rate": defn.get("coupon_rate"),
+            "coupon_frequency": defn.get("coupon_frequency"),
+            "registration_number": defn.get("state_security_id"),
+            "issue_number": defn.get("issue_number"),
+            "issue_volume": defn.get("quantity") or item.get("quantity"),
+            "income_method": defn.get("income_method"),
+            "in_stock": defn.get("available_for_individuals"),
+            "guarantor": None,
+            "maturity_term_text": str(
+                defn.get("time_to_maturity_years") or ""
+            ) if defn.get("time_to_maturity_years") else None,
+            "coupon_description": defn.get("coupon_description"),
+            "coupon_schedule": defn.get("coupon_schedule"),
+            "issuer": (defn.get("issuer") or {}).get("full_name"),
+            "end_date": defn.get("maturity_date"),
+            "maturity_date": defn.get("maturity_date"),
+            "price": defn.get("price"),
+            "yield_to_maturity": defn.get("instr_yield"),
+            "market_price": defn.get("market_price") or item.get("market_price"),
+            "best_bid": item.get("best_bid") or defn.get("best_bid"),
+            "best_offer": item.get("best_offer") or defn.get("best_offer"),
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+
     async def fetch_detail(self, internal_id: str) -> dict[str, Any]:
-        await self._ensure_browser()
         if self.settings.data_api_url:
-            url = f"{self.settings.data_api_url.rstrip('/')}/bonds/{internal_id}"
-            try:
-                return await self._fetch_json(url)
-            except NotFoundError:
-                raise
-            except Exception as e:
-                logger.warning("api_detail_failed", internal_id=internal_id, error=str(e))
+            return await self._legacy_fetch_detail(internal_id)
+        return await self._api_fetch_detail(internal_id)
+
+    async def _legacy_fetch_detail(self, internal_id: str) -> dict[str, Any]:
+        await self._ensure_browser()
+        url = f"{self.settings.data_api_url.rstrip('/')}/bonds/{internal_id}"
+        try:
+            return await self._fetch_json(url)
+        except NotFoundError:
+            raise
+        except Exception as e:
+            logger.warning("api_detail_failed", internal_id=internal_id, error=str(e))
         url = f"{self.settings.base_url.rstrip('/')}/bonds/"
         html = await self._fetch_html_cached(url)
         from scraper.parsers.detail import parse_detail_html
 
         return parse_detail_html(html, internal_id=internal_id)
+
+    async def _api_fetch_detail(self, internal_id: str) -> dict[str, Any]:
+        from datetime import UTC, datetime
+
+        bond_id = self._id_by_internal.get(internal_id)
+        if not bond_id:
+            msg = f"internal_id {internal_id} not found in listing; ensure fetch_listing ran first"
+            raise NotFoundError(msg)
+        data = await self._api_request("GET", f"/v1/security_definition/{bond_id}/")
+        if not isinstance(data, dict):
+            raise ParseError(f"unexpected API response for {internal_id}")
+        defn = data.get("definition") or {}
+        iid = defn.get("state_security_id") or internal_id
+        sym = data.get("symbol", "")
+        if not defn.get("state_security_id") and "/" in sym:
+            iid = sym.rsplit("/", 1)[-1]
+        return {
+            "id": iid,
+            "internal_id": iid,
+            "name": str(defn.get("parent_symbol") or data.get("name_of_security") or iid),
+            "issuer": (defn.get("issuer") or {}).get("full_name"),
+            "currency": str(defn.get("currency") or data.get("settl_currency", "USD")).upper(),
+            "nominal": defn.get("nominal"),
+            "coupon_rate": defn.get("coupon_rate"),
+            "coupon_frequency": defn.get("coupon_frequency"),
+            "maturity_date": defn.get("maturity_date"),
+            "price": defn.get("price"),
+            "yield_to_maturity": defn.get("instr_yield"),
+            "offer_date": None,
+            "start_date": defn.get("issue_date"),
+            "end_date": defn.get("maturity_date"),
+            "isin": defn.get("security_symbol"),
+            "status": "active",
+            "registration_number": defn.get("state_security_id"),
+            "issue_volume": defn.get("quantity"),
+            "issue_number": defn.get("issue_number"),
+            "income_method": defn.get("revenue_type"),
+            "in_stock": defn.get("available_for_individuals"),
+            "guarantor": None,
+            "maturity_term_text": str(
+                defn.get("time_to_maturity_years") or ""
+            ) if defn.get("time_to_maturity_years") else None,
+            "coupon_description": defn.get("coupon_description"),
+            "coupon_schedule": defn.get("coupon_schedule"),
+            "quantity": defn.get("quantity"),
+            "issuer_country": defn.get("issuer_country"),
+            "market_price": defn.get("market_price") or data.get("market_price"),
+            "best_bid": data.get("best_bid") or defn.get("best_bid"),
+            "best_offer": data.get("best_offer") or defn.get("best_offer"),
+            "accrued_interest_amount": defn.get("accrued_interest_amount"),
+            "calc_yield_bid": data.get("calc_yield_bid") or defn.get("calc_yield_bid"),
+            "calc_yield_offer": data.get("calc_yield_offer") or defn.get("calc_yield_offer"),
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
 
     async def fetch_history(
         self,

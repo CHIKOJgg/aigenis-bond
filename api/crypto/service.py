@@ -1,12 +1,13 @@
 # Crypto Authentication Service
-# 
+#
 # Handles crypto wallet-based authentication and payment verification
 #
 
 from __future__ import annotations
 
 import hashlib
-from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +28,7 @@ class CryptoWalletAuthService:
     - Wallet-based identity verification
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         self.config = config
 
     async def authenticate_wallet_payment(
@@ -38,7 +39,7 @@ class CryptoWalletAuthService:
         signature: str,
         nonce: str,
         session: AsyncSession,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Authenticate a crypto wallet payment.
 
@@ -173,12 +174,13 @@ class CryptoWalletAuthService:
             session: Database session
         """
         from sqlalchemy import update
+
         from scraper.orm import UserORM
 
         await session.execute(
             update(UserORM)
             .where(UserORM.wallet_address == wallet_address)
-            .values(subscription_tier=target_tier, updated_at=time(timezone.utcnow))
+            .values(subscription_tier=target_tier, updated_at=datetime.now(timezone.utc))
         )
         await session.commit()
 
@@ -206,7 +208,7 @@ class InsufficientBalanceError(CryptoPaymentServiceError):
 # === FastAPI Dependencies ===
 
 
-def get_crypto_wallet_auth_service(config: Dict[str, Any] = {}) -> CryptoWalletAuthService:
+def get_crypto_wallet_auth_service(config: dict[str, Any] = {}) -> CryptoWalletAuthService:
     """
     Dependency injection for crypto wallet auth service.
 

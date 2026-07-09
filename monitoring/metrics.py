@@ -26,7 +26,8 @@ _metrics: dict[str, float | int | dict[str, Any]] = {
 
 
 def inc(name: str, value: float = 1) -> None:
-    _metrics[name] = _metrics.get(name, 0) + value
+    current = _metrics.get(name, 0)
+    _metrics[name] = (current if isinstance(current, (int, float)) else 0) + value
 
 
 def set_metric(name: str, value: float | int) -> None:
@@ -34,7 +35,9 @@ def set_metric(name: str, value: float | int) -> None:
 
 
 def get_metrics() -> dict[str, Any]:
-    return {**_metrics, "uptime_seconds": time.time() - _metrics.get("started_at", time.time())}
+    started = _metrics.get("started_at", time.time())
+    uptime = time.time() - (started if isinstance(started, (int, float)) else time.time())
+    return {**_metrics, "uptime_seconds": uptime}
 
 
 def timed(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
@@ -52,7 +55,7 @@ def timed(name: str) -> Callable[[Callable[P, R]], Callable[P, R]]:
     return decorator
 
 
-async def timed_async(name: str, coro):
+async def timed_async(name: str, coro: Any) -> Any:
     start = time.monotonic()
     try:
         return await coro

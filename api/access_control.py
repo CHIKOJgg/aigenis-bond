@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -17,7 +18,7 @@ from scraper.logging import get_logger
 logger = get_logger("api.access_control")
 
 # Feature flags based on subscription tiers
-FEATURE_FLAGS: Dict[str, Dict[str, bool]] = {
+FEATURE_FLAGS: dict[str, dict[str, bool]] = {
     "free": {
         "access_bond_list": True,
         "access_bond_detail": True,
@@ -72,7 +73,7 @@ FEATURE_FLAGS: Dict[str, Dict[str, bool]] = {
 }
 
 # Pro features in terms of API endpoints
-PRO_FEATURES_ROUTES: List[Dict[str, Any]] = [
+PRO_FEATURES_ROUTES: list[dict[str, Any]] = [
     {"method": "GET", "path": "/api/v1/desk"},
     {"method": "GET", "path": "/api/v1/portfolio"},
     {"method": "GET", "path": "/api/v1/forecast"},
@@ -87,7 +88,7 @@ PRO_FEATURES_ROUTES: List[Dict[str, Any]] = [
 def check_feature_access(
     request: Request,
     session: AsyncSession,
-) -> tuple[int, Optional[str]]:
+) -> tuple[int, str | None]:
     user_id = _get_current_user_from_request(request)
     if not user_id:
         return 401, "Not authenticated"
@@ -97,19 +98,19 @@ def check_feature_access(
         return 401, "User tier not found"
 
     flags = FEATURE_FLAGS.get(user_tier, FEATURE_FLAGS["free"])
-    
+
     # Check API rate limit (simple implementation)
     # In production, use Redis or database to track usage
     client_host = request.client.host if request.client else "unknown"
-    
+
     return 200, None
 
 
-def _get_current_user_from_request(request: Request) -> Optional[int]:
+def _get_current_user_from_request(request: Request) -> int | None:
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     if not token:
         return None
-    
+
     from api.auth.service import decode_token
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
@@ -117,7 +118,7 @@ def _get_current_user_from_request(request: Request) -> Optional[int]:
     return int(payload["sub"])
 
 
-async def _get_user_tier(session: AsyncSession, user_id: int) -> Optional[str]:
+async def _get_user_tier(session: AsyncSession, user_id: int) -> str | None:
     from scraper.orm import UserORM
     result = await session.execute(
         select(UserORM.subscription_tier).where(UserORM.id == user_id)
@@ -132,14 +133,14 @@ class FeatureAccessMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        
+
         path = scope.get("path", "")
         method = scope.get("method", "GET")
-        
+
         # Skip middleware for public endpoints
         if path in ["/health", "/ready", "/openapi.json", "/docs", "/redoc", "/auth/login", "/auth/register"]:
             return await self.app(scope, receive, send)
-        
+
         # Check feature access
         request = Request(scope, receive)
         async with session_scope() as session:
@@ -167,28 +168,28 @@ class FeatureAccessMiddleware:
 
 def rate_limit_middleware(app: FastAPI) -> FastAPI:
     """Simple rate limiting middleware based on subscription tier"""
-    
+
     @app.middleware("http")
     async def rate_limit(request: Request, call_next):
         path = request.url.path
         if path in ["/health", "/ready", "/openapi.json", "/docs", "/redoc"]:
             return await call_next(request)
-        
+
         client_host = request.client.host if request.client else "unknown"
         user_id = _get_current_user_from_request(request)
-        
+
         async with session_scope() as session:
             if user_id:
                 user_tier = await _get_user_tier(session, user_id)
                 tier = user_tier or "free"
             else:
                 tier = "free"
-            
+
             limit = FEATURE_FLAGS.get(tier, FEATURE_FLAGS["free"])["api_rate_limit"]
-        
+
         # Simplified rate limiting - in production, use Redis or Redis-like
         # This is a simple implementation that would need to be more robust
-        
+
         return await call_next(request)
 
 
@@ -196,21 +197,21 @@ def add_feature_access_headers(app: FastAPI) -> FastAPI:
     @app.middleware("http")
     async def add_headers(request: Request, call_next):
         response = await call_next(request)
-        
+
         # Check if user is authenticated and add feature headers
         user_id = _get_current_user_from_request(request)
         if user_id:
             async with session_scope() as session:
                 user_tier = await _get_user_tier(session, user_id)
                 tier = user_tier or "free"
-                
+
                 headers = {
                     "X-User-Tier": tier,
                     "X-API-Rate-Limit": str(FEATURE_FLAGS[tier]["api_rate_limit"]),
                     "X-Features": ",".join([k for k, v in FEATURE_FLAGS[tier].items() if v]),
                 }
-                
+
                 for key, value in headers.items():
                     response.headers[key] = value
-        
+
         return response

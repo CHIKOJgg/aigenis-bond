@@ -1,5 +1,6 @@
 """JSON API парсеры (ответы внутреннего endpoint)."""
 
+import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -13,10 +14,19 @@ def _coerce_date(value: Any) -> date | None:
         return None
     if isinstance(value, date):
         return value
+    s = str(value).strip()
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
-    except Exception as e:
-        raise ParseError(f"bad date {value!r}") from e
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+    except Exception:
+        pass
+    # aigenis.by format: DD.MM.YYYY
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", s)
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except Exception:
+            pass
+    raise ParseError(f"bad date {value!r}")
 
 
 def _first_not_none(*values: Any) -> Any:
@@ -33,7 +43,8 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
         if not isinstance(it, dict):
             continue
         internal_id = (
-            it.get("id") or it.get("internal_id") or it.get("slug") or it.get("registration_number")
+            it.get("state_security_id") or it.get("symbol") or it.get("internal_id")
+            or it.get("slug") or it.get("id") or it.get("registration_number")
         )
         if not internal_id:
             continue
@@ -44,8 +55,8 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
                 "currency": str(it.get("currency") or currency).upper(),
                 "isin": it.get("isin"),
                 "nominal": it.get("nominal"),
-                "coupon_rate": it.get("coupon_rate") or it.get("coupon"),
-                "coupon_frequency": it.get("coupon_frequency") or it.get("frequency"),
+                "coupon_rate": _first_not_none(it.get("coupon_rate"), it.get("coupon")),
+                "coupon_frequency": _first_not_none(it.get("coupon_frequency"), it.get("frequency")),
                 "registration_number": it.get("registration_number") or it.get("reg_number"),
                 "issue_number": it.get("issue_number") or it.get("issue"),
                 "issue_volume": it.get("issue_volume"),

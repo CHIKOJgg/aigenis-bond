@@ -8,11 +8,11 @@ from xml.etree import ElementTree as ET
 
 import httpx
 
-from scraper.client import AigenisClient
 from notifications.fx_repository import upsert_fx, upsert_metal
+from scraper.client import AigenisClient
+from scraper.config import get_settings
 from scraper.db import session_scope
 from scraper.logging import get_logger
-from scraper.config import get_settings
 from scraper.pipeline import run_once
 
 logger = get_logger("scraper.fx")
@@ -130,10 +130,10 @@ async def fetch_and_save_metal_prices() -> dict[str, Decimal]:
     return metals
 
 
-async def fetch_and_save_bonds() -> None:
+async def fetch_and_save_bonds() -> dict[str, int]:
     """Parse all Aigenis bonds (USD, BYN, EUR, RUB, CNY) from the official website."""
     settings = get_settings()
     async with AigenisClient(settings.aigenis) as client:
-        await run_once(client, settings.aigenis.currencies)
-
-    logger.info("bond_scraped", summary=f"{settings.aigenis.currencies}")
+        summary = await run_once(client, settings.aigenis.currencies)
+    logger.info("bond_scraped", summary=summary)
+    return summary

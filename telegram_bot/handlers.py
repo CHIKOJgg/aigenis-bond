@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal, InvalidOperation
 
 from aiogram import Router
@@ -55,6 +56,7 @@ from visualization.charts import (
 
 router = Router()
 _PAGE_SIZE = 10
+_parse_lock = asyncio.Lock()
 
 # ---------------------------------------------------------------------------
 # Callback pagination
@@ -103,45 +105,50 @@ async def cmd_start(message: Message) -> None:
 
     text = (
         "👋 <b>Bond Fixed Income Assistant</b>\n\n"
-        "V4 — Mini Fixed Income Desk:\n"
-        "/desk — меню desk\n"
-        "/curve — кривая доходности (NS)\n"
+        "📊 <b>Обзор рынка</b>\n"
+        "/top — TOP облигаций по рейтингу\n"
+        "/usd — Облигации в USD\n"
+        "/byn — Облигации в BYN\n"
+        "/metals — Золото / серебро / платина\n"
+        "/rates — Курсы валют и металлов\n"
+        "/curve — Кривая доходности\n\n"
+        "🔬 <b>Аналитика</b>\n"
         "/rv — Relative Value (rich/cheap)\n"
-        "/duration [ID] — duration-отчёт\n"
-        "/carry [funding] — carry-ранжирование\n"
-        "/repo ID — сделка РЕПО\n"
-        "/stress — стресс-тесты (7 пресетов)\n\n"
-        "V3 — ML:\n"
-        "/ml — статус моделей\n"
-        "/predict ID — прогноз\n"
-        "/buy — рекомендации\n"
-        "/rebalance-auto — drift-детект\n\n"
-        "V2 — Portfolio:\n"
-        "/top — TOP Reward/Risk\n"
-        "/usd /byn /metals /new\n"
-        "/portfolio /rebalance /forecast /scenario\n"
-        "/watchlist /watch ID /unwatch ID\n\n"
-        "Сервис:\n"
-        "/rates — курсы валют и металлов\n"
-        "/alerts — последние алерты\n"
-        "/help — список команд"
+        "/duration [ID] — Duration-отчёт\n"
+        "/carry [funding] — Carry-ранжирование\n"
+        "/repo ID — Сделка РЕПО\n"
+        "/stress — Стресс-тесты (7 сценариев)\n\n"
+        "🤖 <b>Рекомендации</b>\n"
+        "/buy — Лучшие для покупки\n"
+        "/predict ID — Прогноз по облигации\n"
+        "/ml — Состояние ML-моделей\n"
+        "/rebalance-auto — Drift-детект\n\n"
+        "💼 <b>Портфель</b>\n"
+        "/portfolio — Мой портфель\n"
+        "/rebalance — Ребалансировка\n"
+        "/forecast — Прогноз капитала\n"
+        "/scenario — Сценарный анализ\n"
+        "/watchlist — Мои избранные\n"
+        "/watch ID — Добавить в избранное\n"
+        "/unwatch ID — Убрать из избранного\n\n"
+        "⚙️ <b>Прочее</b>\n"
+        "/settings — Настройки портфеля\n"
+        "/alerts — Системные алерты\n"
+        "/help — Это сообщение"
     )
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🏛 Desk", callback_data="cmd_desk"),
+                InlineKeyboardButton(text="📊 Обзор", callback_data="cmd_overview"),
+                InlineKeyboardButton(text="🔬 Аналитика", callback_data="cmd_desk"),
+            ],
+            [
+                InlineKeyboardButton(text="🤖 Рекомендации", callback_data="cmd_buy"),
+                InlineKeyboardButton(text="💼 Портфель", callback_data="cmd_portfolio"),
+            ],
+            [
                 InlineKeyboardButton(text="🏆 Top", callback_data="cmd_top"),
-            ],
-            [
-                InlineKeyboardButton(text="💼 Portfolio", callback_data="cmd_portfolio"),
-                InlineKeyboardButton(text="📊 Curve", callback_data="cmd_curve"),
-            ],
-            [
-                InlineKeyboardButton(text="🛒 Buy", callback_data="cmd_buy"),
-                InlineKeyboardButton(text="📈 Forecast", callback_data="cmd_forecast"),
-            ],
-            [
-                InlineKeyboardButton(text="💱 Rates", callback_data="cmd_rates"),
+                InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates"),
             ],
         ]
     )
@@ -154,10 +161,10 @@ async def cmd_help(message: Message) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Parse gate: until parsing is done, user can only run /parse
+# Parse gate: until parsing is done, user can only run /parse (enforced by
+# telegram_bot.middleware.ParseLockMiddleware). Unlock state is derived from
+# the DB (presence of bonds), so it survives process restarts.
 # ---------------------------------------------------------------------------
-
-_PARSED_USERS: set[int] = set()
 
 
 def _user_id(message: Message) -> int:
@@ -165,46 +172,54 @@ def _user_id(message: Message) -> int:
 
 
 async def _is_unlocked(message: Message) -> bool:
-    uid = _user_id(message)
-    if uid in _PARSED_USERS:
-        return True
-    async with session_scope() as session:
-        count = await repositories.bonds.count_bonds(session)
-    return count > 0
+    from telegram_bot.middleware import db_has_bonds
+
+    return await db_has_bonds()
 
 
 def _locked_message() -> str:
-    return (
-        "🔒 База облигаций пуста.\n"
-        "Сначала запустите парсинг командой /parse (или кнопкой 🚀 Старт парсинга), "
-        "после этого станут доступны остальные команды."
-    )
+    from telegram_bot.middleware import locked_message_text
+
+    return locked_message_text()
 
 
 @router.message(Command("parse"))
 async def cmd_parse(message: Message) -> None:
-    uid = _user_id(message)
-    await message.answer(
-        "🚀 Запускаю парсинг облигаций с aigenis.by (USD/BYN/EUR/RUB/CNY)…\n"
-        "Это может занять несколько минут."
-    )
-    try:
-        from scraper.fx import fetch_and_save_bonds, fetch_and_save_rates, fetch_and_save_metal_prices
-
-        _PARSED_USERS.add(uid)
-        await fetch_and_save_bonds()
-        rates = await fetch_and_save_rates()
-        metals = await fetch_and_save_metal_prices()
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("parse_failed", error=str(exc))
-        await message.answer(f"❌ Ошибка парсинга: {exc}")
+    if _parse_lock.locked():
+        await message.answer("⏳ Парсинг уже запущен другим пользователем. Подождите окончания.")
         return
-    await message.answer(
-        "✅ Парсинг завершён.\n"
-        f"Курсы валют: {', '.join(f'{k}={v:.4f}' for k, v in sorted(rates.items()))}\n"
-        f"Металлы (BYN/oz): {', '.join(f'{k}={v:.2f}' for k, v in sorted(metals.items()))}\n\n"
-        "Теперь доступны все команды. Отправьте /start для меню."
-    )
+    async with _parse_lock:
+        await message.answer(
+            "🚀 Запускаю парсинг облигаций с aigenis.by (USD/BYN/EUR/RUB/CNY)…\n"
+            "Это может занять несколько минут."
+        )
+        try:
+            from scraper.fx import (
+                fetch_and_save_bonds,
+                fetch_and_save_metal_prices,
+                fetch_and_save_rates,
+            )
+
+            summary = await fetch_and_save_bonds()
+            rates = await fetch_and_save_rates()
+            metals = await fetch_and_save_metal_prices()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("parse_failed", error=str(exc))
+            await message.answer(f"❌ Ошибка парсинга: {exc}")
+            return
+        bonds_total = (summary or {}).get("listing_total", 0)
+        bonds_ok = (summary or {}).get("details_ok", 0)
+        bonds_err = (summary or {}).get("details_err", 0)
+        rates_str = ", ".join(f"{k}={format(v, '.4f')}" for k, v in sorted(rates.items()))
+        metals_str = ", ".join(f"{k}={format(v, '.2f')}" for k, v in sorted(metals.items()))
+        await message.answer(
+            "✅ Парсинг завершён.\n"
+            f"Облигаций загружено: <b>{bonds_ok}</b> из {bonds_total} "
+            f"(ошибок: {bonds_err}).\n"
+            f"Курсы валют: {rates_str}\n"
+            f"Металлы (BYN/oz): {metals_str}\n\n"
+            "Теперь доступны все команды. Отправьте /start для меню."
+        )
 
 
 @router.message(Command("rates"))
@@ -229,19 +244,6 @@ async def cmd_rates(message: Message) -> None:
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
-_ALLOWED_BEFORE_PARSE = {"start", "help", "parse", "rates"}
-
-
-@router.message(lambda m: bool(m.text and m.text.startswith("/")))
-async def _gate_commands(message: Message) -> None:
-    cmd = (message.text or "").split(maxsplit=1)[0].lstrip("/").lower()
-    if cmd in _ALLOWED_BEFORE_PARSE:
-        return
-    if await _is_unlocked(message):
-        return
-    await message.answer(_locked_message())
-
-
 # ---------------------------------------------------------------------------
 # Callback bridges
 # ---------------------------------------------------------------------------
@@ -255,6 +257,7 @@ _DESK_HANDLER_MAP = {
     "cmd_forecast": "cmd_forecast",
     "cmd_rates": "cmd_rates",
     "cmd_parse": "cmd_parse",
+    "cmd_overview": "cmd_overview",
 }
 
 
@@ -269,10 +272,30 @@ async def cb_generic(callback_query) -> None:
         "cmd_forecast": cmd_forecast,
         "cmd_rates": cmd_rates,
         "cmd_parse": cmd_parse,
+        "cmd_overview": cmd_overview,
     }
     handler = handler_map.get(callback_query.data)
     if handler:
         await handler(callback_query.message)
+
+
+# ---------------------------------------------------------------------------
+# Overview (inline keyboard shortcut)
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("overview"))
+async def cmd_overview(message: Message) -> None:
+    text = (
+        "<b>📊 Обзор рынка</b>\n\n"
+        "/top — TOP облигаций по рейтингу\n"
+        "/usd — Облигации в USD\n"
+        "/byn — Облигации в BYN\n"
+        "/metals — Золото / серебро / платина\n"
+        "/rates — Курсы валют и металлов\n"
+        "/curve — Кривая доходности"
+    )
+    await message.answer(text, parse_mode=ParseMode.HTML)
 
 
 # ---------------------------------------------------------------------------
@@ -290,9 +313,12 @@ async def cmd_top(message: Message, page: int = 0) -> None:
         if not top:
             await message.answer("Нет облигаций на этой странице.")
             return
+        bonds_map = {b.internal_id: b.name for b in await fetch_all_bonds()}
         lines = [f"<b>🏆 TOP Reward/Risk</b> (стр. {page + 1})\n"]
         for i, s in enumerate(top, page * _PAGE_SIZE + 1):
-            lines.append(f"{i}. <code>{s.internal_id}</code> — Score: {float(s.score):.0f}")
+            name_display = bonds_map.get(s.internal_id, "")
+            name_part = f" — {name_display}" if name_display else ""
+            lines.append(f"{i}. <code>{s.internal_id}</code>{name_part} — Score: {float(s.score):.0f}")
         total = page + 1
         await message.answer(
             "\n".join(lines),
@@ -391,7 +417,7 @@ async def cmd_metals(message: Message) -> None:
             issuer=best.issuer,
             price=best.price,
         )
-        parts.append(f"{title}: <code>{best.internal_id}</code> Score {s.score:.0f}")
+        parts.append(f"{title}: <code>{best.internal_id}</code> ({best.name}) Score {s.score:.0f}")
     await message.answer("\n".join(parts), parse_mode=ParseMode.HTML)
 
 
@@ -468,10 +494,13 @@ async def cmd_rebalance(message: Message) -> None:
     if not deltas:
         await message.answer("Ребалансировка не требуется.")
         return
+    bonds_map_rb = {b.internal_id: b.name for b in bonds}
     lines = ["<b>♻️ Ребалансировка</b>\n"]
     for iid, d in list(deltas.items())[:20]:
         sign = "+" if d >= 0 else ""
-        lines.append(f"• <code>{iid}</code>: {sign}{d}")
+        n = bonds_map_rb.get(iid, "")
+        n_part = f" ({n})" if n else ""
+        lines.append(f"• <code>{iid}</code>{n_part}: {sign}{d}")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -589,13 +618,22 @@ async def cmd_predict(message: Message) -> None:
         return
     async with session_scope() as session:
         rows = await predictions_for_bond(session, bond_id, limit=1)
+        from sqlalchemy import select as sa_select
+
+        from scraper.orm import BondORM
+
+        bond_name = (
+            await session.execute(
+                sa_select(BondORM.name).where(BondORM.internal_id == bond_id)
+            )
+        ).scalar_one_or_none() or bond_id
     if not rows:
         await message.answer("Нет прогнозов. Запустите `python -m scraper ml-predict`.")
         return
     p = rows[0]
     expl = "\n".join(f"  • {e}" for e in (p.explanation or []))
     text = (
-        f"<b>📈 Прогноз {p.internal_id}</b>\n"
+        f"<b>📈 Прогноз {bond_id}</b> ({bond_name})\n"
         f"Решение: <b>{p.decision}</b> (conf {float(p.confidence):.2f})\n"
         f"Predicted YTM: {float(p.predicted_ytm) if p.predicted_ytm is not None else '—'}\n"
         f"Predicted return: {float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
@@ -633,6 +671,7 @@ async def cmd_rebalance_auto(message: Message) -> None:
             )
             for b in bonds_orm
         ]
+        bonds_map_ar = {b.internal_id: b.name for b in bonds}
         total = total_value(positions) or prefs.initial_capital
         plan = build_plan(
             bonds=bonds,
@@ -648,8 +687,10 @@ async def cmd_rebalance_auto(message: Message) -> None:
         f"Max drift: {plan.max_drift_observed:.2%}\n",
     ]
     for a in plan.actions[:20]:
+        n = bonds_map_ar.get(a.internal_id, "")
+        n_part = f" ({n})" if n else ""
         lines.append(
-            f"• <b>{a.side.upper()}</b> {a.internal_id}: {a.amount} "
+            f"• <b>{a.side.upper()}</b> {a.internal_id}{n_part}: {a.amount} "
             f"({a.weight_before:.2%} → {a.weight_after:.2%})"
         )
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -670,11 +711,18 @@ async def cmd_watchlist(message: Message) -> None:
         if not prefs.watchlist:
             await message.answer("Watchlist пуст. Добавьте: /watch OP-51")
             return
+        from scraper.orm import BondORM
+        result_bonds = await session.execute(
+            select(BondORM).where(BondORM.internal_id.in_(prefs.watchlist))
+        )
+        watch_bonds = {b.internal_id: b.name for b in result_bonds.scalars().all()}
         lines = ["<b>👀 Watchlist</b>\n"]
         for iid in prefs.watchlist:
             sc = await get_score(session, iid)
             score_text = f"Score {float(sc.score):.0f}" if sc else "нет скора"
-            lines.append(f"• <code>{iid}</code> — {score_text}")
+            name_display = watch_bonds.get(iid, "")
+            name_part = f" ({name_display})" if name_display else ""
+            lines.append(f"• <code>{iid}</code>{name_part} — {score_text}")
         await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -684,19 +732,28 @@ async def cmd_watch(message: Message) -> None:
     if not iid:
         await message.answer("Использование: /watch OP-51")
         return
+    bond_name = iid
     async with session_scope() as session:
         if not await repositories.bonds.exists(session, iid):
             await message.answer(
                 f"❌ Облигация <code>{iid}</code> не найдена в БД", parse_mode=ParseMode.HTML
             )
             return
+        from sqlalchemy import select as sa_select
+
+        from scraper.orm import BondORM
+
+        result = await session.execute(
+            sa_select(BondORM.name).where(BondORM.internal_id == iid)
+        )
+        bond_name = result.scalar_one_or_none() or iid
     uid = user_id_from_message(message)
     async with session_scope() as session:
         from telegram_bot.preferences_repository import add_to_watchlist
 
         prefs = await add_to_watchlist(session, uid, iid)
     await message.answer(
-        f"✅ <code>{iid}</code> добавлен в watchlist ({len(prefs.watchlist)} шт.)",
+        f"✅ <code>{iid}</code> ({bond_name}) добавлен в watchlist ({len(prefs.watchlist)} шт.)",
         parse_mode=ParseMode.HTML,
     )
 
@@ -707,18 +764,27 @@ async def cmd_unwatch(message: Message) -> None:
     if not iid:
         await message.answer("Использование: /unwatch OP-51")
         return
+    bond_name = iid
     async with session_scope() as session:
         if not await repositories.bonds.exists(session, iid):
             await message.answer(
                 f"❌ Облигация <code>{iid}</code> не найдена в БД", parse_mode=ParseMode.HTML
             )
             return
+        from sqlalchemy import select as sa_select
+
+        from scraper.orm import BondORM
+
+        result = await session.execute(
+            sa_select(BondORM.name).where(BondORM.internal_id == iid)
+        )
+        bond_name = result.scalar_one_or_none() or iid
     uid = user_id_from_message(message)
     async with session_scope() as session:
         from telegram_bot.preferences_repository import remove_from_watchlist
 
         await remove_from_watchlist(session, uid, iid)
-    await message.answer(f"❌ <code>{iid}</code> убран из watchlist", parse_mode=ParseMode.HTML)
+    await message.answer(f"❌ <code>{iid}</code> ({bond_name}) убран из watchlist", parse_mode=ParseMode.HTML)
 
 
 # ---------------------------------------------------------------------------
@@ -747,15 +813,14 @@ async def cmd_alerts(message: Message) -> None:
 @router.message(Command("desk"))
 async def cmd_desk(message: Message) -> None:
     text = (
-        "<b>🏛 Mini Fixed Income Desk</b>\n\n"
+        "<b>🔬 Аналитика (Fixed Income Desk)</b>\n\n"
         "Команды:\n"
-        "/curve — кривая доходности (Nelson-Siegel)\n"
         "/rv — Relative Value (rich/cheap)\n"
-        "/duration [ID] — duration-отчёт\n"
-        "/carry [funding] — carry-ранжирование\n"
-        "/repo ID [notional] [tenor] — сделка РЕПО\n"
-        "/stress — стресс-тесты (7 пресетов)\n"
-        "/desk_status — последние сигналы"
+        "/duration [ID] — Duration-отчёт\n"
+        "/carry [funding] — Carry-ранжирование\n"
+        "/repo ID [notional] [tenor] — Сделка РЕПО\n"
+        "/stress — Стресс-тесты (7 сценариев)\n"
+        "/desk_status — Последние сигналы"
     )
     await message.answer(text, parse_mode=ParseMode.HTML)
 
@@ -791,11 +856,14 @@ async def cmd_rv(message: Message, page: int = 0) -> None:
         return
     total_pages = max(1, (len(signals) + _PAGE_SIZE - 1) // _PAGE_SIZE)
     page_slice = signals[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]
+    bonds_map_rv = {b.internal_id: b.name for b in bonds}
     lines = [f"<b>⚖️ Relative Value</b> (стр. {page + 1}/{total_pages})\n"]
     for s in page_slice:
         sign = "🟢 BUY" if s.side == "buy" else ("🔴 SELL" if s.side == "sell" else "⚪ HOLD")
+        n = bonds_map_rv.get(s.internal_id, "")
+        n_part = f" {n}" if n else ""
         lines.append(
-            f"{sign} <code>{s.internal_id}</code> (Z={s.z_score:+.2f}, spread {s.spread_pct:+.2f}%)"
+            f"{sign} <code>{s.internal_id}</code>{n_part} (Z={s.z_score:+.2f}, spread {s.spread_pct:+.2f}%)"
         )
     await message.answer(
         "\n".join(lines),
@@ -814,11 +882,13 @@ async def cmd_duration(message: Message) -> None:
             await message.answer(f"Облигация {args[1]} не найдена")
             return
         rep = desk_duration.duration_report(bond)
+        title = f"<b>⏱ Duration Report</b> — <code>{bond.internal_id}</code> ({bond.name})\n"
     else:
         weights = {b.internal_id: 1 / len(bonds) for b in bonds} if bonds else {}
         rep = desk_duration.portfolio_duration(bonds, weights=weights)
+        title = "<b>⏱ Duration Report (Портфель)</b>\n"
     lines = [
-        "<b>⏱ Duration Report</b>\n",
+        title,
         f"Macaulay: {rep.macaulay_duration:.3f}",
         f"Modified: {rep.modified_duration:.3f}",
         f"Convexity: {rep.convexity:.3f}",
@@ -840,11 +910,14 @@ async def cmd_carry(message: Message, page: int = 0) -> None:
         return
     total_pages = max(1, (len(trades) + _PAGE_SIZE - 1) // _PAGE_SIZE)
     page_slice = trades[page * _PAGE_SIZE : (page + 1) * _PAGE_SIZE]
+    bonds_map_carry = {b.internal_id: b.name for b in bonds}
     lines = [f"<b>💰 Carry (funding {funding}%)</b> (стр. {page + 1}/{total_pages})\n"]
     for t in page_slice:
         sign = "🟢" if t.expected_pnl_pct > 0 else "🔴"
+        n = bonds_map_carry.get(t.internal_id, "")
+        n_part = f" {n}" if n else ""
         lines.append(
-            f"{sign} <code>{t.internal_id}</code>: купон {t.coupon_pct:.2f}%, "
+            f"{sign} <code>{t.internal_id}</code>{n_part}: купон {t.coupon_pct:.2f}%, "
             f"rolldown {t.rolldown_bps:+.1f}bp, P&L {t.expected_pnl_pct:+.3f}%"
         )
     await message.answer(
@@ -861,8 +934,12 @@ async def cmd_repo(message: Message) -> None:
         await message.answer("Использование: /repo OP-51 [notional=1000] [tenor_days=30]")
         return
     internal_id = args[1]
-    notional = float(args[2]) if len(args) > 2 else 1000.0
-    tenor = int(args[3]) if len(args) > 3 else 30
+    try:
+        notional = float(args[2]) if len(args) > 2 else 1000.0
+        tenor = int(args[3]) if len(args) > 3 else 30
+    except (ValueError, IndexError):
+        await message.answer("❌ Неверный формат. Использование: /repo OP-51 [notional=1000] [tenor_days=30]")
+        return
     bonds = await bonds_for_bot()
     bond = next((b for b in bonds if b.internal_id == internal_id), None)
     if bond is None:
@@ -877,7 +954,7 @@ async def cmd_repo(message: Message) -> None:
         tenor_days=tenor,
     )
     text = (
-        f"<b>🏦 РЕПО {internal_id}</b>\n"
+        f"<b>🏦 РЕПО {internal_id}</b> ({bond.name})\n"
         f"Залог: {deal.collateral_value}\n"
         f"Haircut: {deal.haircut_pct}%\n"
         f"Кэш выдано: {deal.cash_lent}\n"
@@ -908,10 +985,14 @@ async def cmd_desk_status(message: Message) -> None:
     async with session_scope() as session:
         rv = await latest_rv_signals(session, limit=5)
         stress_runs = await latest_stress_runs(session, limit=3)
+    bonds = await fetch_all_bonds()
+    desk_bonds_map = {b.internal_id: b.name for b in bonds}
     lines = ["<b>🏛 Desk Status</b>\n"]
     lines.append("<b>RV (top-5):</b>")
     for s in rv:
-        lines.append(f"  {s.internal_id}: Z={float(s.z_score):+.2f} ({s.side})")
+        n = desk_bonds_map.get(s.internal_id, "")
+        n_part = f" ({n})" if n else ""
+        lines.append(f"  {s.internal_id}{n_part}: Z={float(s.z_score):+.2f} ({s.side})")
     lines.append("\n<b>Stress (recent):</b>")
     for r in stress_runs:
         lines.append(f"  {r.scenario_name}: P&L {float(r.pnl_pct):+.3f}%")
@@ -1079,9 +1160,25 @@ async def cmd_broadcast(message: Message) -> None:
         await message.answer("Использование: /broadcast <text>")
         return
     async with session_scope() as session:
-        result = await session.execute(select(BondORM.internal_id).limit(1))
-        users = list(result.scalars().all())
-    await message.answer(f"📢 Сообщение отправлено {len(users)} пользователям (stub)")
+        from sqlalchemy import select as sa_select
+
+        from scraper.orm import UserPreferencesORM
+
+        result = await session.execute(sa_select(UserPreferencesORM.user_id).distinct())
+        user_ids = [row[0] for row in result.fetchall()]
+    if not user_ids:
+        await message.answer("Нет пользователей для рассылки.")
+        return
+    text_to_send = args[1]
+    sent = 0
+    failed = 0
+    for uid in user_ids:
+        try:
+            await message.bot.send_message(chat_id=uid, text=f"📢 {text_to_send}")
+            sent += 1
+        except Exception:
+            failed += 1
+    await message.answer(f"📢 Разослано: {sent} успешно, {failed} с ошибками.")
 
 
 @router.message(Command("stats"))

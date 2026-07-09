@@ -39,17 +39,13 @@ build-nocache:
 up:
 	docker compose up -d
 
-up-bot:
-	docker compose --profile bot up -d
+up-all:
+	docker compose up -d frontend
 
 up-api:
 	docker compose up -d api
 
 up-frontend:
-	docker compose up -d frontend
-
-up-saas:
-	docker compose --profile all up -d
 	docker compose up -d frontend
 
 # ---- Остановка ----

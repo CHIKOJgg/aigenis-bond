@@ -12,9 +12,6 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from loguru import logger
 
-from telegram_bot.handlers import router
-from telegram_bot.middleware import RequestIdMiddleware, ThrottlingMiddleware
-
 # ---------------------------------------------------------------------------
 # Re-exports — backward compat for tests (single-module layout → refactored)
 # ---------------------------------------------------------------------------
@@ -71,15 +68,29 @@ from telegram_bot.handlers import (  # noqa: F401
     cmd_usd,
     cmd_watch,
     cmd_watchlist,
+    router,
 )
 from telegram_bot.helpers import (  # noqa: F401
     bonds_for_bot as _bonds_for_bot,
+)
+from telegram_bot.helpers import (
     fetch_all_bonds as _fetch_all_bonds,
+)
+from telegram_bot.helpers import (
     fetch_bonds_by_currency as _fetch_bonds_by_currency,
+)
+from telegram_bot.helpers import (
     fetch_bonds_with_history as _fetch_bonds_with_history,
+)
+from telegram_bot.helpers import (
     paginate_kb,
     parse_bond_args,
     parse_funding_rate,
+)
+from telegram_bot.middleware import (
+    ParseLockMiddleware,
+    RequestIdMiddleware,
+    ThrottlingMiddleware,
 )
 from telegram_bot.preferences_repository import (  # noqa: F401
     add_to_watchlist,
@@ -98,6 +109,7 @@ async def main(token: str) -> None:
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(router)
+    dp.message.middleware(ParseLockMiddleware())
     dp.message.middleware(ThrottlingMiddleware())
     dp.message.middleware(RequestIdMiddleware())
 
