@@ -6,7 +6,10 @@ import type {
   AnalyticsPortfolio, AnalyticsForecast, AnalyticsRecommendation, AnalyticsAlert,
 } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink } from 'lucide-react';
+import { LandingPage } from './LandingPage';
+import { LegalPages } from './LegalPages';
+import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard } from 'lucide-react';
 
 type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'settings' | 'subscribe';
 
@@ -23,6 +26,16 @@ function AppInner() {
   const [page, setPage] = useState<Page>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
+  const [legalPage, setLegalPage] = useState<'terms' | 'privacy' | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(isOnboardingNeeded());
+
+  if (showOnboarding) {
+    return <OnboardingTour onDone={() => setShowOnboarding(false)} />;
+  }
+
+  if (legalPage) {
+    return <LegalPages page={legalPage} onBack={() => setLegalPage(null)} />;
+  }
 
   if (loading) {
     return (
@@ -33,8 +46,9 @@ function AppInner() {
   }
 
   if (!user) {
+    if (authPage === 'login') return <LoginPage onRegister={() => setAuthPage('register')} />;
     if (authPage === 'register') return <RegisterPage onSwitch={() => setAuthPage('login')} />;
-    return <LoginPage onRegister={() => setAuthPage('register')} />;
+    return <LandingPage onLogin={() => setAuthPage('login')} onRegister={() => setAuthPage('register')} />;
   }
 
   const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
@@ -101,6 +115,19 @@ function AppInner() {
         {page === 'settings' && <SettingsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'subscribe' && <SubscribePage />}
       </main>
+      <footer className="border-t border-gray-800 bg-gray-900 mt-8">
+        <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+          <span>&copy; {new Date().getFullYear()} Aigenis Parser. All rights reserved.</span>
+          <div className="flex items-center gap-4">
+            <button onClick={() => setLegalPage('terms')} className="hover:text-gray-300 transition-colors flex items-center gap-1">
+              <FileText size={12} /> Terms of Service
+            </button>
+            <button onClick={() => setLegalPage('privacy')} className="hover:text-gray-300 transition-colors flex items-center gap-1">
+              <ShieldCheck size={12} /> Privacy Policy
+            </button>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -222,6 +249,8 @@ function RegisterPage({ onSwitch }: { onSwitch: () => void }) {
 
 function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   const { user, logout } = useAuth();
+  const isOnTrial = user?.trial_end && new Date(user.trial_end) > new Date();
+  const trialDaysLeft = isOnTrial ? Math.ceil((new Date(user!.trial_end!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
 
   return (
     <div className="space-y-4">
@@ -245,6 +274,12 @@ function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
             <span className="text-gray-400">Role</span>
             <span className="text-white font-medium capitalize">{user?.role}</span>
           </div>
+          {isOnTrial && (
+            <div className="flex justify-between py-1.5 border-b border-gray-800">
+              <span className="text-gray-400">Trial</span>
+              <span className="text-amber-400 font-medium">{trialDaysLeft} day{trialDaysLeft > 1 ? 's' : ''} left</span>
+            </div>
+          )}
         </div>
         <div className="mt-6 flex flex-wrap gap-3">
           {user?.subscription_tier === 'free' && (
@@ -966,6 +1001,18 @@ function SubscribePage() {
   if (loading) return <LoadingSkeleton />;
 
   const isPaid = user && user.subscription_tier !== 'free';
+  const isOnTrial = user?.trial_end && new Date(user.trial_end) > new Date();
+  const trialDaysLeft = isOnTrial ? Math.ceil((new Date(user!.trial_end!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+
+  const handleYooKassaPayment = async (plan: string) => {
+    try {
+      const base = window.location.origin;
+      const result = await api.billing.createPayment(plan, `${base}/subscribe?success=1`, `${base}/subscribe`);
+      if (result.confirmation_url) window.location.href = result.confirmation_url;
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Ошибка оплаты');
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -973,42 +1020,79 @@ function SubscribePage() {
         <div className="w-14 h-14 bg-amber-600/20 rounded-full flex items-center justify-center mx-auto mb-3">
           <Star size={26} className="text-amber-400" />
         </div>
-        <h2 className="text-2xl font-bold">Подписка через Telegram Stars</h2>
+        <h2 className="text-2xl font-bold">Подписка</h2>
         <p className="text-sm text-gray-400 mt-2">
-          Оплата принимается только в Telegram Stars внутри бота. Подписка открывает
-          Desk-аналитику (RV, duration, carry, РЕПО, стресс-тесты), рекомендации,
-          портфель, ML-прогнозы и алерты — одинаково в боте и на сайте.
+          Подписка открывает Desk-аналитику (RV, duration, carry, РЕПО, стресс-тесты),
+          рекомендации, портфель, ML-прогнозы и алерты — одинаково в боте и на сайте.
         </p>
-        {isPaid && (
+        {isOnTrial && (
+          <p className="mt-3 inline-block bg-blue-900/40 border border-blue-800 text-blue-300 text-sm px-3 py-1.5 rounded-lg">
+            Пробный период: <b>{trialDaysLeft} {trialDaysLeft > 1 ? 'дней' : 'день'}</b> осталось
+          </p>
+        )}
+        {isPaid && !isOnTrial && (
           <p className="mt-3 inline-block bg-emerald-900/40 border border-emerald-800 text-emerald-300 text-sm px-3 py-1.5 rounded-lg">
             Ваш текущий тариф: <b className="capitalize">{user!.subscription_tier}</b>
           </p>
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {(info?.plans ?? []).map(p => (
-          <div key={p.tier} className="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-bold">{p.name}</h3>
-              <span className="flex items-center gap-1 text-amber-400 font-semibold"><Star size={15} />{p.stars}</span>
-            </div>
-            <p className="text-sm text-gray-400 flex-1">{p.blurb}</p>
-            <p className="text-xs text-gray-500 mt-3">{p.duration_days} дней · разовая оплата</p>
+      {/* YooKassa — карты, СБП, Apple Pay, Google Pay */}
+      {info?.yookassa_configured && info.yookassa_plans.length > 0 && (
+        <div>
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <CreditCard size={18} className="text-blue-400" /> Банковская карта (ЮKassa)
+          </h3>
+          <p className="text-sm text-gray-500 mb-3">Принимаем Visa, Mastercard, Мир, СБП, Apple Pay, Google Pay</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {info.yookassa_plans.map(p => (
+              <div key={p.tier} className="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-bold">{p.name}</h3>
+                  <span className="text-emerald-400 font-semibold">{p.price} {p.currency}/{p.interval}</span>
+                </div>
+                <p className="text-sm text-gray-400 flex-1">
+                  {p.tier === 'pro' ? 'Полный Fixed Income Desk, ML, портфель, алерты.' : 'Всё из Pro + макс. лимиты, приоритетная поддержка.'}
+                </p>
+                <button onClick={() => handleYooKassaPayment(p.tier)}
+                  className="mt-4 w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                  Оплатить картой
+                </button>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      {info?.deep_link ? (
-        <a href={info.deep_link} target="_blank" rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl text-sm font-medium transition-colors">
-          <ExternalLink size={16} /> Оформить в Telegram-боте
-        </a>
-      ) : (
-        <p className="text-center text-sm text-gray-500">
-          Ссылка на бота не настроена. Задайте <code className="text-gray-400">TELEGRAM_BOT_USERNAME</code> на сервере.
-        </p>
+        </div>
       )}
+
+      {/* Telegram Stars Plans */}
+      <div>
+        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <Star size={18} className="text-amber-400" /> Telegram Stars
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {(info?.plans ?? []).map(p => (
+            <div key={p.tier} className="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-bold">{p.name}</h3>
+                <span className="flex items-center gap-1 text-amber-400 font-semibold"><Star size={15} />{p.stars}</span>
+              </div>
+              <p className="text-sm text-gray-400 flex-1">{p.blurb}</p>
+              <p className="text-xs text-gray-500 mt-3">{p.duration_days} дней · разовая оплата</p>
+            </div>
+          ))}
+        </div>
+
+        {info?.deep_link ? (
+          <a href={info.deep_link} target="_blank" rel="noopener noreferrer"
+            className="mt-4 flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl text-sm font-medium transition-colors">
+            <ExternalLink size={16} /> Оформить в Telegram-боте
+          </a>
+        ) : (
+          <p className="mt-4 text-center text-sm text-gray-500">
+            Откройте бота и отправьте /subscribe
+          </p>
+        )}
+      </div>
     </div>
   );
 }

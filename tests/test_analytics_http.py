@@ -38,8 +38,13 @@ def test_gated_endpoints_return_402_for_anonymous():
         assert resp.headers.get("X-Upgrade-Required") == "true"
 
 
-def test_stripe_billing_not_mounted_by_default():
-    # Payments are Stars-only; Stripe checkout must not be exposed unless
-    # STRIPE_SECRET_KEY is set (it isn't in tests).
-    resp = client.post("/billing/checkout", json={})
-    assert resp.status_code == 404
+def test_yookassa_billing_plans():
+    # YooKassa billing is always mounted; plans endpoint must return lists.
+    resp = client.get("/billing/plans")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert len(data) >= 2
+    plan_ids = {p["id"] for p in data}
+    assert "pro" in plan_ids
+    assert "enterprise" in plan_ids

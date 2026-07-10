@@ -92,15 +92,15 @@ async def _get_user_tier(session: AsyncSession, user_id: int) -> str | None:
     from scraper.orm import UserORM
     from telegram_bot.subscriptions import effective_tier
     result = await session.execute(
-        select(UserORM.subscription_tier, UserORM.subscription_expires_at).where(
+        select(UserORM.subscription_tier, UserORM.subscription_expires_at, UserORM.trial_end).where(
             UserORM.id == user_id
         )
     )
     row = result.one_or_none()
     if row is None:
         return None
-    tier, expires_at = row
-    return effective_tier(tier, expires_at)
+    tier, expires_at, trial_end = row
+    return effective_tier(tier, expires_at, trial_end)
 
 
 class FeatureAccessMiddleware:

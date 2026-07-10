@@ -7,6 +7,7 @@ overview, scores, stats) are always available.
 """
 from __future__ import annotations
 
+import os
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -83,16 +84,35 @@ def _default_prefs(user_id: int) -> UserPreferences:
 
 
 # --------------------------------------------------------------------------- #
-# Free: subscription info (Telegram Stars). The website replicates the bot, so
-# payments happen in the bot via Stars — the web "Subscribe" button deep-links
-# users straight into the Telegram bot's /subscribe flow.
+# Free: subscription info (Telegram Stars + YooKassa).
 # --------------------------------------------------------------------------- #
 @router.get("/subscribe-info")
 async def api_subscribe_info():
     username = (get_settings().telegram.bot_username or "").lstrip("@")
     deep_link = f"https://t.me/{username}?start=subscribe" if username else None
+    yookassa_configured = bool(os.environ.get("YOOKASSA_SHOP_ID", "") and os.environ.get("YOOKASSA_SECRET_KEY", ""))
+    yookassa_plans = []
+    if yookassa_configured:
+        yookassa_plans = [
+            {
+                "tier": "pro",
+                "name": "Pro",
+                "price": os.environ.get("YOOKASSA_PRO_PRICE", "29.00"),
+                "currency": os.environ.get("YOOKASSA_CURRENCY", "BYN"),
+                "interval": "month",
+            },
+            {
+                "tier": "enterprise",
+                "name": "Enterprise",
+                "price": os.environ.get("YOOKASSA_ENTERPRISE_PRICE", "99.00"),
+                "currency": os.environ.get("YOOKASSA_CURRENCY", "BYN"),
+                "interval": "month",
+            },
+        ]
     return {
         "provider": "telegram_stars",
+        "yookassa_configured": yookassa_configured,
+        "yookassa_plans": yookassa_plans,
         "bot_username": username or None,
         "deep_link": deep_link,
         "plans": [

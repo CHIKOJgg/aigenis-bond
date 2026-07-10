@@ -188,6 +188,8 @@ class UserORM(Base):
         DateTime(timezone=True), nullable=True
     )
     last_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trial_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    password_reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -207,8 +209,8 @@ class SubscriptionORM(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
-    stripe_customer_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # YooKassa payment identifier
+    yookassa_payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="incomplete")
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -219,7 +221,7 @@ class SubscriptionORM(Base):
 
     __table_args__ = (
         Index("ix_subscriptions_user_id", "user_id"),
-        Index("ix_subscriptions_stripe_customer", "stripe_customer_id"),
+        Index("ix_subscriptions_yookassa_payment", "yookassa_payment_id"),
         Index("ix_subscriptions_plan", "plan"),
     )
 

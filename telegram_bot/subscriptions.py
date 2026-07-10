@@ -50,6 +50,9 @@ STAR_PLANS: dict[str, StarPlan] = {
     ),
 }
 
+# Free trial duration for new users (in days)
+TRIAL_DAYS = int(os.environ.get("TRIAL_DAYS", "7"))
+
 FREE_TIER = "free"
 _PAID_TIERS = ("pro", "enterprise")
 # Tiers ordered by capability (free < pro < enterprise).
@@ -82,20 +85,27 @@ def _as_aware(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def effective_tier(tier: str | None, expires_at: datetime | None) -> str:
+def effective_tier(tier: str | None, expires_at: datetime | None, trial_end: datetime | None = None) -> str:
     """Return the tier the user is *actually* entitled to right now.
 
     Paid tiers lapse to ``free`` once ``expires_at`` is in the past. Because
     Stars payments in aiogram 3.29 are one-off (no ``subscription_period``),
     every purchase grants a fixed ``duration_days`` window; expiry is enforced
     here so the bot and web stay consistent without a background job.
+
+    If the user has no active paid tier but has an active trial (``trial_end``
+    is in the future), they are treated as ``pro`` during the trial period.
     """
     tier = tier or FREE_TIER
-    if not is_paid(tier):
+    if is_paid(tier):
+        exp = _as_aware(expires_at)
+        if exp is not None and exp <= _now():
+            return FREE_TIER
         return tier
-    exp = _as_aware(expires_at)
-    if exp is not None and exp <= _now():
-        return FREE_TIER
+    # Free or expired — check for active trial
+    trial = _as_aware(trial_end)
+    if trial is not None and trial > _now():
+        return "pro"
     return tier
 
 
@@ -110,14 +120,13 @@ async def get_or_create_user_by_telegram(
     ).scalar_one_or_none()
     if existing is not None:
         return existing
-    # Also handle the case where a web user row exists with the same telegram_id
-    # but wasn't linked yet (not expected, but safe).
     display = name or username or f"tg_{telegram_id}"
     user = UserORM(
         email=f"tg_{telegram_id}@telegram.local",
         name=display,
         telegram_id=telegram_id,
         subscription_tier=FREE_TIER,
+        trial_end=_now() + timedelta(days=TRIAL_DAYS),
         role="user",
         is_active=True,
         is_verified=False,
@@ -135,7 +144,7 @@ async def get_tier_by_telegram(telegram_id: int) -> str:
         ).scalar_one_or_none()
         if user is None:
             return FREE_TIER
-        return effective_tier(user.subscription_tier, user.subscription_expires_at)
+        return effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end)
 
 
 async def set_tier_by_telegram(

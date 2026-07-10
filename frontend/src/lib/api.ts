@@ -167,6 +167,7 @@ export interface User {
   name: string;
   role: string;
   subscription_tier: string;
+  trial_end: string | null;
   is_active: boolean;
   is_verified: boolean;
 }
@@ -187,9 +188,19 @@ export interface StarPlan {
 
 export interface SubscribeInfo {
   provider: string;
+  yookassa_configured: boolean;
+  yookassa_plans: YooKassaPlan[];
   bot_username: string | null;
   deep_link: string | null;
   plans: StarPlan[];
+}
+
+export interface YooKassaPlan {
+  tier: string;
+  name: string;
+  price: string;
+  currency: string;
+  interval: string;
 }
 
 export interface AnalyticsCurve {
@@ -308,6 +319,13 @@ export const api = {
     forecast: () => get<AnalyticsForecast[]>('/api/v1/forecast'),
     recommendations: (topK = 5) => get<AnalyticsRecommendation[]>(`/api/v1/recommendations?top_k=${topK}`),
     alerts: (limit = 10) => get<AnalyticsAlert[]>(`/api/v1/alerts?limit=${limit}`),
+  },
+
+  billing: {
+    plans: () => get<{ id: string; name: string; price: number; currency: string; features: string[] }[]>('/billing/plans'),
+    createPayment: (plan: string, success_url: string, cancel_url: string) =>
+      post<{ payment_id: string; confirmation_url: string | null }>('/billing/create-payment', { plan, success_url, cancel_url }),
+    subscription: () => get<{ plan: string; status: string; current_period_end: string | null; cancel_at_period_end: boolean }>('/billing/subscription'),
   },
 
   auth: {

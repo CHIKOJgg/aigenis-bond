@@ -36,24 +36,26 @@ app = FastAPI(
 )
 
 settings = get_settings()
-# Default to no cross-origin access; explicitly allow only configured origins.
-# A wildcard origin is rejected here because credentials are enabled.
+# CORS: allow only explicitly configured origins. Never use wildcard with credentials.
+# In development, set CORS_ORIGINS=http://localhost:5173,http://localhost:80
+# In production, set to your actual domain: https://app.example.com
 _cors_env = os.environ.get("CORS_ORIGINS", "").strip()
 _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+if not _cors_origins:
+    logger.warning(
+        "CORS_ORIGINS not configured — API will reject all cross-origin requests. "
+        "Set CORS_ORIGINS in .env for your frontend domain(s)."
+    )
 
 # Include routers
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
 
-# Payments are handled exclusively via Telegram Stars inside the bot. The legacy
-# Stripe billing router is only mounted when STRIPE_SECRET_KEY is explicitly
-# configured, so by default the website exposes no Stripe endpoints.
-if os.environ.get("STRIPE_SECRET_KEY", "").strip():
-    app.include_router(billing_router)
-    logger.info("stripe_billing_enabled")
-else:
-    logger.info("stripe_billing_disabled", reason="STRIPE_SECRET_KEY not set; using Telegram Stars")
+# Payments are handled via Telegram Stars inside the bot and YooKassa
+# (ЮKassa) for card / SBP / Apple Pay / Google Pay on the website.
+app.include_router(billing_router)
+logger.info("yookassa_billing_enabled")
 
 # Expose the caller's subscription tier / feature flags on every response.
 add_feature_access_headers(app)

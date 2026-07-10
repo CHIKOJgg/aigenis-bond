@@ -24,6 +24,15 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
 class GoogleAuthRequest(BaseModel):
     id_token: str
     name: str | None = None
@@ -35,6 +44,7 @@ class UserResponse(BaseModel):
     name: str
     role: str
     subscription_tier: str
+    trial_end: str | None = None
     is_active: bool
     is_verified: bool
 

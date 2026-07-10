@@ -1,0 +1,85 @@
+{
+  "title": "Aigenis Platform Overview",
+  "uid": "aigenis-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["aigenis", "production"],
+  "timezone": "browser",
+  "editable": true,
+  "panels": [
+    {
+      "title": "Bot Commands / sec",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(bot_commands_total[5m])",
+          "legendFormat": "{{command}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 }
+    },
+    {
+      "title": "Bot Error Rate",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(bot_errors_total[5m])",
+          "legendFormat": "{{error_type}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 }
+    },
+    {
+      "title": "Command Latency (p50/p95)",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, rate(bot_command_seconds_bucket[5m]))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(bot_command_seconds_bucket[5m]))",
+          "legendFormat": "p95"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 }
+    },
+    {
+      "title": "Active Users",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "count(scrape_samples_scraped{job='aigenis-api'})"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 }
+    },
+    {
+      "title": "API Requests",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "rate(http_requests_total[5m])",
+          "legendFormat": "{{method}} {{path}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 4, "y": 8 }
+    },
+    {
+      "title": "Bot Uptime",
+      "type": "stat",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "time() - process_start_time_seconds{job='aigenis-bot'}"
+        }
+      ],
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 8 }
+    }
+  ]
+}

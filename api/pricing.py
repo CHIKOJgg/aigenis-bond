@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -15,9 +14,8 @@ logger = get_logger("api.pricing")
 
 PLANS = {
     "free": {
-        "price_id": os.getenv("STRIPE_PRICE_FREE", ""),
         "price": 0,
-        "currency": "USD",
+        "currency": "BYN",
         "interval": None,
         "features": {
             "max_bonds": 20,
@@ -28,9 +26,8 @@ PLANS = {
         },
     },
     "pro": {
-        "price_id": os.getenv("STRIPE_PRICE_PRO", ""),
         "price": 2900,
-        "currency": "USD",
+        "currency": "BYN",
         "interval": "month",
         "features": {
             "max_bonds": 1000,
@@ -41,9 +38,8 @@ PLANS = {
         },
     },
     "enterprise": {
-        "price_id": os.getenv("STRIPE_PRICE_ENTERPRISE", ""),
         "price": 9900,
-        "currency": "USD",
+        "currency": "BYN",
         "interval": "month",
         "features": {
             "max_bonds": -1,
