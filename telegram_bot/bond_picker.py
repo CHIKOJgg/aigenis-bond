@@ -86,6 +86,7 @@ async def cb_bonds_list(callback_query) -> None:
     if nav:
         rows.append(nav)
     rows.append([InlineKeyboardButton(text="⬅️ Назад к валютам", callback_data="bonds:menu")])
+    rows.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
     text = f"🔍 <b>Облигации ({key.upper()})</b> — стр. {page + 1}/{total_pages}\nВыберите облигацию:"
     await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -117,6 +118,7 @@ async def cb_bond(callback_query) -> None:
                 InlineKeyboardButton(text="🗑 Из избранного", callback_data=f"bondact:{iid}:unwatch"),
                 InlineKeyboardButton(text="⬅️ К списку", callback_data="bonds:menu"),
             ],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
         ]
     )
     await callback_query.message.edit_text(
@@ -222,6 +224,7 @@ async def _run_bond_action(callback_query, iid: str, action: str) -> None:
         inline_keyboard=[
             [InlineKeyboardButton(text="⬅️ Назад к облигации", callback_data=f"bond:{iid}")],
             [InlineKeyboardButton(text="🔍 К списку облигаций", callback_data="bonds:menu")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
         ]
     )
     await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=back_kb)

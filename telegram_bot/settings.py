@@ -20,6 +20,7 @@ from aiogram.types import (
 from scraper.db import session_scope
 from telegram_bot.handler_state import pending_edit
 from telegram_bot.helpers import user_id_from_message
+from telegram_bot.menus import _home_kb
 
 router = Router()
 
@@ -67,6 +68,9 @@ async def cmd_settings(message: Message) -> None:
             InlineKeyboardButton(text="Пополнение", callback_data="edit:contribution"),
         ]
     )
+    rows.append(
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
+    )
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
@@ -93,7 +97,8 @@ async def cb_preset(callback_query) -> None:
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="⚙️ К настройкам", callback_data="menu:settings")]
+                [InlineKeyboardButton(text="⚙️ К настройкам", callback_data="menu:settings")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
             ]
         ),
     )
@@ -145,7 +150,7 @@ async def cb_pending_edit(message: Message) -> None:
         await message.answer("✏️ Режим ввода отменён — команда не применена. Повторите её.")
         return
     _ok, text = await apply_setting(uid, field, (message.text or "").strip())
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 async def apply_setting(uid: int, field: str, val_str: str) -> tuple[bool, str]:
@@ -186,4 +191,4 @@ async def cmd_set(message: Message) -> None:
     field, val_str = args[1].lower(), args[2]
     uid = user_id_from_message(message)
     _ok, text = await apply_setting(uid, field, val_str)
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())

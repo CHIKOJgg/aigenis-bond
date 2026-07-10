@@ -19,7 +19,9 @@ def paginate_kb(prefix: str, page: int, total: int) -> InlineKeyboardMarkup | No
         buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"page:{prefix}:{page + 1}"))
     if not buttons:
         return None
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+    # Always let the user jump back to the main menu from a paginated list.
+    home = [InlineKeyboardButton(text="🏠 Меню", callback_data="menu:main")]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons, home])
 
 
 async def fetch_bonds_by_currency(currency: str) -> list:

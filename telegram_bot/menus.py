@@ -43,6 +43,10 @@ HELP_TEXT = (
 def _main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏆 Топ-10", callback_data="cmd_top"),
+                InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates"),
+            ],
             [InlineKeyboardButton(text="📊 Обзор рынка", callback_data="menu:overview")],
             [InlineKeyboardButton(text="🔬 Аналитика (Desk)", callback_data="menu:desk")],
             [InlineKeyboardButton(text="🤖 Рекомендации", callback_data="menu:buy")],
@@ -58,6 +62,15 @@ def _main_menu_kb() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="⭐ Подписка", callback_data="stars:menu"),
             ],
+        ]
+    )
+
+
+def _home_kb() -> InlineKeyboardMarkup:
+    """A single 'back to main menu' button, for appending to any response."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
         ]
     )
 

@@ -55,7 +55,7 @@ from telegram_bot.helpers import (
     parse_funding_rate,
     user_id_from_message,
 )
-from telegram_bot.menus import _show_main_menu
+from telegram_bot.menus import _home_kb, _show_main_menu
 from telegram_bot.middleware import db_has_bonds, locked_message_text
 from visualization.charts import (
     plot_capital_forecast,
@@ -186,7 +186,7 @@ async def cmd_rates(message: Message) -> None:
                 lines.append(f"• {title} ({code}): <b>{float(m.price):.2f}</b>")
             else:
                 lines.append(f"• {title} ({code}): — (нет данных)")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +253,7 @@ async def cmd_overview(message: Message) -> None:
         "/rates — Курсы валют и металлов\n"
         "/curve — Кривая доходности"
     )
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +376,7 @@ async def cmd_metals(message: Message) -> None:
             price=best.price,
         )
         parts.append(f"{title}: <code>{best.internal_id}</code> ({best.name}) Score {s.score:.0f}")
-    await message.answer("\n".join(parts), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(parts), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("new"))
@@ -390,7 +390,7 @@ async def cmd_new(message: Message) -> None:
         lines = ["<b>🆕 Новые/обновлённые</b>\n"]
         for b in bonds:
             lines.append(f"• <code>{b.internal_id}</code> {b.name}")
-        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +428,7 @@ async def cmd_portfolio(message: Message) -> None:
     for f in forecasts:
         text += f"  {f.horizon_years}Y: {f.expected_capital} (от {f.pessimistic_capital} до {f.optimistic_capital})\n"
 
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
     png = plot_portfolio_pie(alloc)
     await message.answer_photo(BufferedInputFile(png, filename="portfolio.png"))
 
@@ -459,7 +459,7 @@ async def cmd_rebalance(message: Message) -> None:
         n = bonds_map_rb.get(iid, "")
         n_part = f" ({n})" if n else ""
         lines.append(f"• <code>{iid}</code>{n_part}: {sign}{d}")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -486,7 +486,7 @@ async def cmd_forecast(message: Message) -> None:
         f"Пополнение: {prefs.monthly_contribution}/мес\n"
         f"Ожидаемая доходность: 7% (по умолчанию)\n"
     )
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
     await message.answer_photo(BufferedInputFile(png, filename="forecast.png"))
 
 
@@ -518,7 +518,7 @@ async def cmd_scenario(message: Message) -> None:
             f"• <b>{r.scenario}</b>: курс → {r.usd_byn_end} ({r.fx_change_pct:+.1f}%), "
             f"портфель {r.portfolio_value_change_pct:+.2f}%"
         )
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -545,7 +545,7 @@ async def cmd_buy(message: Message) -> None:
             f"#{r.rank} <code>{r.internal_id}</code> {r.name} — "
             f"<b>{r.decision.upper()}</b> (conf {r.confidence:.2f}, score {r.score:.0f}{ret})"
         )
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +565,7 @@ async def cmd_ml(message: Message) -> None:
             continue
         metrics = ", ".join(f"{k}={float(v):.3f}" for k, v in mv.metrics.items())
         parts.append(f"• <b>{kind}</b> v{mv.version} ({mv.train_rows} строк)\n  {metrics}")
-    await message.answer("\n".join(parts), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(parts), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("predict"))
@@ -597,7 +597,7 @@ async def cmd_predict(message: Message) -> None:
         f"Predicted return: {float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
         f"Объяснение:\n{expl or '—'}"
     )
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("rebalance-auto"))
@@ -651,7 +651,7 @@ async def cmd_rebalance_auto(message: Message) -> None:
             f"• <b>{a.side.upper()}</b> {a.internal_id}{n_part}: {a.amount} "
             f"({a.weight_before:.2%} → {a.weight_after:.2%})"
         )
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -681,7 +681,7 @@ async def cmd_watchlist(message: Message) -> None:
             name_display = watch_bonds.get(iid, "")
             name_part = f" ({name_display})" if name_display else ""
             lines.append(f"• <code>{iid}</code>{name_part} — {score_text}")
-        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("watch"))
@@ -713,6 +713,7 @@ async def cmd_watch(message: Message) -> None:
     await message.answer(
         f"✅ <code>{iid}</code> ({bond_name}) добавлен в watchlist ({len(prefs.watchlist)} шт.)",
         parse_mode=ParseMode.HTML,
+        reply_markup=_home_kb(),
     )
 
 
@@ -742,7 +743,10 @@ async def cmd_unwatch(message: Message) -> None:
         from telegram_bot.preferences_repository import remove_from_watchlist
 
         await remove_from_watchlist(session, uid, iid)
-    await message.answer(f"❌ <code>{iid}</code> ({bond_name}) убран из watchlist", parse_mode=ParseMode.HTML)
+    await message.answer(
+        f"❌ <code>{iid}</code> ({bond_name}) убран из watchlist", parse_mode=ParseMode.HTML,
+        reply_markup=_home_kb(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -760,7 +764,7 @@ async def cmd_alerts(message: Message) -> None:
         lines = ["<b>🔔 Последние алерты</b>\n"]
         for a in alerts:
             lines.append(f"• <b>{a.title}</b>\n  {a.message}")
-        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -780,7 +784,7 @@ async def cmd_desk(message: Message) -> None:
         "/stress — Стресс-тесты (7 сценариев)\n"
         "/desk_status — Последние сигналы"
     )
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("curve"))
@@ -802,7 +806,7 @@ async def cmd_curve(message: Message) -> None:
         )
         for p in curve.points:
             lines.append(f"  {p.tenor}: {p.rate_pct:.2f}%")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("rv"))
@@ -855,7 +859,7 @@ async def cmd_duration(message: Message) -> None:
     ]
     for tenor, krd in rep.key_rate_durations.items():
         lines.append(f"  {tenor}: {krd:.4f}")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("carry"))
@@ -919,7 +923,7 @@ async def cmd_repo(message: Message) -> None:
         f"Ставка: {deal.repo_rate_pct}%, тенор {deal.tenor_days}d\n"
         f"Проценты: {deal.accrued_interest}"
     )
-    await message.answer(text, parse_mode=ParseMode.HTML)
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("stress"))
@@ -930,7 +934,7 @@ async def cmd_stress(message: Message) -> None:
     for name, scn in desk_stress.PRESET_SCENARIOS.items():
         res = desk_stress.run_stress(scn, [(b, weights[b.internal_id]) for b in bonds])
         lines.append(f"• <b>{name}</b> ({scn.kind}): {res.pnl_pct:+.3f}% ({float(res.pnl):+.0f})")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 @router.message(Command("desk_status"))
@@ -949,4 +953,4 @@ async def cmd_desk_status(message: Message) -> None:
     lines.append("\n<b>Stress (recent):</b>")
     for r in stress_runs:
         lines.append(f"  {r.scenario_name}: P&L {float(r.pnl_pct):+.3f}%")
-    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
