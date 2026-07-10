@@ -43,18 +43,69 @@ _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
 
 # Include routers
 app.include_router(auth_router)
-app.include_router(billing_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
+
+# Payments are handled exclusively via Telegram Stars inside the bot. The legacy
+# Stripe billing router is only mounted when STRIPE_SECRET_KEY is explicitly
+# configured, so by default the website exposes no Stripe endpoints.
+if os.environ.get("STRIPE_SECRET_KEY", "").strip():
+    app.include_router(billing_router)
+    logger.info("stripe_billing_enabled")
+else:
+    logger.info("stripe_billing_disabled", reason="STRIPE_SECRET_KEY not set; using Telegram Stars")
 
 # Expose the caller's subscription tier / feature flags on every response.
 add_feature_access_headers(app)
 
 # --- Rate limiting ---
+# In-memory limiter works for a single instance. For horizontal scaling set
+# RATE_LIMIT_BACKEND=redis (uses REDIS_URL) so the counter is shared across
+# every API replica.
 
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "60"))
 _RATE_WINDOW = int(os.environ.get("API_RATE_WINDOW", "60"))
+_RATE_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "memory").strip().lower()
+_redis_client: Any = None
+
+
+def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        import redis.asyncio as aioredis
+
+        _redis_client = aioredis.from_url(
+            os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+            encoding="utf-8",
+            decode_responses=True,
+        )
+    return _redis_client
+
+
+async def _redis_allow(client: str) -> bool:
+    """Fixed-window counter shared across instances via Redis."""
+    try:
+        redis = _get_redis()
+        key = f"ratelimit:{client}:{int(time.time()) // _RATE_WINDOW}"
+        count = await redis.incr(key)
+        if count == 1:
+            await redis.expire(key, _RATE_WINDOW)
+        return count <= _RATE_LIMIT
+    except Exception as exc:  # pragma: no cover - fail open, log and fall back
+        logger.warning("rate_limit_redis_unavailable", error=str(exc))
+        return True
+
+
+def _memory_allow(client: str) -> bool:
+    now = time.monotonic()
+    timestamps = _rate_limit_store[client]
+    cutoff = now - _RATE_WINDOW
+    timestamps[:] = [t for t in timestamps if t > cutoff]
+    if len(timestamps) >= _RATE_LIMIT:
+        return False
+    timestamps.append(now)
+    return True
 
 
 @app.middleware("http")
@@ -62,13 +113,9 @@ async def rate_limit(request: Request, call_next):
     if request.url.path in ("/health", "/ready", "/openapi.json", "/docs", "/redoc"):
         return await call_next(request)
     client = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    timestamps = _rate_limit_store[client]
-    cutoff = now - _RATE_WINDOW
-    timestamps[:] = [t for t in timestamps if t > cutoff]
-    if len(timestamps) >= _RATE_LIMIT:
+    allowed = await _redis_allow(client) if _RATE_BACKEND == "redis" else _memory_allow(client)
+    if not allowed:
         return JSONResponse(status_code=429, content={"error": "Too many requests", "retry_after": _RATE_WINDOW})
-    timestamps.append(now)
     return await call_next(request)
 
 

@@ -184,6 +184,10 @@ class UserORM(Base):
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, server_default="user")
     subscription_tier: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
+    subscription_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

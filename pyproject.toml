@@ -44,6 +44,7 @@ dependencies = [
     "httpx>=0.27.0",
     "jinja2>=3.1.0",
     "aiofiles>=24.1.0",
+    "prometheus-client>=0.21.0",
 ]
 
 [project.optional-dependencies]
@@ -75,6 +76,11 @@ target-version = "py314"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM", "ARG", "C4", "RUF"]
 ignore = ["E501", "RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+# The Telegram bot's UI strings are intentionally in Russian (Cyrillic).
+"telegram_bot/**" = ["RUF001"]
+
 fixable = ["I", "UP", "W"]
 
 [tool.ruff.format]

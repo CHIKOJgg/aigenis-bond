@@ -2,8 +2,12 @@
 
 Flow: /subscribe -> choose tier -> bot sends an XTR invoice ->
 pre_checkout_query (auto-accept) -> successful_payment -> tier granted.
-Recurring subscriptions (subscription_period) re-fire successful_payment on
-each renewal, so the tier is automatically re-granted.
+
+aiogram 3.29 does not support recurring ``subscription_period`` invoices, so
+each Stars payment is a **one-off** purchase that grants a fixed
+``duration_days`` window (enforced by ``subscription_expires_at``). Users renew
+by paying again via /subscribe. Handling is idempotent (keyed on
+``telegram_payment_charge_id``) and Stars refunds revoke the tier.
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ from loguru import logger
 
 from telegram_bot.subscriptions import (
     STAR_PLANS,
+    clear_subscription_by_telegram,
     set_tier_by_telegram,
 )
 
@@ -113,11 +118,34 @@ async def on_successful_payment(message) -> None:
         return
     tier = payload.split(":", 1)[1]
     tg_id = message.from_user.id if message.from_user else 0
-    await set_tier_by_telegram(tg_id, tier)
     plan = STAR_PLANS.get(tier)
+    charge_id = getattr(payment, "telegram_payment_charge_id", None)
+    duration = plan.duration_days if plan else 30
+    applied = await set_tier_by_telegram(
+        tg_id, tier, duration_days=duration, charge_id=charge_id
+    )
+    if not applied:
+        # Duplicate delivery of the same payment — acknowledge without double-granting.
+        return
     name = plan.name if plan else tier
     await message.answer(
-        f"✅ Спасибо! Подписка <b>{name}</b> активна.\n"
-        "Все Pro/Enterprise функции теперь доступны. Откройте меню: /menu",
+        f"✅ Спасибо! Подписка <b>{name}</b> активна на {duration} дней.\n"
+        "Все Pro/Enterprise функции теперь доступны. Откройте меню: /menu\n"
+        "Оплата разовая — по истечении срока продлите её командой /subscribe.",
         parse_mode=ParseMode.HTML,
+    )
+
+
+@stars_router.message(F.refunded_payment)
+async def on_refunded_payment(message) -> None:
+    refund = message.refunded_payment
+    payload = getattr(refund, "invoice_payload", "") or ""
+    if not payload.startswith("stars_sub:"):
+        return
+    tg_id = message.from_user.id if message.from_user else 0
+    charge_id = getattr(refund, "telegram_payment_charge_id", None)
+    await clear_subscription_by_telegram(tg_id, charge_id=charge_id)
+    await message.answer(
+        "↩️ Возврат обработан. Подписка отменена, доступ переведён на бесплатный тариф.\n"
+        "Вы можете оформить подписку снова: /subscribe"
     )

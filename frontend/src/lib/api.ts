@@ -1,5 +1,16 @@
 const BASE = '';
 
+export class ApiError extends Error {
+  status: number;
+  upgradeRequired: boolean;
+  constructor(message: string, status: number, upgradeRequired = false) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.upgradeRequired = upgradeRequired;
+  }
+}
+
 function getToken(): string | null {
   return localStorage.getItem('access_token');
 }
@@ -18,7 +29,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
+    // 402 == subscription required (see api.access_control.RequireFeature)
+    throw new ApiError(body.detail || `HTTP ${res.status}`, res.status, res.status === 402);
   }
   return res.json();
 }
@@ -165,6 +177,98 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface StarPlan {
+  tier: string;
+  name: string;
+  stars: number;
+  duration_days: number;
+  blurb: string;
+}
+
+export interface SubscribeInfo {
+  provider: string;
+  bot_username: string | null;
+  deep_link: string | null;
+  plans: StarPlan[];
+}
+
+export interface AnalyticsCurve {
+  currency: string;
+  slope: number;
+  beta0: number;
+  beta1: number;
+  beta2: number;
+  points: { tenor: string; years: number; rate_pct: number }[];
+}
+
+export interface AnalyticsRV {
+  internal_id: string;
+  side: string;
+  z_score: number | null;
+  spread_pct: number | null;
+}
+
+export interface AnalyticsCarry {
+  internal_id: string;
+  coupon_pct: number;
+  rolldown_bps: number;
+  expected_pnl_pct: number;
+}
+
+export interface AnalyticsStress {
+  scenario: string;
+  kind: string;
+  pnl_pct: number;
+  pnl: number;
+}
+
+export interface AnalyticsRepo {
+  internal_id: string;
+  collateral_value: number;
+  haircut_pct: number;
+  cash_lent: number;
+  repo_rate_pct: number;
+  tenor_days: number;
+  accrued_interest: number;
+}
+
+export interface AnalyticsPortfolio {
+  strategy: string;
+  expected_return: number;
+  sharpe: number;
+  sortino: number;
+  max_drawdown: number;
+  var_95: number;
+  forecast: {
+    horizon_years: number;
+    expected_capital: number;
+    pessimistic_capital: number;
+    optimistic_capital: number;
+  }[];
+}
+
+export interface AnalyticsForecast {
+  horizon_years: number;
+  expected_capital: number;
+  pessimistic_capital: number;
+  optimistic_capital: number;
+}
+
+export interface AnalyticsRecommendation {
+  rank: number;
+  internal_id: string;
+  name: string;
+  decision: string;
+  confidence: number;
+  score: number | null;
+  predicted_return_pct: number | null;
+}
+
+export interface AnalyticsAlert {
+  title: string;
+  message: string;
+}
+
 export const api = {
   health: () => get<Health>('/health'),
 
@@ -188,6 +292,23 @@ export const api = {
   },
 
   stats: () => get<Stats>('/api/v1/stats'),
+
+  subscribeInfo: () => get<SubscribeInfo>('/api/v1/subscribe-info'),
+
+  // Analytics endpoints — mirror the Telegram bot 1:1. Pro/Enterprise endpoints
+  // return 402 (ApiError.upgradeRequired) for free users.
+  analytics: {
+    curve: () => get<AnalyticsCurve[]>('/api/v1/desk/curve'),
+    rv: () => get<AnalyticsRV[]>('/api/v1/desk/rv'),
+    carry: (funding = 5.0) => get<AnalyticsCarry[]>(`/api/v1/desk/carry?funding=${funding}`),
+    stress: () => get<AnalyticsStress[]>('/api/v1/desk/stress'),
+    repo: (body: { bond_id: string; notional?: number; tenor_days?: number; repo_rate_pct?: number }) =>
+      post<AnalyticsRepo>('/api/v1/desk/repo', body),
+    portfolio: () => get<AnalyticsPortfolio>('/api/v1/portfolio'),
+    forecast: () => get<AnalyticsForecast[]>('/api/v1/forecast'),
+    recommendations: (topK = 5) => get<AnalyticsRecommendation[]>(`/api/v1/recommendations?top_k=${topK}`),
+    alerts: (limit = 10) => get<AnalyticsAlert[]>(`/api/v1/alerts?limit=${limit}`),
+  },
 
   auth: {
     register: (email: string, password: string, name: string) =>

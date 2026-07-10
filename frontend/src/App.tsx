@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
-import { api, type Bond, type BondScore, type Stats } from './lib/api';
+import { api, ApiError } from './lib/api';
+import type {
+  Bond, BondScore, Stats, SubscribeInfo,
+  AnalyticsCurve, AnalyticsRV, AnalyticsCarry, AnalyticsStress, AnalyticsRepo,
+  AnalyticsPortfolio, AnalyticsForecast, AnalyticsRecommendation, AnalyticsAlert,
+} from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink } from 'lucide-react';
 
-type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'settings';
+type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'settings' | 'subscribe';
 
 export default function App() {
   return (
@@ -58,6 +63,12 @@ function AppInner() {
                 {icon}{label}
               </button>
             ))}
+            {user.subscription_tier === 'free' && (
+              <button onClick={() => setPage('subscribe')}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'subscribe' ? 'bg-amber-600 text-white' : 'text-amber-400 hover:text-white hover:bg-amber-600/30'}`}>
+                <Star size={16} />Subscribe
+              </button>
+            )}
             <button onClick={() => setPage('settings')}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'settings' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
               <User size={16} />{user.name.split(' ')[0]}
@@ -82,12 +93,13 @@ function AppInner() {
         {page === 'dashboard' && <Dashboard />}
         {page === 'bonds' && <BondsPage />}
         {page === 'scores' && <ScoresPage />}
-        {page === 'desk' && <DeskPage />}
-        {page === 'portfolio' && <PortfolioPage />}
-        {page === 'forecast' && <ForecastPage />}
-        {page === 'ml' && <MLPage />}
-        {page === 'alerts' && <AlertsPage />}
-        {page === 'settings' && <SettingsPage />}
+        {page === 'desk' && <DeskPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'portfolio' && <PortfolioPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'forecast' && <ForecastPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'ml' && <MLPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'alerts' && <AlertsPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'settings' && <SettingsPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'subscribe' && <SubscribePage />}
       </main>
     </div>
   );
@@ -208,7 +220,7 @@ function RegisterPage({ onSwitch }: { onSwitch: () => void }) {
   );
 }
 
-function SettingsPage() {
+function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   const { user, logout } = useAuth();
 
   return (
@@ -234,10 +246,18 @@ function SettingsPage() {
             <span className="text-white font-medium capitalize">{user?.role}</span>
           </div>
         </div>
-        <button onClick={logout}
-          className="mt-6 flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-          <LogOut size={16} /> Sign Out
-        </button>
+        <div className="mt-6 flex flex-wrap gap-3">
+          {user?.subscription_tier === 'free' && (
+            <button onClick={onSubscribe}
+              className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+              <Star size={16} /> Оформить подписку
+            </button>
+          )}
+          <button onClick={logout}
+            className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+            <LogOut size={16} /> Sign Out
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -480,7 +500,7 @@ function ScoresPage() {
   );
 }
 
-function DeskPage() {
+function DeskPage({ onSubscribe }: { onSubscribe?: () => void }) {
   const [tab, setTab] = useState<'curve' | 'rv' | 'carry' | 'repo' | 'stress'>('curve');
 
   return (
@@ -494,115 +514,69 @@ function DeskPage() {
           </button>
         ))}
       </div>
-      {tab === 'curve' && <DeskCurve />}
-      {tab === 'rv' && <DeskRV />}
-      {tab === 'carry' && <DeskCarry />}
-      {tab === 'repo' && <DeskRepo />}
-      {tab === 'stress' && <DeskStress />}
+      {tab === 'curve' && <DeskCurve onSubscribe={onSubscribe} />}
+      {tab === 'rv' && <DeskRV onSubscribe={onSubscribe} />}
+      {tab === 'carry' && <DeskCarry onSubscribe={onSubscribe} />}
+      {tab === 'repo' && <DeskRepo onSubscribe={onSubscribe} />}
+      {tab === 'stress' && <DeskStress onSubscribe={onSubscribe} />}
     </div>
   );
 }
 
-function DeskCurve() {
-  const [curves, setCurves] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.bonds.list({ limit: 200 }).then(allBonds => {
-      const byCur: Record<string, any[]> = {};
-      for (const b of allBonds) {
-        if (!b.yield_to_maturity || !b.maturity_date) continue;
-        (byCur[b.currency] = byCur[b.currency] || []).push(b);
-      }
-      const result = Object.entries(byCur).map(([cur, bonds]) => ({
-        currency: cur,
-        points: bonds
-          .sort((a, b) => new Date(a.maturity_date!).getTime() - new Date(b.maturity_date!).getTime())
-          .slice(0, 20)
-          .map(b => ({
-            tenor: b.internal_id,
-            years: (new Date(b.maturity_date!).getTime() - Date.now()) / (365.25 * 24 * 60 * 60 * 1000),
-            rate: b.yield_to_maturity! * 100,
-          })),
-      }));
-      setCurves(result);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+function DeskCurve({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data: curves, loading, error, locked } = useGated<AnalyticsCurve[]>(() => api.analytics.curve());
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {curves.map(c => (
+      {(curves ?? []).map(c => (
         <div key={c.currency} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
             <LineChart size={16} className="text-emerald-400" /> {c.currency} Curve
+            <span className="text-xs text-gray-500 font-normal ml-auto">slope {c.slope.toFixed(2)}</span>
           </h3>
           <div className="space-y-1">
-            {c.points.filter((p: any) => p.years > 0).slice(0, 15).map((p: any, i: number) => (
+            {c.points.filter(p => p.years > 0).slice(0, 15).map((p, i) => (
               <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-800/50">
                 <span className="text-gray-400 font-mono text-xs">{p.tenor}</span>
-                <span className="text-emerald-400 font-mono">{p.rate.toFixed(2)}%</span>
+                <span className="text-emerald-400 font-mono">{p.rate_pct.toFixed(2)}%</span>
               </div>
             ))}
           </div>
         </div>
       ))}
-      {curves.length === 0 && <EmptyState message="No bonds with YTM data available" className="col-span-full" />}
+      {(curves ?? []).length === 0 && <EmptyState message="No bonds with YTM data available" className="col-span-full" />}
     </div>
   );
 }
 
-function DeskRV() {
-  const [signals, setSignals] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    api.bonds.list({ limit: 200 }).then(allBonds => {
-      const byCur: Record<string, any[]> = {};
-      for (const b of allBonds) {
-        if (!b.yield_to_maturity) continue;
-        (byCur[b.currency] = byCur[b.currency] || []).push(b);
-      }
-      const result: any[] = [];
-      for (const [, bonds] of Object.entries(byCur)) {
-        const ys = bonds.map(b => b.yield_to_maturity! * 100);
-        const mean = ys.reduce((a: number, b: number) => a + b, 0) / ys.length;
-        const std = Math.sqrt(ys.reduce((a: number, y: number) => a + (y - mean) ** 2, 0) / ys.length) || 1;
-        for (const b of bonds) {
-          const z = (b.yield_to_maturity! * 100 - mean) / std;
-          result.push({ internal_id: b.internal_id, z_score: z, side: z > 1 ? 'sell' : z < -1 ? 'buy' : 'hold', currency: b.currency, ytm: b.yield_to_maturity! * 100 });
-        }
-      }
-      result.sort((a, b) => Math.abs(b.z_score) - Math.abs(a.z_score));
-      setSignals(result.slice(0, 50));
-    }).catch(() => setError('Failed to compute RV signals')).finally(() => setLoading(false));
-  }, []);
+function DeskRV({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data: signals, loading, error, locked } = useGated<AnalyticsRV[]>(() => api.analytics.rv());
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
   if (error) return <ErrorBanner message={error} />;
 
+  const rows = signals ?? [];
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-800 text-gray-400">
             <th className="text-left p-3">ID</th>
-            <th className="text-left p-3">Cur</th>
-            <th className="text-right p-3">YTM</th>
+            <th className="text-right p-3">Spread</th>
             <th className="text-right p-3">Z-Score</th>
             <th className="text-left p-3">Signal</th>
           </tr>
         </thead>
         <tbody>
-          {signals.slice(0, 30).map((s, i) => (
+          {rows.slice(0, 40).map((s, i) => (
             <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
               <td className="p-3 font-mono text-xs text-gray-300">{s.internal_id}</td>
-              <td className="p-3"><CurrencyBadge currency={s.currency} /></td>
-              <td className="p-3 text-right font-mono">{s.ytm.toFixed(2)}%</td>
-              <td className="p-3 text-right font-mono">{s.z_score.toFixed(2)}</td>
+              <td className="p-3 text-right font-mono">{s.spread_pct != null ? `${s.spread_pct.toFixed(2)}%` : '-'}</td>
+              <td className="p-3 text-right font-mono">{s.z_score != null ? s.z_score.toFixed(2) : '-'}</td>
               <td className="p-3">
                 <span className={`px-2 py-0.5 rounded text-xs ${s.side === 'buy' ? 'bg-green-900 text-green-300' : s.side === 'sell' ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
                   {s.side.toUpperCase()}
@@ -612,37 +586,22 @@ function DeskRV() {
           ))}
         </tbody>
       </table>
-      {signals.length === 0 && <EmptyState message="No RV signals available" />}
+      {rows.length === 0 && <EmptyState message="No RV signals available" />}
     </div>
   );
 }
 
-function DeskCarry() {
-  const [trades, setTrades] = useState<any[]>([]);
+function DeskCarry({ onSubscribe }: { onSubscribe?: () => void }) {
   const [funding, setFunding] = useState('5.0');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.bonds.list({ limit: 100 }).then(allBonds => {
-      const f = parseFloat(funding) || 5;
-      const result = allBonds
-        .filter(b => b.yield_to_maturity && b.coupon_rate)
-        .map(b => ({
-          internal_id: b.internal_id,
-          currency: b.currency,
-          coupon_pct: b.coupon_rate! * 100,
-          ytm_pct: b.yield_to_maturity! * 100,
-          carry: (b.coupon_rate! * 100 - f),
-          expected_pnl_pct: (b.yield_to_maturity! * 100 - f),
-        }))
-        .sort((a, b) => b.expected_pnl_pct - a.expected_pnl_pct);
-      setTrades(result);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, [funding]);
+  const { data: trades, loading, error, locked } = useGated<AnalyticsCarry[]>(
+    () => api.analytics.carry(parseFloat(funding) || 5), [funding]
+  );
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
 
+  const rows = trades ?? [];
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -655,51 +614,53 @@ function DeskCarry() {
           <thead>
             <tr className="border-b border-gray-800 text-gray-400">
               <th className="text-left p-3">ID</th>
-              <th className="text-left p-3">Cur</th>
               <th className="text-right p-3">Coupon</th>
-              <th className="text-right p-3">YTM</th>
-              <th className="text-right p-3">Carry</th>
+              <th className="text-right p-3">Rolldown</th>
               <th className="text-right p-3">Exp. P&L</th>
             </tr>
           </thead>
           <tbody>
-            {trades.slice(0, 30).map((t, i) => (
+            {rows.slice(0, 30).map((t, i) => (
               <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
                 <td className="p-3 font-mono text-xs text-gray-300">{t.internal_id}</td>
-                <td className="p-3"><CurrencyBadge currency={t.currency} /></td>
                 <td className="p-3 text-right font-mono">{t.coupon_pct.toFixed(2)}%</td>
-                <td className="p-3 text-right font-mono">{t.ytm_pct.toFixed(2)}%</td>
-                <td className={`p-3 text-right font-mono ${t.carry > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{t.carry > 0 ? '+' : ''}{t.carry.toFixed(2)}%</td>
+                <td className="p-3 text-right font-mono">{t.rolldown_bps.toFixed(1)}bp</td>
                 <td className={`p-3 text-right font-mono ${t.expected_pnl_pct > 0 ? 'text-emerald-400' : 'text-red-400'}`}>{t.expected_pnl_pct > 0 ? '+' : ''}{t.expected_pnl_pct.toFixed(2)}%</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {trades.length === 0 && <EmptyState message="No carry data available" />}
+        {rows.length === 0 && <EmptyState message="No carry data available" />}
       </div>
     </div>
   );
 }
 
-function DeskRepo() {
+function DeskRepo({ onSubscribe }: { onSubscribe?: () => void }) {
   const [bondId, setBondId] = useState('');
   const [notional, setNotional] = useState('1000');
   const [tenor, setTenor] = useState('30');
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<AnalyticsRepo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const calculate = () => {
+  const calculate = async () => {
     if (!bondId) return;
-    setResult({
-      internal_id: bondId,
-      notional: parseFloat(notional),
-      haircut_pct: 5.0,
-      repo_rate_pct: 5.0,
-      tenor_days: parseInt(tenor),
-      cash_lent: parseFloat(notional) * 0.95,
-      collateral_value: parseFloat(notional),
-      accrued_interest: parseFloat(notional) * 0.95 * 0.05 * parseInt(tenor) / 365,
-    });
+    setBusy(true); setError(null); setLocked(false);
+    try {
+      const r = await api.analytics.repo({ bond_id: bondId, notional: parseFloat(notional), tenor_days: parseInt(tenor) });
+      setResult(r);
+    } catch (e: unknown) {
+      setResult(null);
+      if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
+      else setError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
   };
+
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
 
   return (
     <div className="space-y-4">
@@ -709,17 +670,17 @@ function DeskRepo() {
           <InputField label="Bond ID" value={bondId} onChange={setBondId} placeholder="OP-51" />
           <InputField label="Notional" value={notional} onChange={setNotional} type="number" />
           <InputField label="Tenor (days)" value={tenor} onChange={setTenor} type="number" />
-          <button onClick={calculate} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">Calculate</button>
+          <button onClick={calculate} disabled={busy} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">{busy ? 'Calculating...' : 'Calculate'}</button>
         </div>
       </div>
+      {error && <ErrorBanner message={error} />}
       {result && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 max-w-md">
           <h3 className="text-lg font-semibold mb-3">Repo Deal Results</h3>
           <div className="space-y-2 text-sm">
             <DetailRow label="Bond" value={result.internal_id} />
-            <DetailRow label="Notional" value={result.notional.toFixed(2)} />
-            <DetailRow label="Haircut" value={`${result.haircut_pct}%`} />
-            <DetailRow label="Repo Rate" value={`${result.repo_rate_pct}%`} />
+            <DetailRow label="Haircut" value={`${result.haircut_pct.toFixed(2)}%`} />
+            <DetailRow label="Repo Rate" value={`${result.repo_rate_pct.toFixed(2)}%`} />
             <DetailRow label="Tenor" value={`${result.tenor_days}d`} />
             <DetailRow label="Cash Lent" value={result.cash_lent.toFixed(2)} />
             <DetailRow label="Collateral" value={result.collateral_value.toFixed(2)} />
@@ -741,156 +702,81 @@ function InputField({ label, value, onChange, placeholder, type = 'text' }: { la
   );
 }
 
-function DeskStress() {
-  const [scenarios] = useState([
-    { name: 'Parallel +100bp', kind: 'parallel', shift: 100 },
-    { name: 'Parallel -100bp', kind: 'parallel', shift: -100 },
-    { name: 'Steepener', kind: 'steepener', short_shift: -50, long_shift: 100 },
-    { name: 'Flattener', kind: 'flattener', short_shift: 50, long_shift: -50 },
-    { name: 'Inversion', kind: 'inversion', shift: 150 },
-    { name: 'Credit Shock', kind: 'credit', shift: 150 },
-    { name: 'FX Shock -20%', kind: 'fx', fx_shift: -20 },
-  ]);
-  const [results, setResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+function DeskStress({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data, loading, error, locked } = useGated<AnalyticsStress[]>(() => api.analytics.stress());
 
-  const runStress = async () => {
-    setLoading(true);
-    try {
-      const bonds = await api.bonds.list({ limit: 100 });
-      const activeBonds = bonds.filter(b => b.status === 'active' && b.yield_to_maturity);
-      if (activeBonds.length === 0) { setLoading(false); return; }
+  if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
 
-      const res = scenarios.map(s => {
-        const totalValue = activeBonds.length * 1000;
-        let pnl = 0;
-        for (const b of activeBonds) {
-          const modDur = 1 / (1 + (b.yield_to_maturity! * 100) / 100 / 2);
-          let shift = 0;
-          if (s.kind === 'parallel') shift = s.shift!;
-          else if (s.kind === 'inversion') shift = s.shift!;
-          else if (s.kind === 'credit') shift = s.shift!;
-          else if (s.kind === 'steepener') shift = b.maturity_date && (new Date(b.maturity_date).getTime() - Date.now()) / (365.25 * 24 * 60 * 60 * 1000) > 5 ? s.long_shift! : s.short_shift!;
-          else if (s.kind === 'flattener') shift = b.maturity_date && (new Date(b.maturity_date).getTime() - Date.now()) / (365.25 * 24 * 60 * 60 * 1000) > 5 ? s.long_shift! : s.short_shift!;
-          pnl += -modDur * shift / 100 * 1000;
-        }
-        return { scenario_name: s.name, scenario_kind: s.kind, pnl, pnl_pct: pnl / totalValue * 100, portfolio_value: totalValue, stressed_value: totalValue + pnl };
-      });
-      setResults(res);
-    } catch { /* ignore */ }
-    setLoading(false);
-  };
-
+  const results = data ?? [];
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Stress Test Scenarios</h3>
-        <button onClick={runStress} disabled={loading} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
-          <Zap size={16} />{loading ? 'Running...' : 'Run All'}
-        </button>
-      </div>
+      <h3 className="text-lg font-semibold flex items-center gap-2"><Zap size={16} className="text-amber-400" /> Stress Test Scenarios</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {scenarios.map(s => {
-          const r = results.find(res => res.scenario_name === s.name);
-          return (
-            <div key={s.name} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <h4 className="font-semibold mb-2">{s.name}</h4>
-              {r ? (
-                <div className="space-y-1 text-sm">
-                  <p className={`text-2xl font-bold ${r.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnl_pct >= 0 ? '+' : ''}{r.pnl_pct.toFixed(2)}%</p>
-                  <p className="text-gray-400">P&L: {r.pnl >= 0 ? '+' : ''}{r.pnl.toFixed(0)}</p>
-                  <p className="text-gray-500 text-xs">Portfolio: {r.portfolio_value.toFixed(0)} → {r.stressed_value.toFixed(0)}</p>
-                </div>
-              ) : (
-                <p className="text-gray-500 text-sm">Click "Run All" to test</p>
-              )}
+        {results.map(r => (
+          <div key={r.scenario} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+            <h4 className="font-semibold mb-2 capitalize">{r.scenario.replace(/_/g, ' ')}</h4>
+            <div className="space-y-1 text-sm">
+              <p className={`text-2xl font-bold ${r.pnl_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.pnl_pct >= 0 ? '+' : ''}{r.pnl_pct.toFixed(2)}%</p>
+              <p className="text-gray-400">P&L: {r.pnl >= 0 ? '+' : ''}{r.pnl.toFixed(0)}</p>
+              <p className="text-gray-500 text-xs">{r.kind}</p>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
+      {results.length === 0 && <EmptyState message="No stress data available" />}
     </div>
   );
 }
 
-function PortfolioPage() {
-  const [alloc, setAlloc] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.bonds.list({ limit: 50 }).then(bonds => {
-      const activeBonds = bonds.filter(b => b.status === 'active' && b.yield_to_maturity);
-      if (activeBonds.length === 0) { setLoading(false); return; }
-      const avgYtm = activeBonds.reduce((s: number, b: Bond) => s + (b.yield_to_maturity || 0), 0) / activeBonds.length * 100;
-      const topBonds = activeBonds.sort((a, b) => (b.yield_to_maturity || 0) - (a.yield_to_maturity || 0)).slice(0, 10);
-      setAlloc({
-        strategy: 'Balanced',
-        expected_return: avgYtm,
-        volatility: avgYtm * 0.4,
-        sharpe: (avgYtm - 3) / (avgYtm * 0.4) || 0,
-        max_drawdown: avgYtm * 0.3,
-        var_95: avgYtm * 0.5,
-        positions: topBonds.map((b: Bond) => ({ internal_id: b.internal_id, name: b.name, ytm: b.yield_to_maturity! * 100, weight: 1 / topBonds.length, currency: b.currency })),
-        byCurrency: topBonds.reduce((acc: Record<string, number>, b: Bond) => { acc[b.currency] = (acc[b.currency] || 0) + 1 / topBonds.length; return acc; }, {}),
-      });
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+function PortfolioPage({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data: alloc, loading, error, locked } = useGated<AnalyticsPortfolio>(() => api.analytics.portfolio());
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
+  if (!alloc) return <EmptyState message="No portfolio data" />;
 
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Portfolio</h2>
-      {alloc ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-gray-900 rounded-xl border border-gray-800 p-4">
-            <h3 className="text-lg font-semibold mb-4">Top Holdings</h3>
-            <div className="space-y-2">
-              {alloc.positions.map((p: any, i: number) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{p.name}</p>
-                    <p className="text-xs text-gray-500">{p.internal_id} · {p.currency}</p>
-                  </div>
-                  <div className="text-right ml-4">
-                    <p className="text-sm font-mono text-emerald-400">{p.ytm.toFixed(2)}%</p>
-                    <p className="text-xs text-gray-500">{(p.weight * 100).toFixed(1)}%</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <h3 className="text-lg font-semibold mb-3">Metrics</h3>
-              <div className="space-y-3">
-                <MetricRow label="Strategy" value={alloc.strategy} />
-                <MetricRow label="Exp. Return" value={`${alloc.expected_return.toFixed(2)}%`} color="text-emerald-400" />
-                <MetricRow label="Volatility" value={`${alloc.volatility.toFixed(2)}%`} color="text-amber-400" />
-                <MetricRow label="Sharpe" value={alloc.sharpe.toFixed(2)} color="text-blue-400" />
-                <MetricRow label="Max Drawdown" value={`${alloc.max_drawdown.toFixed(1)}%`} color="text-red-400" />
-                <MetricRow label="VaR 95%" value={`${alloc.var_95.toFixed(1)}%`} color="text-red-400" />
-              </div>
-            </div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <h3 className="text-lg font-semibold mb-3">Currency Mix</h3>
-              <div className="space-y-2">
-                {Object.entries(alloc.byCurrency).map(([cur, w]) => (
-                  <div key={cur} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-400">{cur}</span>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 bg-gray-800 rounded-full h-2">
-                        <div className="bg-emerald-500 h-2 rounded-full" style={{ width: `${(w as number) * 100}%` }} />
-                      </div>
-                      <span className="text-white font-mono text-xs">{(w as number * 100).toFixed(0)}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <h3 className="text-lg font-semibold mb-3">Metrics</h3>
+          <div className="space-y-3">
+            <MetricRow label="Strategy" value={alloc.strategy} />
+            <MetricRow label="Exp. Return" value={`${alloc.expected_return.toFixed(2)}%`} color="text-emerald-400" />
+            <MetricRow label="Sharpe" value={alloc.sharpe.toFixed(2)} color="text-blue-400" />
+            <MetricRow label="Sortino" value={alloc.sortino.toFixed(2)} color="text-blue-400" />
+            <MetricRow label="Max Drawdown" value={`${alloc.max_drawdown.toFixed(1)}%`} color="text-red-400" />
+            <MetricRow label="VaR 95%" value={`${alloc.var_95.toFixed(1)}%`} color="text-red-400" />
           </div>
         </div>
-      ) : <EmptyState message="No active bonds with YTM data" />}
+        <div className="lg:col-span-2 bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <h3 className="text-lg font-semibold p-4 pb-2">Capital Forecast</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 text-gray-400">
+                <th className="text-left p-3">Horizon</th>
+                <th className="text-right p-3">Pessimistic</th>
+                <th className="text-right p-3">Expected</th>
+                <th className="text-right p-3">Optimistic</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alloc.forecast.map((f, i) => (
+                <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td className="p-3 font-semibold">{f.horizon_years}Y</td>
+                  <td className="p-3 text-right text-red-400 font-mono">{Math.round(f.pessimistic_capital).toLocaleString()}</td>
+                  <td className="p-3 text-right text-emerald-400 font-mono font-semibold">{Math.round(f.expected_capital).toLocaleString()}</td>
+                  <td className="p-3 text-right text-blue-400 font-mono">{Math.round(f.optimistic_capital).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -904,96 +790,46 @@ function MetricRow({ label, value, color = 'text-white' }: { label: string; valu
   );
 }
 
-function ForecastPage() {
-  const [forecast, setForecast] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.bonds.list({ limit: 50 }).then(bonds => {
-      const activeBonds = bonds.filter(b => b.status === 'active' && b.yield_to_maturity);
-      const avgReturn = activeBonds.length > 0 ? activeBonds.reduce((s: number, b: Bond) => s + (b.yield_to_maturity || 0), 0) / activeBonds.length * 100 : 7;
-      const capital = 10000;
-      const monthly = 500;
-      const horizons = [1, 3, 5, 10, 20];
-      setForecast({
-        initial_capital: capital,
-        monthly_contribution: monthly,
-        expected_return: avgReturn,
-        horizons: horizons.map(y => {
-          const total = capital * Math.pow(1 + avgReturn / 100, y) + monthly * ((Math.pow(1 + avgReturn / 100, y) - 1) / (avgReturn / 100)) * 12;
-          return { years: y, expected: total, pessimistic: total * 0.7, optimistic: total * 1.3 };
-        }),
-      });
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+function ForecastPage({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data: horizons, loading, error, locked } = useGated<AnalyticsForecast[]>(() => api.analytics.forecast());
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
 
+  const rows = horizons ?? [];
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Capital Forecast</h2>
-      {forecast && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <p className="text-sm text-gray-400">Initial Capital</p>
-              <p className="text-2xl font-bold">${forecast.initial_capital.toLocaleString()}</p>
-            </div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <p className="text-sm text-gray-400">Monthly Contribution</p>
-              <p className="text-2xl font-bold">${forecast.monthly_contribution.toLocaleString()}</p>
-            </div>
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <p className="text-sm text-gray-400">Expected Return</p>
-              <p className="text-2xl font-bold text-emerald-400">{forecast.expected_return.toFixed(1)}%</p>
-            </div>
-          </div>
-          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-800 text-gray-400">
-                  <th className="text-left p-3">Horizon</th>
-                  <th className="text-right p-3">Pessimistic</th>
-                  <th className="text-right p-3">Expected</th>
-                  <th className="text-right p-3">Optimistic</th>
-                </tr>
-              </thead>
-              <tbody>
-                {forecast.horizons.map((h: any, i: number) => (
-                  <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
-                    <td className="p-3 font-semibold">{h.years} Year{h.years > 1 ? 's' : ''}</td>
-                    <td className="p-3 text-right text-red-400 font-mono">${Math.round(h.pessimistic).toLocaleString()}</td>
-                    <td className="p-3 text-right text-emerald-400 font-mono font-semibold">${Math.round(h.expected).toLocaleString()}</td>
-                    <td className="p-3 text-right text-blue-400 font-mono">${Math.round(h.optimistic).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-800 text-gray-400">
+              <th className="text-left p-3">Horizon</th>
+              <th className="text-right p-3">Pessimistic</th>
+              <th className="text-right p-3">Expected</th>
+              <th className="text-right p-3">Optimistic</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((h, i) => (
+              <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
+                <td className="p-3 font-semibold">{h.horizon_years} Year{h.horizon_years > 1 ? 's' : ''}</td>
+                <td className="p-3 text-right text-red-400 font-mono">{Math.round(h.pessimistic_capital).toLocaleString()}</td>
+                <td className="p-3 text-right text-emerald-400 font-mono font-semibold">{Math.round(h.expected_capital).toLocaleString()}</td>
+                <td className="p-3 text-right text-blue-400 font-mono">{Math.round(h.optimistic_capital).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <EmptyState message="No forecast data" />}
+      </div>
     </div>
   );
 }
 
-function MLPage() {
-  const [predictions, setPredictions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.scores({ limit: 50 }).then(scores => {
-      const preds = scores.slice(0, 30).map(s => ({
-        internal_id: s.internal_id,
-        decision: s.score > 70 ? 'buy' : s.score > 50 ? 'hold' : s.score > 30 ? 'wait' : 'avoid',
-        confidence: Math.min(s.score / 100, 0.95),
-        score: s.score,
-        tier: s.tier,
-      }));
-      setPredictions(preds);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+function MLPage({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data, loading, error, locked } = useGated<AnalyticsRecommendation[]>(() => api.analytics.recommendations(20));
 
   const decisionColor = (d: string) => {
     switch (d) {
@@ -1006,77 +842,173 @@ function MLPage() {
   };
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
 
+  const predictions = data ?? [];
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold">ML Predictions</h2>
-      <p className="text-sm text-gray-400">Predictions based on score-based heuristic (ML model training requires historical data)</p>
+      <h2 className="text-2xl font-bold">ML Recommendations</h2>
+      <p className="text-sm text-gray-400">Explainable buy/hold/wait/avoid recommendations from the ML pipeline.</p>
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800 text-gray-400">
-              <th className="text-left p-3">Bond ID</th>
-              <th className="text-right p-3">Score</th>
-              <th className="text-left p-3">Tier</th>
+              <th className="text-left p-3">#</th>
+              <th className="text-left p-3">Bond</th>
               <th className="text-left p-3">Decision</th>
+              <th className="text-right p-3">Score</th>
+              <th className="text-right p-3">Pred. Return</th>
               <th className="text-right p-3">Confidence</th>
             </tr>
           </thead>
           <tbody>
-            {predictions.map((p, i) => (
-              <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
-                <td className="p-3 font-mono text-xs text-gray-300">{p.internal_id}</td>
-                <td className="p-3 text-right font-mono text-emerald-400">{p.score.toFixed(2)}</td>
-                <td className="p-3">{p.tier ? <TierBadge tier={p.tier} /> : '-'}</td>
+            {predictions.map((p) => (
+              <tr key={p.rank} className="border-b border-gray-800 hover:bg-gray-800/50">
+                <td className="p-3 text-gray-500 text-xs">{p.rank}</td>
+                <td className="p-3"><span className="text-white text-sm">{p.name}</span><span className="block text-xs text-gray-500 font-mono">{p.internal_id}</span></td>
                 <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${decisionColor(p.decision)}`}>{p.decision.toUpperCase()}</span></td>
+                <td className="p-3 text-right font-mono text-emerald-400">{p.score != null ? p.score.toFixed(1) : '-'}</td>
+                <td className="p-3 text-right font-mono">{p.predicted_return_pct != null ? `${p.predicted_return_pct.toFixed(2)}%` : '-'}</td>
                 <td className="p-3 text-right font-mono">{(p.confidence * 100).toFixed(0)}%</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {predictions.length === 0 && <EmptyState message="No prediction data available" />}
+        {predictions.length === 0 && <EmptyState message="No recommendations available" />}
       </div>
     </div>
   );
 }
 
-function AlertsPage() {
-  const [alerts, setAlerts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    api.scores({ limit: 10 }).then(scores => {
-      const now = new Date().toISOString();
-      const mockAlerts = [
-        { id: 1, kind: 'score', title: 'Score Update', message: `${scores.length} bonds scored`, created_at: now },
-        { id: 2, kind: 'info', title: 'System Status', message: 'All services operational', created_at: now },
-      ];
-      setAlerts(mockAlerts);
-    }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+function AlertsPage({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { data, loading, error, locked } = useGated<AnalyticsAlert[]>(() => api.analytics.alerts(20));
 
   if (loading) return <LoadingSkeleton />;
+  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (error) return <ErrorBanner message={error} />;
 
+  const alerts = data ?? [];
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Alerts</h2>
       {alerts.length > 0 ? (
         <div className="space-y-3">
-          {alerts.map(a => (
-            <div key={a.id} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          {alerts.map((a, i) => (
+            <div key={i} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
               <div className="flex items-start gap-3">
                 <Bell size={16} className="text-amber-400 mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <h4 className="font-semibold text-sm">{a.title}</h4>
                   <p className="text-sm text-gray-400 mt-1">{a.message}</p>
-                  <p className="text-xs text-gray-600 mt-1">{new Date(a.created_at).toLocaleString()}</p>
                 </div>
               </div>
             </div>
           ))}
         </div>
       ) : <EmptyState message="No alerts" />}
+    </div>
+  );
+}
+
+function useGated<T>(fetcher: () => Promise<T>, deps: any[] = []) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null); setLocked(false);
+    fetcher()
+      .then(d => { if (alive) setData(d); })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
+        else setError(e instanceof Error ? e.message : 'Failed to load');
+      })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return { data, loading, error, locked };
+}
+
+function UpgradePrompt({ onSubscribe }: { onSubscribe?: () => void }) {
+  return (
+    <div className="bg-gradient-to-br from-amber-900/30 to-gray-900 border border-amber-800/50 rounded-xl p-8 text-center max-w-lg mx-auto">
+      <div className="w-14 h-14 bg-amber-600/20 rounded-full flex items-center justify-center mx-auto mb-4">
+        <Lock size={26} className="text-amber-400" />
+      </div>
+      <h3 className="text-lg font-bold mb-2">Функция Pro / Enterprise</h3>
+      <p className="text-sm text-gray-400 mb-5">
+        Эта аналитика доступна по подписке. Оформите её через Telegram Stars в боте —
+        доступ откроется здесь и в боте одновременно.
+      </p>
+      {onSubscribe && (
+        <button onClick={onSubscribe}
+          className="inline-flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
+          <Star size={16} /> Оформить подписку
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SubscribePage() {
+  const [info, setInfo] = useState<SubscribeInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    api.subscribeInfo().then(setInfo).catch(() => setInfo(null)).finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <LoadingSkeleton />;
+
+  const isPaid = user && user.subscription_tier !== 'free';
+
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      <div className="text-center">
+        <div className="w-14 h-14 bg-amber-600/20 rounded-full flex items-center justify-center mx-auto mb-3">
+          <Star size={26} className="text-amber-400" />
+        </div>
+        <h2 className="text-2xl font-bold">Подписка через Telegram Stars</h2>
+        <p className="text-sm text-gray-400 mt-2">
+          Оплата принимается только в Telegram Stars внутри бота. Подписка открывает
+          Desk-аналитику (RV, duration, carry, РЕПО, стресс-тесты), рекомендации,
+          портфель, ML-прогнозы и алерты — одинаково в боте и на сайте.
+        </p>
+        {isPaid && (
+          <p className="mt-3 inline-block bg-emerald-900/40 border border-emerald-800 text-emerald-300 text-sm px-3 py-1.5 rounded-lg">
+            Ваш текущий тариф: <b className="capitalize">{user!.subscription_tier}</b>
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {(info?.plans ?? []).map(p => (
+          <div key={p.tier} className="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-lg font-bold">{p.name}</h3>
+              <span className="flex items-center gap-1 text-amber-400 font-semibold"><Star size={15} />{p.stars}</span>
+            </div>
+            <p className="text-sm text-gray-400 flex-1">{p.blurb}</p>
+            <p className="text-xs text-gray-500 mt-3">{p.duration_days} дней · разовая оплата</p>
+          </div>
+        ))}
+      </div>
+
+      {info?.deep_link ? (
+        <a href={info.deep_link} target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl text-sm font-medium transition-colors">
+          <ExternalLink size={16} /> Оформить в Telegram-боте
+        </a>
+      ) : (
+        <p className="text-center text-sm text-gray-500">
+          Ссылка на бота не настроена. Задайте <code className="text-gray-400">TELEGRAM_BOT_USERNAME</code> на сервере.
+        </p>
+      )}
     </div>
   );
 }

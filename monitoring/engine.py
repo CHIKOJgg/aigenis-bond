@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -21,6 +21,9 @@ THRESHOLDS = {
     "fx_change_pct": 0.5,
     "metal_change_pct": 0.5,
     "high_score": 90.0,
+    # Data-quality guards: protect analytics from silent data rot.
+    "empty_ytm_pct": 20.0,
+    "stale_hours": 12.0,
 }
 
 
@@ -165,9 +168,84 @@ async def detect_metal_changes(session: AsyncSession) -> MonitoringResult:
     return MonitoringResult(new_alerts=total, by_kind=counts)
 
 
+@dataclass
+class DataQualityReport:
+    total: int
+    active: int
+    empty_ytm: int
+    empty_ytm_pct: float
+    latest_fetch: datetime | None
+    stale_hours: float | None
+    issues: list[str]
+
+
+def assess_data_quality(bonds, now: datetime | None = None) -> DataQualityReport:
+    """Pure data-quality assessment over a list of bond ORM rows.
+
+    Flags two silent-failure modes that would corrupt analytics:
+    * too many active bonds missing YTM;
+    * the freshest data being older than ``stale_hours``.
+    """
+    now = now or datetime.now(timezone.utc)
+    active = [b for b in bonds if getattr(b, "status", None) == "active"]
+    total_active = len(active)
+    empty_ytm = sum(1 for b in active if getattr(b, "yield_to_maturity", None) in (None,))
+    empty_pct = (empty_ytm / total_active * 100) if total_active else 0.0
+
+    fetch_times = [b.fetched_at for b in bonds if getattr(b, "fetched_at", None) is not None]
+    latest = max(fetch_times) if fetch_times else None
+    stale_hours: float | None = None
+    if latest is not None:
+        latest_aware = latest if latest.tzinfo else latest.replace(tzinfo=timezone.utc)
+        stale_hours = (now - latest_aware).total_seconds() / 3600.0
+
+    issues: list[str] = []
+    if total_active and empty_pct >= THRESHOLDS["empty_ytm_pct"]:
+        issues.append(
+            f"{empty_pct:.0f}% активных облигаций без YTM ({empty_ytm}/{total_active})"
+        )
+    if stale_hours is not None and stale_hours >= THRESHOLDS["stale_hours"]:
+        issues.append(f"данные устарели: последнее обновление {stale_hours:.0f}ч назад")
+    if not fetch_times:
+        issues.append("нет ни одной облигации с датой обновления")
+
+    return DataQualityReport(
+        total=len(bonds),
+        active=total_active,
+        empty_ytm=empty_ytm,
+        empty_ytm_pct=empty_pct,
+        latest_fetch=latest,
+        stale_hours=stale_hours,
+        issues=issues,
+    )
+
+
+async def detect_data_quality(session: AsyncSession) -> MonitoringResult:
+    """Persist alerts for data-quality issues (empty YTM %, stale data)."""
+    bonds = list((await session.execute(select(BondORM))).scalars().all())
+    report = assess_data_quality(bonds)
+    counts: dict[str, int] = {}
+    total = 0
+    for issue in report.issues:
+        alert_id = await add_alert(
+            session,
+            {
+                "kind": "data_quality",
+                "title": "⚠️ Качество данных",
+                "message": issue,
+                "dedup_key": f"data_quality:{issue}:{date.today().isoformat()}",
+            },
+        )
+        if alert_id:
+            counts["data_quality"] = counts.get("data_quality", 0) + 1
+            total += 1
+    return MonitoringResult(new_alerts=total, by_kind=counts)
+
+
 async def run_all(session: AsyncSession) -> dict[str, MonitoringResult]:
     return {
         "bonds": await detect_bond_changes(session),
         "fx": await detect_fx_changes(session),
         "metals": await detect_metal_changes(session),
+        "data_quality": await detect_data_quality(session),
     }

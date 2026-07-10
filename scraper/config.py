@@ -136,6 +136,7 @@ class TelegramSettings(BaseSettings):
     )
 
     bot_token: str = Field(default="", validation_alias="TELEGRAM_BOT_TOKEN")
+    bot_username: str = Field(default="", validation_alias="TELEGRAM_BOT_USERNAME")
     alert_chat_id: str = Field(default="", validation_alias="TELEGRAM_ALERT_CHAT_ID")
     admin_ids_raw: str = Field(default="", validation_alias="TELEGRAM_ADMIN_IDS")
 

@@ -78,6 +78,50 @@ class RequestIdMiddleware(BaseMiddleware):
         return await handler(event, data)
 
 
+def _command_label(event) -> str:
+    """Extract a stable command label for metrics ('/top a b' -> 'top')."""
+    text = getattr(event, "text", None)
+    if text and text.startswith("/"):
+        return text.split(maxsplit=1)[0].lstrip("/").lower().split("@")[0]
+    if getattr(event, "successful_payment", None) is not None:
+        return "successful_payment"
+    if getattr(event, "refunded_payment", None) is not None:
+        return "refunded_payment"
+    return "message"
+
+
+class MetricsMiddleware(BaseMiddleware):
+    """Emit Prometheus metrics for every handled message.
+
+    Counts commands (`bot_commands_total`), errors (`bot_errors_total`) and
+    latency (`bot_command_seconds`) so the bot is observable alongside the API.
+    Metric failures never break message handling.
+    """
+
+    async def __call__(self, handler, event, data):
+        from telegram_bot import metrics
+
+        label = _command_label(event)
+        try:
+            metrics.bot_commands.labels(command=label).inc()
+        except Exception:  # pragma: no cover - metrics must never break the bot
+            pass
+        start = time.monotonic()
+        try:
+            return await handler(event, data)
+        except Exception as exc:
+            try:
+                metrics.bot_errors.labels(error_type=type(exc).__name__).inc()
+            except Exception:  # pragma: no cover
+                pass
+            raise
+        finally:
+            try:
+                metrics.bot_latency.labels(command=label).observe(time.monotonic() - start)
+            except Exception:  # pragma: no cover
+                pass
+
+
 # Commands that require a paid (Pro/Enterprise) subscription.
 PRO_COMMANDS = {
     "rv", "duration", "carry", "repo", "stress",

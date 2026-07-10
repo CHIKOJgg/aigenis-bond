@@ -88,6 +88,7 @@ from telegram_bot.helpers import (  # noqa: F401
     parse_funding_rate,
 )
 from telegram_bot.middleware import (
+    MetricsMiddleware,
     ParseLockMiddleware,
     RequestIdMiddleware,
     SubscriptionMiddleware,
@@ -107,15 +108,49 @@ from visualization.charts import (  # noqa: F401
 )
 
 
+async def _start_metrics_server() -> None:
+    """Expose Prometheus /metrics and a /health endpoint for the bot process."""
+    port = int(os.getenv("BOT_METRICS_PORT", "9090"))
+    if port <= 0:
+        return
+    try:
+        from aiohttp import web
+        from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+        async def metrics_handler(_request):
+            return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
+
+        async def health_handler(_request):
+            from scraper.db import check_db_health
+
+            db = await check_db_health()
+            status = 200 if db["status"] == "ok" else 503
+            return web.json_response({"status": "ok" if status == 200 else "degraded", "db": db["status"]}, status=status)
+
+        app = web.Application()
+        app.router.add_get("/metrics", metrics_handler)
+        app.router.add_get("/health", health_handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logger.info("bot_metrics_server_started", port=port)
+    except Exception as exc:  # pragma: no cover - observability must not crash the bot
+        logger.warning("bot_metrics_server_failed", error=str(exc))
+
+
 async def main(token: str) -> None:
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(router)
     dp.include_router(stars_router)
+    dp.message.middleware(MetricsMiddleware())
     dp.message.middleware(ParseLockMiddleware())
     dp.message.middleware(SubscriptionMiddleware())
     dp.message.middleware(ThrottlingMiddleware())
     dp.message.middleware(RequestIdMiddleware())
+
+    await _start_metrics_server()
 
     try:
         loop = asyncio.get_running_loop()

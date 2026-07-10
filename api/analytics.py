@@ -32,10 +32,12 @@ from portfolio.scenarios import run_all_scenarios
 from recommendations.engine import recommend_bonds
 from scoring.models import UserPreferences
 from scoring.repository import get_score, top_scores
+from scraper.config import get_settings
 from scraper.db import session_scope
 from scraper.models import Bond
 from scraper.orm import BondORM
 from telegram_bot.preferences_repository import get_preferences
+from telegram_bot.subscriptions import STAR_PLANS
 
 router = APIRouter(prefix="/api/v1", tags=["analytics"])
 
@@ -78,6 +80,32 @@ def _default_prefs(user_id: int) -> UserPreferences:
         strategy="Balanced",
         watchlist=[],
     )
+
+
+# --------------------------------------------------------------------------- #
+# Free: subscription info (Telegram Stars). The website replicates the bot, so
+# payments happen in the bot via Stars — the web "Subscribe" button deep-links
+# users straight into the Telegram bot's /subscribe flow.
+# --------------------------------------------------------------------------- #
+@router.get("/subscribe-info")
+async def api_subscribe_info():
+    username = (get_settings().telegram.bot_username or "").lstrip("@")
+    deep_link = f"https://t.me/{username}?start=subscribe" if username else None
+    return {
+        "provider": "telegram_stars",
+        "bot_username": username or None,
+        "deep_link": deep_link,
+        "plans": [
+            {
+                "tier": p.tier,
+                "name": p.name,
+                "stars": p.stars,
+                "duration_days": p.duration_days,
+                "blurb": p.blurb,
+            }
+            for p in STAR_PLANS.values()
+        ],
+    }
 
 
 # --------------------------------------------------------------------------- #
