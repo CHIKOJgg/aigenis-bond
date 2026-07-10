@@ -27,16 +27,15 @@ MENU_INTRO = (
 
 HELP_TEXT = (
     "🆘 <b>Как пользоваться ботом</b>\n\n"
-    "1️⃣ <b>Данные.</b> Если облигаций ещё нет — нажмите «🚀 Старт парсинга» "
-    "(или /parse). Это загрузит облигации и курсы с aigenis.by / НБ РБ.\n"
-    "2️⃣ <b>📊 Обзор рынка</b> — TOP облигаций, списки по валютам, курсы, кривая доходности.\n"
-    "3️⃣ <b>🔬 Аналитика</b> — Relative Value (дорого/дёшево), duration, carry, РЕПО, стресс-тесты.\n"
-    "4️⃣ <b>🤖 Рекомендации</b> — что купить сейчас, ML-прогнозы по облигациям.\n"
-    "5️⃣ <b>💼 Портфель</b> — прогноз капитала, ребалансировка, сценарный анализ.\n"
-    "6️⃣ <b>⚙️ Настройки</b> — задайте капитал и доли валют (есть готовые пресеты).\n"
-    "7️⃣ <b>🔍 Выбрать облигацию</b> — есть в каждом разделе: найдите нужную по валюте/названию "
-    "и получите по ней прогноз, duration или добавьте в избранное. ID вводить не нужно!\n\n"
-    "💡 Команды также можно вводить вручную: /top, /buy, /predict OP-51, /settings …"
+    "Почти всё доступно по кнопкам меню — команды вводить необязательно.\n\n"
+    "• <b>📊 Обзор</b> — Топ облигаций, валюты, курсы, кривая доходности.\n"
+    "• <b>🔬 Аналитика</b> — Relative Value, Duration, Carry, РЕПО, стресс-тесты (Pro).\n"
+    "• <b>🤖 Рекомендации</b> — что купить и ML-прогнозы (Pro).\n"
+    "• <b>💼 Портфель</b> — прогноз капитала, ребалансировка, сценарии (Pro).\n"
+    "• <b>🔍 Облигации</b> — найдите нужную и получите прогноз / duration / РЕПО.\n"
+    "• <b>⚙️ Настройки</b> — капитал и доли валют (пресеты одним тапом).\n"
+    "• <b>⭐ Подписка</b> — Pro/Enterprise через Telegram Stars.\n\n"
+    "Откройте <b>🆘 Как пользоваться</b> в меню для краткой справки по каждому разделу."
 )
 
 
@@ -51,6 +50,10 @@ def _main_menu_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🔬 Аналитика (Desk)", callback_data="menu:desk")],
             [InlineKeyboardButton(text="🤖 Рекомендации", callback_data="menu:buy")],
             [InlineKeyboardButton(text="💼 Портфель", callback_data="menu:portfolio")],
+            [
+                InlineKeyboardButton(text="🤖 Что купить", callback_data="cmd_buy"),
+                InlineKeyboardButton(text="🔍 Облигации", callback_data="bonds:menu"),
+            ],
             [
                 InlineKeyboardButton(text="👀 Избранное", callback_data="cmd_watchlist"),
                 InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings"),
@@ -126,6 +129,82 @@ _PORTFOLIO_MENU = _submenu(
     ],
 )
 
+_HELP_MENU = _submenu(
+    "🆘 <b>Справка по разделам</b>\n\nВыберите раздел:",
+    [
+        [("📊 Обзор", "help:overview"), ("🔬 Аналитика", "help:desk")],
+        [("🤖 Рекомендации", "help:buy"), ("💼 Портфель", "help:portfolio")],
+        [("⚙️ Настройки", "help:settings"), ("🔔 Алерты", "help:alerts")],
+        [("💳 Подписка", "help:stars"), ("🔍 Облигации", "help:bonds")],
+    ],
+)
+
+_HELP_TEXTS = {
+    "overview": (
+        "📊 <b>Обзор рынка</b>\n"
+        "• 🏆 Топ-10 — лучшие облигации по рейтингу\n"
+        "• 💵/🇧🇾 Облигации USD/BYN, 🪙 Металлы\n"
+        "• 💱 Курсы валют и драгметаллы\n"
+        "• 📈 Кривая доходности, 🆕 Новые облигации"
+    ),
+    "desk": (
+        "🔬 <b>Аналитика (Desk)</b> — тариф Pro/Enterprise\n"
+        "• /rv — Relative Value (дорого/дёшево)\n"
+        "• /duration [ID] — duration-отчёт\n"
+        "• /carry [funding] — carry-ранжирование\n"
+        "• /repo ID [notional] [tenor] — сделка РЕПО\n"
+        "• /stress — стресс-тесты, /desk_status — сигналы"
+    ),
+    "buy": (
+        "🤖 <b>Рекомендации</b> — тариф Pro/Enterprise\n"
+        "• 🛒 Что купить сейчас (Score + ML)\n"
+        "• 🤖 ML-модели, 📈 Прогноз по облигации"
+    ),
+    "portfolio": (
+        "💼 <b>Портфель</b> — тариф Pro/Enterprise\n"
+        "• 📊 Мой портфель и прогноз капитала\n"
+        "• ♻️ Ребалансировка, 📈 Прогноз, 🌍 Сценарии USD/BYN"
+    ),
+    "settings": (
+        "⚙️ <b>Настройки</b>\n"
+        "• Капитал, пополнение, доли валют — пресеты одним тапом\n"
+        "• Быстрая установка: /set capital 50000"
+    ),
+    "alerts": (
+        "🔔 <b>Алерты</b>\n"
+        "• Последние уведомления о рынке и качестве данных\n"
+        "• Команда: /alerts"
+    ),
+    "stars": (
+        "💳 <b>Подписка</b>\n"
+        "• Кнопка ⭐ Подписка или /subscribe\n"
+        "• Оплата Telegram Stars (Pro / Enterprise)\n"
+        "• Открывает аналитику, рекомендации, портфель, ML и алерты"
+    ),
+    "bonds": (
+        "🔍 <b>Облигации</b>\n"
+        "• Кнопка 🔍 Облигации → валюта → облигация\n"
+        "• Доступно: прогноз, duration, РЕПО (Pro), в избранное"
+    ),
+}
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("help:"))
+async def cb_help(callback_query) -> None:
+    key = callback_query.data.split(":", 1)[1]
+    text = _HELP_TEXTS.get(key, HELP_TEXT)
+    await callback_query.message.edit_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ К справке", callback_data="menu:help")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
+            ]
+        ),
+    )
+    await callback_query.answer()
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("menu:"))
 async def cb_menu(callback_query) -> None:
@@ -151,11 +230,6 @@ async def cb_menu(callback_query) -> None:
 
         await cmd_settings(callback_query.message)
     elif key == "help":
-        await callback_query.message.edit_text(
-            HELP_TEXT,
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton("⬅️ Назад в меню", callback_data="menu:main")]]
-            ),
-        )
+        title, kb = _HELP_MENU
+        await callback_query.message.edit_text(title, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback_query.answer()

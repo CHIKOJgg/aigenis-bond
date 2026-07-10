@@ -69,6 +69,14 @@ async def cmd_settings(message: Message) -> None:
         ]
     )
     rows.append(
+        [
+            InlineKeyboardButton(text="1k", callback_data="setcap:1000"),
+            InlineKeyboardButton(text="10k", callback_data="setcap:10000"),
+            InlineKeyboardButton(text="50k", callback_data="setcap:50000"),
+            InlineKeyboardButton(text="100k", callback_data="setcap:100000"),
+        ]
+    )
+    rows.append(
         [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
     )
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
@@ -140,6 +148,15 @@ async def cb_edit(callback_query) -> None:
 async def cmd_cancel(message: Message) -> None:
     pending_edit.pop(user_id_from_message(message), None)
     await message.answer("✅ Режим ввода отменён.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("setcap:"))
+async def cb_setcap(callback_query) -> None:
+    uid = callback_query.from_user.id if callback_query.from_user else 0
+    val = callback_query.data.split(":", 1)[1]
+    _ok, text = await apply_setting(uid, "capital", val)
+    await callback_query.message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+    await callback_query.answer()
 
 
 @router.message(lambda m: user_id_from_message(m) in pending_edit)
