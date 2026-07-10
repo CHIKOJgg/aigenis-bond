@@ -104,3 +104,9 @@ strict = true
 [[tool.mypy.overrides]]
 module = "scraper.config"
 strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+

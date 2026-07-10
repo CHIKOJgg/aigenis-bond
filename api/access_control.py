@@ -1,21 +1,12 @@
 from __future__ import annotations
 
-import json
-import os
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.routing import APIRoute
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.deps import _get_current_user
-from api.billing.service import get_subscription
 from scraper.db import session_scope
-from scraper.logging import get_logger
-
-logger = get_logger("api.access_control")
 
 # Feature flags based on subscription tiers
 FEATURE_FLAGS: dict[str, dict[str, bool]] = {
@@ -85,27 +76,6 @@ PRO_FEATURES_ROUTES: list[dict[str, Any]] = [
 ]
 
 
-def check_feature_access(
-    request: Request,
-    session: AsyncSession,
-) -> tuple[int, str | None]:
-    user_id = _get_current_user_from_request(request)
-    if not user_id:
-        return 401, "Not authenticated"
-
-    user_tier = _get_user_tier(session, user_id)
-    if not user_tier:
-        return 401, "User tier not found"
-
-    flags = FEATURE_FLAGS.get(user_tier, FEATURE_FLAGS["free"])
-
-    # Check API rate limit (simple implementation)
-    # In production, use Redis or database to track usage
-    client_host = request.client.host if request.client else "unknown"
-
-    return 200, None
-
-
 def _get_current_user_from_request(request: Request) -> int | None:
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     if not token:
@@ -127,70 +97,11 @@ async def _get_user_tier(session: AsyncSession, user_id: int) -> str | None:
 
 
 class FeatureAccessMiddleware:
+    """Kept for reference; gating is implemented via the `RequireFeature`
+    dependency on each pro endpoint (see below)."""
+
     def __init__(self, app: FastAPI):
         self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        path = scope.get("path", "")
-        method = scope.get("method", "GET")
-
-        # Skip middleware for public endpoints
-        if path in ["/health", "/ready", "/openapi.json", "/docs", "/redoc", "/auth/login", "/auth/register"]:
-            return await self.app(scope, receive, send)
-
-        # Check feature access
-        request = Request(scope, receive)
-        async with session_scope() as session:
-            status_code, error = await check_feature_access(request, session)
-            if status_code != 200:
-                response = {
-                    "error": error or "Access denied",
-                    "upgrade_required": True,
-                    "upgrade_url": "/pricing",
-                }
-                from fastapi.responses import JSONResponse
-                await send({
-                    "type": "http.response.start",
-                    "status": status_code,
-                    "headers": [(b"content-type", b"application/json")],
-                })
-                await send({
-                    "type": "http.response.body",
-                    "body": json.dumps(response).encode(),
-                })
-                return
-
-        await self.app(scope, receive, send)
-
-
-def rate_limit_middleware(app: FastAPI) -> FastAPI:
-    """Simple rate limiting middleware based on subscription tier"""
-
-    @app.middleware("http")
-    async def rate_limit(request: Request, call_next):
-        path = request.url.path
-        if path in ["/health", "/ready", "/openapi.json", "/docs", "/redoc"]:
-            return await call_next(request)
-
-        client_host = request.client.host if request.client else "unknown"
-        user_id = _get_current_user_from_request(request)
-
-        async with session_scope() as session:
-            if user_id:
-                user_tier = await _get_user_tier(session, user_id)
-                tier = user_tier or "free"
-            else:
-                tier = "free"
-
-            limit = FEATURE_FLAGS.get(tier, FEATURE_FLAGS["free"])["api_rate_limit"]
-
-        # Simplified rate limiting - in production, use Redis or Redis-like
-        # This is a simple implementation that would need to be more robust
-
-        return await call_next(request)
 
 
 def add_feature_access_headers(app: FastAPI) -> FastAPI:
@@ -215,3 +126,35 @@ def add_feature_access_headers(app: FastAPI) -> FastAPI:
                     response.headers[key] = value
 
         return response
+
+
+# --- Per-endpoint feature gating dependency ---------------------------------
+# Robust alternative to path-matching middleware: each pro endpoint declares
+# the feature flag it requires; free users get a 402 with upgrade hint.
+async def get_current_tier(request: Request) -> str:
+    user_id = _get_current_user_from_request(request)
+    if not user_id:
+        return "free"
+    async with session_scope() as session:
+        tier = await _get_user_tier(session, user_id)
+    return tier or "free"
+
+
+async def get_optional_user_id(request: Request) -> int | None:
+    return _get_current_user_from_request(request)
+
+
+class RequireFeature:
+    """FastAPI dependency: allow only tiers that have `flag` enabled."""
+
+    def __init__(self, flag: str) -> None:
+        self.flag = flag
+
+    async def __call__(self, tier: str = Depends(get_current_tier)) -> None:
+        flags = FEATURE_FLAGS.get(tier, FEATURE_FLAGS["free"])
+        if not flags.get(self.flag, False):
+            raise HTTPException(
+                status_code=402,
+                detail="Эта функция доступна в подписке Pro / Enterprise.",
+                headers={"X-Upgrade-Required": "true"},
+            )

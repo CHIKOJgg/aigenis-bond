@@ -13,7 +13,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import text as sa_text
 
+from api.access_control import add_feature_access_headers
 from api.admin.router import router as admin_router
+from api.analytics import router as analytics_router
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
 from scraper.config import get_settings
@@ -34,12 +36,19 @@ app = FastAPI(
 )
 
 settings = get_settings()
-_cors_origins = os.environ.get("CORS_ORIGINS", "").split(",") if os.environ.get("CORS_ORIGINS") else ["*"]
+# Default to no cross-origin access; explicitly allow only configured origins.
+# A wildcard origin is rejected here because credentials are enabled.
+_cors_env = os.environ.get("CORS_ORIGINS", "").strip()
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
 
 # Include routers
 app.include_router(auth_router)
 app.include_router(billing_router)
 app.include_router(admin_router)
+app.include_router(analytics_router)
+
+# Expose the caller's subscription tier / feature flags on every response.
+add_feature_access_headers(app)
 
 # --- Rate limiting ---
 

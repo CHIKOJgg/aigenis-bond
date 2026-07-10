@@ -181,6 +181,7 @@ class UserORM(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     google_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, server_default="user")
     subscription_tier: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
@@ -191,6 +192,7 @@ class UserORM(Base):
     __table_args__ = (
         Index("ix_users_email", "email"),
         Index("ix_users_google_id", "google_id"),
+        Index("ix_users_telegram_id", "telegram_id"),
         Index("ix_users_role", "role"),
         Index("ix_users_subscription_tier", "subscription_tier"),
     )

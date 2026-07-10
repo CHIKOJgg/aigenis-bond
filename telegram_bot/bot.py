@@ -73,16 +73,16 @@ from telegram_bot.handlers import (  # noqa: F401
 from telegram_bot.helpers import (  # noqa: F401
     bonds_for_bot as _bonds_for_bot,
 )
-from telegram_bot.helpers import (
+from telegram_bot.helpers import (  # noqa: F401
     fetch_all_bonds as _fetch_all_bonds,
 )
-from telegram_bot.helpers import (
+from telegram_bot.helpers import (  # noqa: F401
     fetch_bonds_by_currency as _fetch_bonds_by_currency,
 )
-from telegram_bot.helpers import (
+from telegram_bot.helpers import (  # noqa: F401
     fetch_bonds_with_history as _fetch_bonds_with_history,
 )
-from telegram_bot.helpers import (
+from telegram_bot.helpers import (  # noqa: F401
     paginate_kb,
     parse_bond_args,
     parse_funding_rate,
@@ -90,6 +90,7 @@ from telegram_bot.helpers import (
 from telegram_bot.middleware import (
     ParseLockMiddleware,
     RequestIdMiddleware,
+    SubscriptionMiddleware,
     ThrottlingMiddleware,
 )
 from telegram_bot.preferences_repository import (  # noqa: F401
@@ -98,6 +99,7 @@ from telegram_bot.preferences_repository import (  # noqa: F401
     remove_from_watchlist,
     upsert_preferences,
 )
+from telegram_bot.stars_payments import stars_router
 from visualization.charts import (  # noqa: F401
     plot_capital_forecast,
     plot_portfolio_pie,
@@ -109,7 +111,9 @@ async def main(token: str) -> None:
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(router)
+    dp.include_router(stars_router)
     dp.message.middleware(ParseLockMiddleware())
+    dp.message.middleware(SubscriptionMiddleware())
     dp.message.middleware(ThrottlingMiddleware())
     dp.message.middleware(RequestIdMiddleware())
 

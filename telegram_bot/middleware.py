@@ -10,7 +10,7 @@ from scraper import repositories
 from scraper.db import session_scope
 
 # Команды, доступные всегда (до и после парсинга)
-ALLOWED_BEFORE_PARSE = {"start", "help", "parse", "rates"}
+ALLOWED_BEFORE_PARSE = {"start", "help", "menu", "parse", "subscribe", "rates"}
 
 
 async def db_has_bonds() -> bool:
@@ -76,3 +76,57 @@ class RequestIdMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
         data["request_id"] = uuid.uuid4().hex[:8]
         return await handler(event, data)
+
+
+# Commands that require a paid (Pro/Enterprise) subscription.
+PRO_COMMANDS = {
+    "rv", "duration", "carry", "repo", "stress",
+    "buy", "predict", "ml",
+    "rebalance", "rebalance_auto",
+    "portfolio", "forecast", "scenario", "desk_status", "alerts",
+}
+
+# Commands always allowed regardless of tier (free market overview + account).
+_ALWAYS_ALLOWED = {
+    "start", "help", "menu", "parse", "subscribe", "rates", "curve",
+    "top", "usd", "byn", "metals", "new", "stats",
+    "settings", "set", "cancel", "watchlist", "watch", "unwatch",
+}
+
+
+def _subscription_upsell() -> str:
+    return (
+        "⭐ <b>Эта функция доступна в подписке Pro / Enterprise.</b>\n\n"
+        "Откройте аналитику Desk, рекомендации, портфель, ML-прогнозы и алерты "
+        "по подписке через Telegram Stars.\n"
+        "Нажмите /subscribe, чтобы выбрать тариф."
+    )
+
+
+class SubscriptionMiddleware(BaseMiddleware):
+    """Блокирует PRO_COMMANDS для пользователей с тарифом free.
+
+    Тариф хранится в users.subscription_tier и связан с Telegram через
+    telegram_id (см. telegram_bot.subscriptions). Грантится оплатой Stars.
+    """
+
+    async def __call__(self, handler, event, data):
+        message = event
+        text = getattr(message, "text", None)
+        if not text or not text.startswith("/"):
+            return await handler(event, data)
+
+        cmd = text.split(maxsplit=1)[0].lstrip("/").lower().split("@")[0]
+        if cmd in _ALWAYS_ALLOWED or cmd not in PRO_COMMANDS:
+            return await handler(event, data)
+
+        from telegram_bot.subscriptions import get_tier_by_telegram
+
+        user = getattr(message, "from_user", None)
+        uid = user.id if user else 0
+        tier = await get_tier_by_telegram(uid)
+        if tier in ("pro", "enterprise"):
+            return await handler(event, data)
+
+        await message.answer(_subscription_upsell(), parse_mode="HTML")
+        return

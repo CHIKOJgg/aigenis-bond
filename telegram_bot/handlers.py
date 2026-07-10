@@ -48,6 +48,7 @@ from telegram_bot.helpers import (
     parse_funding_rate,
     user_id_from_message,
 )
+from telegram_bot.preferences_repository import add_to_watchlist, remove_from_watchlist
 from visualization.charts import (
     plot_capital_forecast,
     plot_portfolio_pie,
@@ -56,7 +57,59 @@ from visualization.charts import (
 
 router = Router()
 _PAGE_SIZE = 10
+_BOND_PAGE = 8
 _parse_lock = asyncio.Lock()
+
+# Per-user state for inline settings editing (lightweight FSM, no storage needed)
+_pending_edit: dict[int, str] = {}
+
+MENU_INTRO = (
+    "👋 <b>Bond Fixed Income Assistant</b>\n\n"
+    "🤖 Я помогаю анализировать облигации, подбирать лучшие для покупки, "
+    "строить портфель и следить за рынком.\n\n"
+    "⬇️ Выберите раздел в меню ниже. Если непонятно, что делать — "
+    "нажмите <b>«🆘 Как пользоваться»</b>."
+)
+
+HELP_TEXT = (
+    "🆘 <b>Как пользоваться ботом</b>\n\n"
+    "1️⃣ <b>Данные.</b> Если облигаций ещё нет — нажмите «🚀 Старт парсинга» "
+    "(или /parse). Это загрузит облигации и курсы с aigenis.by / НБ РБ.\n"
+    "2️⃣ <b>📊 Обзор рынка</b> — TOP облигаций, списки по валютам, курсы, кривая доходности.\n"
+    "3️⃣ <b>🔬 Аналитика</b> — Relative Value (дорого/дёшево), duration, carry, РЕПО, стресс-тесты.\n"
+    "4️⃣ <b>🤖 Рекомендации</b> — что купить сейчас, ML-прогнозы по облигациям.\n"
+    "5️⃣ <b>💼 Портфель</b> — прогноз капитала, ребалансировка, сценарный анализ.\n"
+    "6️⃣ <b>⚙️ Настройки</b> — задайте капитал и доли валют (есть готовые пресеты).\n"
+    "7️⃣ <b>🔍 Выбрать облигацию</b> — есть в каждом разделе: найдите нужную по валюте/названию "
+    "и получите по ней прогноз, duration или добавьте в избранное. ID вводить не нужно!\n\n"
+    "💡 Команды также можно вводить вручную: /top, /buy, /predict OP-51, /settings …"
+)
+
+
+def _main_menu_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Обзор рынка", callback_data="menu:overview")],
+            [InlineKeyboardButton(text="🔬 Аналитика (Desk)", callback_data="menu:desk")],
+            [InlineKeyboardButton(text="🤖 Рекомендации", callback_data="menu:buy")],
+            [InlineKeyboardButton(text="💼 Портфель", callback_data="menu:portfolio")],
+            [
+                InlineKeyboardButton(text="👀 Избранное", callback_data="cmd_watchlist"),
+                InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings"),
+            ],
+            [
+                InlineKeyboardButton(text="🔔 Алерты", callback_data="cmd_alerts"),
+                InlineKeyboardButton(text="🆘 Как пользоваться", callback_data="menu:help"),
+            ],
+            [
+                InlineKeyboardButton(text="⭐ Подписка", callback_data="stars:menu"),
+            ],
+        ]
+    )
+
+
+async def _show_main_menu(message) -> None:
+    await message.answer(MENU_INTRO, parse_mode=ParseMode.HTML, reply_markup=_main_menu_kb())
 
 # ---------------------------------------------------------------------------
 # Callback pagination
@@ -81,6 +134,7 @@ async def cb_paginate(callback_query) -> None:
             await handler(callback_query.message, page=page)
         else:
             await handler(callback_query.message)
+    await callback_query.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -106,61 +160,17 @@ async def cmd_start(message: Message) -> None:
         )
         return
 
-    text = (
-        "👋 <b>Bond Fixed Income Assistant</b>\n\n"
-        "📊 <b>Обзор рынка</b>\n"
-        "/top — TOP облигаций по рейтингу\n"
-        "/usd — Облигации в USD\n"
-        "/byn — Облигации в BYN\n"
-        "/metals — Золото / серебро / платина\n"
-        "/rates — Курсы валют и металлов\n"
-        "/curve — Кривая доходности\n\n"
-        "🔬 <b>Аналитика</b>\n"
-        "/rv — Relative Value (rich/cheap)\n"
-        "/duration [ID] — Duration-отчёт\n"
-        "/carry [funding] — Carry-ранжирование\n"
-        "/repo ID — Сделка РЕПО\n"
-        "/stress — Стресс-тесты (7 сценариев)\n\n"
-        "🤖 <b>Рекомендации</b>\n"
-        "/buy — Лучшие для покупки\n"
-        "/predict ID — Прогноз по облигации\n"
-        "/ml — Состояние ML-моделей\n"
-        "/rebalance-auto — Drift-детект\n\n"
-        "💼 <b>Портфель</b>\n"
-        "/portfolio — Мой портфель\n"
-        "/rebalance — Ребалансировка\n"
-        "/forecast — Прогноз капитала\n"
-        "/scenario — Сценарный анализ\n"
-        "/watchlist — Мои избранные\n"
-        "/watch ID — Добавить в избранное\n"
-        "/unwatch ID — Убрать из избранного\n\n"
-        "⚙️ <b>Прочее</b>\n"
-        "/settings — Настройки портфеля\n"
-        "/alerts — Системные алерты\n"
-        "/help — Это сообщение"
-    )
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="📊 Обзор", callback_data="cmd_overview"),
-                InlineKeyboardButton(text="🔬 Аналитика", callback_data="cmd_desk"),
-            ],
-            [
-                InlineKeyboardButton(text="🤖 Рекомендации", callback_data="cmd_buy"),
-                InlineKeyboardButton(text="💼 Портфель", callback_data="cmd_portfolio"),
-            ],
-            [
-                InlineKeyboardButton(text="🏆 Top", callback_data="cmd_top"),
-                InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates"),
-            ],
-        ]
-    )
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await _show_main_menu(message)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await cmd_start(message)
+
+
+@router.message(Command("menu"))
+async def cmd_menu(message: Message) -> None:
+    await _show_main_menu(message)
 
 
 # ---------------------------------------------------------------------------
@@ -221,8 +231,9 @@ async def cmd_parse(message: Message) -> None:
             f"(ошибок: {bonds_err}).\n"
             f"Курсы валют: {rates_str}\n"
             f"Металлы (BYN/oz): {metals_str}\n\n"
-            "Теперь доступны все команды. Отправьте /start для меню."
+            "Готово! Выберите раздел в меню ниже 👇"
         )
+        await _show_main_menu(message)
 
 
 @router.message(Command("rates"))
@@ -252,35 +263,320 @@ async def cmd_rates(message: Message) -> None:
 # Callback bridges
 # ---------------------------------------------------------------------------
 
-_DESK_HANDLER_MAP = {
-    "cmd_desk": "cmd_desk",
-    "cmd_top": "cmd_top",
-    "cmd_portfolio": "cmd_portfolio",
-    "cmd_curve": "cmd_curve",
-    "cmd_buy": "cmd_buy",
-    "cmd_forecast": "cmd_forecast",
-    "cmd_rates": "cmd_rates",
-    "cmd_parse": "cmd_parse",
-    "cmd_overview": "cmd_overview",
+# Allowed `cmd_*` inline buttons. Handlers are resolved lazily via globals() at
+# call time so this set can be defined before the handler functions below.
+_CMD_HANDLER_NAMES = {
+    "cmd_desk", "cmd_top", "cmd_portfolio", "cmd_curve", "cmd_buy", "cmd_forecast",
+    "cmd_rates", "cmd_parse", "cmd_overview", "cmd_usd", "cmd_byn", "cmd_metals",
+    "cmd_new", "cmd_rv", "cmd_duration", "cmd_carry", "cmd_stress", "cmd_desk_status",
+    "cmd_ml", "cmd_rebalance_auto", "cmd_scenario", "cmd_watchlist", "cmd_alerts",
+    "cmd_stats", "cmd_settings",
 }
 
 
-@router.callback_query(lambda c: c.data in _DESK_HANDLER_MAP)
+@router.callback_query(lambda c: c.data and c.data in _CMD_HANDLER_NAMES)
 async def cb_generic(callback_query) -> None:
-    handler_map = {
-        "cmd_desk": cmd_desk,
-        "cmd_top": cmd_top,
-        "cmd_portfolio": cmd_portfolio,
-        "cmd_curve": cmd_curve,
-        "cmd_buy": cmd_buy,
-        "cmd_forecast": cmd_forecast,
-        "cmd_rates": cmd_rates,
-        "cmd_parse": cmd_parse,
-        "cmd_overview": cmd_overview,
-    }
-    handler = handler_map.get(callback_query.data)
-    if handler:
-        await handler(callback_query.message)
+    handler = globals().get(callback_query.data)
+    if handler is None:
+        return
+    if callback_query.data == "cmd_parse":
+        await callback_query.answer("🚀 Запускаем парсинг…")
+    else:
+        await callback_query.answer()
+    await handler(callback_query.message)
+
+
+# ---------------------------------------------------------------------------
+# Menu navigation (section submenus)
+# ---------------------------------------------------------------------------
+
+
+def _submenu(title: str, buttons: list, back: str = "menu:main") -> tuple[str, InlineKeyboardMarkup]:
+    rows = []
+    for row in buttons:
+        rows.append([InlineKeyboardButton(text=t, callback_data=d) for t, d in row])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад в меню", callback_data=back)])
+    return title, InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+_OVERVIEW_MENU = _submenu(
+    "📊 <b>Обзор рынка</b>\n\nВыберите действие:",
+    [
+        [("🏆 TOP облигаций", "cmd_top"), ("💵 Облигации USD", "cmd_usd")],
+        [("🇧🇾 Облигации BYN", "cmd_byn"), ("🪙 Металлы", "cmd_metals")],
+        [("💱 Курсы валют", "cmd_rates"), ("📈 Кривая доходности", "cmd_curve")],
+        [("🆕 Новые облигации", "cmd_new"), ("📊 Статистика", "cmd_stats")],
+        [("🔍 Выбрать облигацию", "bonds:menu")],
+    ],
+)
+
+_DESK_MENU = _submenu(
+    "🔬 <b>Аналитика (Fixed Income Desk)</b>\n\nВыберите действие:",
+    [
+        [("⚖️ Relative Value", "cmd_rv"), ("⏱ Duration", "cmd_duration")],
+        [("💰 Carry", "cmd_carry"), ("⚠️ Стресс-тесты", "cmd_stress")],
+        [("🏛 Desk Status", "cmd_desk_status"), ("📈 Кривая доходности", "cmd_curve")],
+        [("🔍 Выбрать облигацию (РЕПО / отчёты)", "bonds:menu")],
+    ],
+)
+
+_BUY_MENU = _submenu(
+    "🤖 <b>Рекомендации</b>\n\nВыберите действие:",
+    [
+        [("🛒 Что купить сейчас", "cmd_buy"), ("🤖 ML-модели", "cmd_ml")],
+        [("♻️ Auto-rebalance", "cmd_rebalance_auto"), ("📈 Прогноз по облигации", "bonds:menu")],
+        [("🔍 Выбрать облигацию", "bonds:menu")],
+    ],
+)
+
+_PORTFOLIO_MENU = _submenu(
+    "💼 <b>Портфель</b>\n\nВыберите действие:",
+    [
+        [("📊 Мой портфель", "cmd_portfolio"), ("♻️ Ребалансировка", "cmd_rebalance")],
+        [("📈 Прогноз капитала", "cmd_forecast"), ("🌍 Сценарии", "cmd_scenario")],
+        [("👀 Избранное", "cmd_watchlist"), ("➕ Добавить в избранное", "bonds:menu")],
+    ],
+)
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("menu:"))
+async def cb_menu(callback_query) -> None:
+    key = callback_query.data.split(":", 1)[1]
+    if key == "main":
+        await callback_query.message.edit_text(
+            MENU_INTRO, parse_mode=ParseMode.HTML, reply_markup=_main_menu_kb()
+        )
+    elif key == "overview":
+        title, kb = _OVERVIEW_MENU
+        await callback_query.message.edit_text(title, parse_mode=ParseMode.HTML, reply_markup=kb)
+    elif key == "desk":
+        title, kb = _DESK_MENU
+        await callback_query.message.edit_text(title, parse_mode=ParseMode.HTML, reply_markup=kb)
+    elif key == "buy":
+        title, kb = _BUY_MENU
+        await callback_query.message.edit_text(title, parse_mode=ParseMode.HTML, reply_markup=kb)
+    elif key == "portfolio":
+        title, kb = _PORTFOLIO_MENU
+        await callback_query.message.edit_text(title, parse_mode=ParseMode.HTML, reply_markup=kb)
+    elif key == "settings":
+        await cmd_settings(callback_query.message)
+    elif key == "help":
+        await callback_query.message.edit_text(
+            HELP_TEXT,
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton("⬅️ Назад в меню", callback_data="menu:main")]]
+            ),
+        )
+    await callback_query.answer()
+
+
+# ---------------------------------------------------------------------------
+# Bond picker: discover bonds without knowing IDs, then act on them
+# ---------------------------------------------------------------------------
+
+
+async def _bond_name(session, iid: str) -> str:
+    from sqlalchemy import select as sa_select
+
+    from scraper.orm import BondORM
+
+    return (
+        await session.execute(sa_select(BondORM.name).where(BondORM.internal_id == iid))
+    ).scalar_one_or_none() or iid
+
+
+@router.callback_query(lambda c: c.data == "bonds:menu")
+async def cb_bonds_menu(callback_query) -> None:
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💵 USD", callback_data="bonds:list:usd:0"),
+                InlineKeyboardButton(text="🇧🇾 BYN", callback_data="bonds:list:byn:0"),
+            ],
+            [
+                InlineKeyboardButton(text="🪙 Золото", callback_data="bonds:list:xau:0"),
+                InlineKeyboardButton(text="🪙 Серебро", callback_data="bonds:list:xag:0"),
+            ],
+            [InlineKeyboardButton(text="📋 Все облигации", callback_data="bonds:list:all:0")],
+            [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="menu:main")],
+        ]
+    )
+    await callback_query.message.edit_text(
+        "🔍 <b>Выбор облигации</b>\n\nСначала выберите валюту, затем нужную облигацию из списка.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb,
+    )
+    await callback_query.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("bonds:list:"))
+async def cb_bonds_list(callback_query) -> None:
+    _, _, key, page_s = callback_query.data.split(":")
+    page = int(page_s)
+    if key == "all":
+        bonds = await fetch_all_bonds()
+    else:
+        bonds = await fetch_bonds_by_currency(key.upper())
+    if not bonds:
+        await callback_query.answer("Нет облигаций. Сначала запустите /parse", show_alert=True)
+        return
+    total_pages = max(1, (len(bonds) + _BOND_PAGE - 1) // _BOND_PAGE)
+    page_slice = bonds[page * _BOND_PAGE : (page + 1) * _BOND_PAGE]
+    rows = []
+    for b in page_slice:
+        label = f"{b.internal_id} — {(b.name or '')[:22]}"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"bond:{b.internal_id}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"bonds:list:{key}:{page - 1}"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️", callback_data=f"bonds:list:{key}:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="⬅️ Назад к валютам", callback_data="bonds:menu")])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+    text = f"🔍 <b>Облигации ({key.upper()})</b> — стр. {page + 1}/{total_pages}\nВыберите облигацию:"
+    await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await callback_query.answer()
+
+
+@router.callback_query(lambda c: c.data and (c.data.startswith("bond:") or c.data.startswith("bondact:")))
+async def cb_bond(callback_query) -> None:
+    data = callback_query.data
+    if data.startswith("bondact:"):
+        _, iid, action = data.split(":", 2)
+        await _run_bond_action(callback_query, iid, action)
+        return
+
+    iid = data.split(":", 1)[1]
+    async with session_scope() as session:
+        name = await _bond_name(session, iid)
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📈 Прогноз", callback_data=f"bondact:{iid}:predict"),
+                InlineKeyboardButton(text="⏱ Duration", callback_data=f"bondact:{iid}:duration"),
+            ],
+            [
+                InlineKeyboardButton(text="🏦 РЕПО", callback_data=f"bondact:{iid}:repo"),
+                InlineKeyboardButton(text="⭐ В избранное", callback_data=f"bondact:{iid}:watch"),
+            ],
+            [
+                InlineKeyboardButton(text="🗑 Из избранного", callback_data=f"bondact:{iid}:unwatch"),
+                InlineKeyboardButton(text="⬅️ К списку", callback_data="bonds:menu"),
+            ],
+        ]
+    )
+    await callback_query.message.edit_text(
+        f"🔍 <b>{iid}</b> — {name}\n\nЧто сделать с этой облигацией?",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb,
+    )
+    await callback_query.answer()
+
+
+async def _run_bond_action(callback_query, iid: str, action: str) -> None:
+    async with session_scope() as session:
+        name = await _bond_name(session, iid)
+
+    # Pro-gated actions reached via the bond picker (callbacks, not commands).
+    if action in ("predict", "duration", "repo"):
+        from telegram_bot.subscriptions import get_tier_by_telegram, meets_tier
+
+        uid = callback_query.from_user.id if callback_query.from_user else 0
+        tier = await get_tier_by_telegram(uid)
+        if not meets_tier(tier, "pro"):
+            back_kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад к облигации", callback_data=f"bond:{iid}")],
+                ]
+            )
+            await callback_query.message.edit_text(
+                "⭐ <b>Эта функция доступна в подписке Pro / Enterprise.</b>\n\n"
+                "Откройте прогнозы, duration и РЕПО по подписке через Telegram Stars.\n"
+                "Нажмите /subscribe, чтобы выбрать тариф.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_kb,
+            )
+            await callback_query.answer()
+            return
+
+    if action == "predict":
+        from sqlalchemy import select as sa_select
+
+        from scraper.orm import BondORM
+
+        async with session_scope() as session:
+            rows = await predictions_for_bond(session, iid, limit=1)
+        if not rows:
+            text = f"❌ По <code>{iid}</code> нет прогнозов. Сначала обучите ML-модель (/ml)."
+        else:
+            p = rows[0]
+            expl = "\n".join(f"  • {e}" for e in (p.explanation or []))
+            text = (
+                f"<b>📈 Прогноз {iid}</b> ({name})\n"
+                f"Решение: <b>{p.decision}</b> (conf {float(p.confidence):.2f})\n"
+                f"Predicted YTM: {float(p.predicted_ytm) if p.predicted_ytm is not None else '—'}\n"
+                f"Predicted return: {float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
+                f"Объяснение:\n{expl or '—'}"
+            )
+    elif action == "duration":
+        bonds = await bonds_for_bot()
+        bond = next((b for b in bonds if b.internal_id == iid), None)
+        if bond is None:
+            text = f"❌ Облигация <code>{iid}</code> не найдена."
+        else:
+            rep = desk_duration.duration_report(bond)
+            lines = [
+                f"<b>⏱ Duration — {iid}</b> ({bond.name})\n",
+                f"Macaulay: {rep.macaulay_duration:.3f}",
+                f"Modified: {rep.modified_duration:.3f}",
+                f"Convexity: {rep.convexity:.3f}",
+                f"DV01: {rep.dv01:.4f}\n",
+                "<b>Key-rate durations:</b>",
+            ]
+            for tenor, krd in rep.key_rate_durations.items():
+                lines.append(f"  {tenor}: {krd:.4f}")
+            text = "\n".join(lines)
+    elif action == "repo":
+        bonds = await bonds_for_bot()
+        bond = next((b for b in bonds if b.internal_id == iid), None)
+        if bond is None:
+            text = f"❌ Облигация <code>{iid}</code> не найдена."
+        else:
+            haircut = desk_repo.haircut_by_issuer(bond.issuer)
+            deal = desk_repo.repo_deal(
+                bond, notional=Decimal("1000"), haircut_pct=haircut, repo_rate_pct=5.0, tenor_days=30
+            )
+            text = (
+                f"<b>🏦 РЕПО {iid}</b> ({bond.name})\n"
+                f"Залог: {deal.collateral_value}\n"
+                f"Haircut: {deal.haircut_pct}%\n"
+                f"Кэш выдано: {deal.cash_lent}\n"
+                f"Ставка: {deal.repo_rate_pct}%, тенор {deal.tenor_days}d\n"
+                f"Проценты: {deal.accrued_interest}"
+            )
+    elif action in ("watch", "unwatch"):
+        uid = callback_query.from_user.id if callback_query.from_user else 0
+        async with session_scope() as session:
+            if action == "watch":
+                prefs = await add_to_watchlist(session, uid, iid)
+                text = f"✅ <code>{iid}</code> ({name}) добавлен в избранное ({len(prefs.watchlist)} шт.)"
+            else:
+                await remove_from_watchlist(session, uid, iid)
+                text = f"❌ <code>{iid}</code> ({name}) убран из избранного"
+    else:
+        text = "❌ Неизвестное действие."
+
+    back_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад к облигации", callback_data=f"bond:{iid}")],
+            [InlineKeyboardButton(text="🔍 К списку облигаций", callback_data="bonds:menu")],
+        ]
+    )
+    await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=back_kb)
+    await callback_query.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -1075,18 +1371,86 @@ async def cb_preset(callback_query) -> None:
         f"USD {shares[0]:.0%}, BYN {shares[1]:.0%}, "
         f"Metals {shares[2]:.0%}, EUR {shares[3]:.0%}",
         parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="⚙️ К настройкам", callback_data="menu:settings")]
+            ]
+        ),
     )
+    await callback_query.answer()
+
+
+_EDIT_HINTS = {
+    "capital": ("капитал (например: 50000)", "число, напр. 50000"),
+    "contribution": ("пополнение в месяц (например: 2000)", "число, напр. 2000"),
+}
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("edit:"))
 async def cb_edit(callback_query) -> None:
     field = callback_query.data.split(":", 1)[1]
-    hints = {
-        "capital": "Используйте: /set capital 50000",
-        "contribution": "Используйте: /set contribution 2000",
-    }
-    text = hints.get(field, f"Используйте /set {field} <значение>")
-    await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML)
+    if field == "cancel":
+        _pending_edit.pop(callback_query.from_user.id if callback_query.from_user else 0, None)
+        await callback_query.answer("Отменено")
+        await cmd_settings(callback_query.message)
+        return
+    uid = callback_query.from_user.id if callback_query.from_user else 0
+    _pending_edit[uid] = field
+    label, example = _EDIT_HINTS.get(field, (field, "значение"))
+    await callback_query.message.edit_text(
+        f"✏️ <b>Введите {label}</b> и отправьте сообщением.\n"
+        f"Пример: <code>{example}</code>\n"
+        "Или нажмите «❌ Отмена».",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="edit:cancel")]
+            ]
+        ),
+    )
+    await callback_query.answer()
+
+
+@router.message(Command("cancel"))
+async def cmd_cancel(message: Message) -> None:
+    _pending_edit.pop(user_id_from_message(message), None)
+    await message.answer("✅ Режим ввода отменён.")
+
+
+@router.message(lambda m: user_id_from_message(m) in _pending_edit)
+async def cb_pending_edit(message: Message) -> None:
+    uid = user_id_from_message(message)
+    field = _pending_edit.pop(uid)
+    if (message.text or "").strip().startswith("/"):
+        await message.answer("✏️ Режим ввода отменён — команда не применена. Повторите её.")
+        return
+    ok, text = await apply_setting(uid, field, (message.text or "").strip())
+    await message.answer(text, parse_mode=ParseMode.HTML)
+
+
+async def apply_setting(uid: int, field: str, val_str: str) -> tuple[bool, str]:
+    from telegram_bot.preferences_repository import get_preferences, upsert_preferences
+
+    async with session_scope() as session:
+        prefs = await get_preferences(session, uid)
+        try:
+            if field == "capital":
+                prefs.initial_capital = Decimal(val_str.replace(",", "").replace(" ", ""))
+            elif field == "contribution":
+                prefs.monthly_contribution = Decimal(val_str.replace(",", "").replace(" ", ""))
+            elif field == "strategy":
+                prefs.strategy = val_str.capitalize()
+            elif field in ("share_usd", "share_byn", "share_metals", "share_eur"):
+                setattr(prefs, field, float(val_str))
+                total = prefs.share_usd + prefs.share_byn + prefs.share_metals + prefs.share_eur
+                if abs(total - 1.0) > 0.01:
+                    return False, f"⚠️ Сумма долей {total:.0%}, рекомендуется 100%"
+            else:
+                return False, f"Неизвестное поле: {field}"
+            await upsert_preferences(session, prefs)
+        except (ValueError, InvalidOperation) as exc:
+            return False, f"❌ Ошибка: {exc}"
+    return True, f"✅ <b>{field}</b> = {val_str}"
 
 
 @router.message(Command("set"))
@@ -1101,31 +1465,8 @@ async def cmd_set(message: Message) -> None:
         return
     field, val_str = args[1].lower(), args[2]
     uid = user_id_from_message(message)
-    async with session_scope() as session:
-        from telegram_bot.preferences_repository import get_preferences, upsert_preferences
-
-        prefs = await get_preferences(session, uid)
-        try:
-            if field == "capital":
-                prefs.initial_capital = Decimal(val_str.replace(",", ""))
-            elif field == "contribution":
-                prefs.monthly_contribution = Decimal(val_str.replace(",", ""))
-            elif field == "strategy":
-                prefs.strategy = val_str.capitalize()
-            elif field in ("share_usd", "share_byn", "share_metals", "share_eur"):
-                setattr(prefs, field, float(val_str))
-                total = prefs.share_usd + prefs.share_byn + prefs.share_metals + prefs.share_eur
-                if abs(total - 1.0) > 0.01:
-                    await message.answer(f"⚠️ Сумма долей {total:.0%}, рекомендуется 100%")
-                    return
-            else:
-                await message.answer(f"Неизвестное поле: {field}")
-                return
-            await upsert_preferences(session, prefs)
-        except (ValueError, InvalidOperation) as exc:
-            await message.answer(f"Ошибка: {exc}")
-            return
-    await message.answer(f"✅ <b>{field}</b> = {val_str}", parse_mode=ParseMode.HTML)
+    ok, text = await apply_setting(uid, field, val_str)
+    await message.answer(text, parse_mode=ParseMode.HTML)
 
 
 # ---------------------------------------------------------------------------
