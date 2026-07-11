@@ -12,7 +12,7 @@ import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare } from 'lucide-react';
 
 const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
 
@@ -561,6 +561,9 @@ function BondsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Bond | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [compareOpen, setCompareOpen] = useState(false);
+  const MAX_COMPARE = 4;
   const PAGE_SIZE = 25;
 
   useEffect(() => {
@@ -602,6 +605,18 @@ function BondsPage() {
     }
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < MAX_COMPARE) {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   const filtered = useMemo(() => {
     let rows = allBonds;
     const q = search.trim().toLowerCase();
@@ -640,6 +655,20 @@ function BondsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const statuses = Array.from(new Set(allBonds.map((b) => b.status))).sort();
+
+  const pageIds = pageRows.map((b) => b.internal_id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) {
+        pageIds.forEach((id) => next.delete(id));
+      } else {
+        pageIds.forEach((id) => { if (next.size < MAX_COMPARE) next.add(id); });
+      }
+      return next;
+    });
+  };
 
   const exportNow = () => {
     const headers = ['Name', 'ID', 'Currency', 'Price', 'YTM %', 'Coupon %', 'Maturity', 'Status', 'Score'];
@@ -714,7 +743,9 @@ function BondsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
-                <th className="text-left p-3 w-8"></th>
+                <th className="text-left p-3 w-8">
+                  <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="accent-emerald-500" aria-label="Выбрать все" />
+                </th>
                 <SortHeader label="Name" k="name" />
                 <th className="text-left p-3 hidden sm:table-cell">ID</th>
                 <th className="text-left p-3">Cur</th>
@@ -730,6 +761,9 @@ function BondsPage() {
               {pageRows.map((b) => (
                 <tr key={b.internal_id} onClick={() => setSelected(selected?.internal_id === b.internal_id ? null : b)}
                   className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer transition-colors">
+                  <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedIds.has(b.internal_id)} onChange={() => toggleSelect(b.internal_id)} className="accent-emerald-500" aria-label={`Выбрать ${b.internal_id}`} />
+                  </td>
                   <td className="p-3" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => toggleFav(b.internal_id)} className="text-gray-500 hover:text-amber-400" title="В избранное">
                       <Star size={15} className={favorites.has(b.internal_id) ? 'fill-amber-400 text-amber-400' : ''} />
@@ -771,6 +805,74 @@ function BondsPage() {
           onClose={() => setSelected(null)}
         />
       )}
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-full px-4 py-2 shadow-lg">
+          <span className="text-sm text-gray-300">Выбрано: {selectedIds.size}/{MAX_COMPARE}</span>
+          <button onClick={() => setCompareOpen(true)} disabled={selectedIds.size < 2}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white px-3 py-1.5 rounded-full text-sm transition-colors">
+            <GitCompare size={15} /> Сравнить
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-gray-400 hover:text-white text-sm px-2">Очистить</button>
+        </div>
+      )}
+
+      {compareOpen && (
+        <ComparisonModal
+          bonds={allBonds.filter((b) => selectedIds.has(b.internal_id))}
+          scoreMap={scoreMap}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ComparisonModal({ bonds, scoreMap, onClose }: { bonds: Bond[]; scoreMap: Record<string, number>; onClose: () => void }) {
+  const metrics: { label: string; get: (b: Bond) => string }[] = [
+    { label: 'Валюта', get: (b) => b.currency },
+    { label: 'Цена', get: (b) => (b.price != null ? b.price.toFixed(2) : '-') },
+    { label: 'YTM', get: (b) => (b.yield_to_maturity != null ? `${(b.yield_to_maturity * 100).toFixed(2)}%` : '-') },
+    { label: 'Купон', get: (b) => (b.coupon_rate != null ? `${(b.coupon_rate * 100).toFixed(2)}%` : '-') },
+    { label: 'Частота', get: (b) => (b.coupon_frequency != null ? `${b.coupon_frequency}x/год` : '-') },
+    { label: 'Погашение', get: (b) => (b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '-') },
+    { label: 'Статус', get: (b) => b.status },
+    { label: 'Скор', get: (b) => (scoreMap[b.internal_id] != null ? scoreMap[b.internal_id].toFixed(1) : '-') },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 max-w-4xl w-full max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold">Сравнение облигаций ({bonds.length})</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><X size={18} /></button>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 text-gray-400">
+                <th className="text-left p-3 sticky left-0 bg-gray-900">Метрика</th>
+                {bonds.map((b) => (
+                  <th key={b.internal_id} className="text-left p-3 min-w-[150px]">
+                    <div className="font-semibold text-white">{b.name}</div>
+                    <div className="text-xs text-gray-500 font-mono">{b.internal_id}</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.map((m) => (
+                <tr key={m.label} className="border-b border-gray-800">
+                  <td className="p-3 text-gray-400 sticky left-0 bg-gray-900">{m.label}</td>
+                  {bonds.map((b) => (
+                    <td key={b.internal_id} className="p-3 font-mono">{m.get(b)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -821,6 +923,7 @@ function ScoresPage() {
   const [minScore, setMinScore] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Bond | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -831,12 +934,35 @@ function ScoresPage() {
       .finally(() => setLoading(false));
   }, [minScore]);
 
+  const openDetail = async (id: string) => {
+    try {
+      const b = await api.bonds.get(id);
+      setDetail(b);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const exportNow = () => {
+    exportCsv(
+      'scores.csv',
+      ['Bond ID', 'Score', 'Tier'],
+      scores.map((s) => [s.internal_id, s.score.toFixed(2), s.tier ?? '']),
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h2 className="text-2xl font-bold">Bond Scores</h2>
-        <input value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="Min score" type="number" step="0.1"
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full sm:w-32" />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <input value={minScore} onChange={e => setMinScore(e.target.value)} placeholder="Min score" type="number" step="0.1"
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full sm:w-32" />
+          <button onClick={exportNow} disabled={scores.length === 0}
+            className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 px-3 py-2 rounded-lg text-sm transition-colors">
+            <Download size={15} /> CSV
+          </button>
+        </div>
       </div>
       {loading && <LoadingSkeleton />}
       {error && <ErrorBanner message={error} />}
@@ -853,7 +979,8 @@ function ScoresPage() {
             </thead>
             <tbody>
               {scores.map((s, i) => (
-                <tr key={s.internal_id} className="border-b border-gray-800 hover:bg-gray-800/50">
+                <tr key={s.internal_id} onClick={() => openDetail(s.internal_id)}
+                  className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer transition-colors">
                   <td className="p-3 text-gray-500 text-xs">{i + 1}</td>
                   <td className="p-3 font-mono text-xs text-gray-300">{s.internal_id}</td>
                   <td className="p-3 text-right font-mono text-emerald-400">{s.score.toFixed(2)}</td>
@@ -865,6 +992,7 @@ function ScoresPage() {
           {scores.length === 0 && <EmptyState message="No scores found" />}
         </div>
       )}
+      {detail && <BondDetailModal bond={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
@@ -892,6 +1020,48 @@ function DeskPage({ onSubscribe }: { onSubscribe?: () => void }) {
   );
 }
 
+function YieldCurveChart({ points, color = '#34d399' }: { points: { tenor: string; years: number; rate_pct: number }[]; color?: string }) {
+  const data = points
+    .filter((p) => p.years > 0 && p.rate_pct != null)
+    .slice()
+    .sort((a, b) => a.years - b.years);
+  if (data.length < 2) {
+    return <p className="text-xs text-gray-500">Недостаточно точек для графика.</p>;
+  }
+  const W = 320, H = 160, pad = 30;
+  const xs = data.map((d) => d.years);
+  const ys = data.map((d) => d.rate_pct);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const xRange = xMax - xMin || 1;
+  const yRange = yMax - yMin || 1;
+  const sx = (x: number) => pad + ((x - xMin) / xRange) * (W - pad * 2);
+  const sy = (y: number) => H - pad - ((y - yMin) / yRange) * (H - pad * 2);
+  const path = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${sx(d.years).toFixed(1)} ${sy(d.rate_pct).toFixed(1)}`).join(' ');
+  const area = `${path} L ${sx(xMax).toFixed(1)} ${H - pad} L ${sx(xMin).toFixed(1)} ${H - pad} Z`;
+  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40" role="img" aria-label="Yield curve">
+      {yTicks.map((t, i) => (
+        <g key={`y${i}`}>
+          <line x1={pad} y1={sy(t)} x2={W - pad} y2={sy(t)} stroke="#1f2937" strokeWidth={1} />
+          <text x={4} y={sy(t) + 3} fill="#6b7280" fontSize={9}>{t.toFixed(1)}%</text>
+        </g>
+      ))}
+      {xTicks.map((t, i) => (
+        <text key={`x${i}`} x={sx(t)} y={H - 8} fill="#6b7280" fontSize={9} textAnchor="middle">{t.toFixed(1)}y</text>
+      ))}
+      <path d={area} fill={color} fillOpacity={0.12} />
+      <path d={path} fill="none" stroke={color} strokeWidth={2} />
+      {data.map((d, i) => (
+        <circle key={i} cx={sx(d.years)} cy={sy(d.rate_pct)} r={2.5} fill={color} />
+      ))}
+    </svg>
+  );
+}
+
 function DeskCurve({ onSubscribe }: { onSubscribe?: () => void }) {
   const { data: curves, loading, error, locked } = useGated<AnalyticsCurve[]>(() => api.analytics.curve());
 
@@ -906,7 +1076,8 @@ function DeskCurve({ onSubscribe }: { onSubscribe?: () => void }) {
             <LineChart size={16} className="text-emerald-400" /> {c.currency} Curve
             <span className="text-xs text-gray-500 font-normal ml-auto">slope {c.slope.toFixed(2)}</span>
           </h3>
-          <div className="space-y-1">
+          <YieldCurveChart points={c.points} />
+          <div className="space-y-1 mt-2">
             {c.points.filter(p => p.years > 0).slice(0, 15).map((p, i) => (
               <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-800/50">
                 <span className="text-gray-400 font-mono text-xs">{p.tenor}</span>
