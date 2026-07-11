@@ -25,6 +25,7 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
         "access_ml": False,
         "access_alerts": False,
         "access_recommendations": False,
+        "max_currencies": 1,
         "api_rate_limit": 10,
     },
     "pro": {
@@ -42,6 +43,7 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
         "access_ml": True,
         "access_alerts": True,
         "access_recommendations": True,
+        "max_currencies": 99,
         "api_rate_limit": 60,
     },
     "enterprise": {
@@ -59,6 +61,7 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
         "access_ml": True,
         "access_alerts": True,
         "access_recommendations": True,
+        "max_currencies": 99,
         "api_rate_limit": 300,
     },
 }

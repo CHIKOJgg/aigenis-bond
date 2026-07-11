@@ -6,23 +6,31 @@ import type {
   AnalyticsPortfolio, AnalyticsForecast, AnalyticsRecommendation, AnalyticsAlert,
 } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { PaywallProvider, usePaywall } from './lib/PaywallContext';
+import { PaywallModal } from './PaywallModal';
+import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2 } from 'lucide-react';
+
+const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
 
 type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'settings' | 'subscribe';
 
 export default function App() {
   return (
     <AuthProvider>
-      <AppInner />
+      <PaywallProvider>
+        <AppInner />
+      </PaywallProvider>
     </AuthProvider>
   );
 }
 
 function AppInner() {
   const { user, loading } = useAuth();
+  const { openPaywall } = usePaywall();
   const [page, setPage] = useState<Page>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
@@ -51,16 +59,24 @@ function AppInner() {
     return <LandingPage onLogin={() => setAuthPage('login')} onRegister={() => setAuthPage('register')} />;
   }
 
-  const navItems: { id: Page; label: string; icon: React.ReactNode }[] = [
+  const navItems: { id: Page; label: string; icon: React.ReactNode; premium?: boolean }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
     { id: 'bonds', label: 'Bonds', icon: <Banknote size={16} /> },
     { id: 'scores', label: 'Scores', icon: <Shield size={16} /> },
-    { id: 'desk', label: 'Desk', icon: <LineChart size={16} /> },
-    { id: 'portfolio', label: 'Portfolio', icon: <PieChart size={16} /> },
-    { id: 'forecast', label: 'Forecast', icon: <TrendingUp size={16} /> },
-    { id: 'ml', label: 'ML', icon: <Brain size={16} /> },
-    { id: 'alerts', label: 'Alerts', icon: <Bell size={16} /> },
+    { id: 'desk', label: 'Desk', icon: <LineChart size={16} />, premium: true },
+    { id: 'portfolio', label: 'Portfolio', icon: <PieChart size={16} />, premium: true },
+    { id: 'forecast', label: 'Forecast', icon: <TrendingUp size={16} />, premium: true },
+    { id: 'ml', label: 'ML', icon: <Brain size={16} />, premium: true },
+    { id: 'alerts', label: 'Alerts', icon: <Bell size={16} />, premium: true },
   ];
+
+  const goToPage = (id: Page) => {
+    if (PREMIUM_PAGES.has(id) && user?.subscription_tier === 'free') {
+      openPaywall(id);
+      return;
+    }
+    setPage(id);
+  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
@@ -71,12 +87,16 @@ function AppInner() {
             <span className="hidden sm:inline">Aigenis Bonds</span>
           </h1>
           <nav className="hidden md:flex gap-1 overflow-x-auto">
-            {navItems.map(({ id, label, icon }) => (
-              <button key={id} onClick={() => setPage(id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === id ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
-                {icon}{label}
-              </button>
-            ))}
+            {navItems.map(({ id, label, icon, premium }) => {
+              const locked = premium && user?.subscription_tier === 'free';
+              return (
+                <button key={id} onClick={() => goToPage(id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === id ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
+                  {icon}{label}
+                  {locked && <Lock size={12} className="text-amber-400" />}
+                </button>
+              );
+            })}
             {user.subscription_tier === 'free' && (
               <button onClick={() => setPage('subscribe')}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'subscribe' ? 'bg-amber-600 text-white' : 'text-amber-400 hover:text-white hover:bg-amber-600/30'}`}>
@@ -94,12 +114,16 @@ function AppInner() {
         </div>
         {mobileMenu && (
           <div className="md:hidden border-t border-gray-800 px-4 py-2 bg-gray-900">
-            {navItems.map(({ id, label, icon }) => (
-              <button key={id} onClick={() => { setPage(id); setMobileMenu(false); }}
-                className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm ${page === id ? 'bg-emerald-600 text-white' : 'text-gray-400'}`}>
-                {icon}{label}
-              </button>
-            ))}
+            {navItems.map(({ id, label, icon, premium }) => {
+              const locked = premium && user?.subscription_tier === 'free';
+              return (
+                <button key={id} onClick={() => { goToPage(id); setMobileMenu(false); }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm ${page === id ? 'bg-emerald-600 text-white' : 'text-gray-400'}`}>
+                  {icon}{label}
+                  {locked && <Lock size={12} className="text-amber-400" />}
+                </button>
+              );
+            })}
           </div>
         )}
       </header>
@@ -115,6 +139,7 @@ function AppInner() {
         {page === 'settings' && <SettingsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'subscribe' && <SubscribePage />}
       </main>
+      <PaywallModal onSubscribe={() => setPage('subscribe')} />
       <footer className="border-t border-gray-800 bg-gray-900 mt-8">
         <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
           <span>&copy; {new Date().getFullYear()} Aigenis Parser. All rights reserved.</span>
@@ -352,6 +377,8 @@ function Dashboard() {
         </div>
       )}
 
+      <CurrencyTracker />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Banknote size={16} className="text-emerald-400" /> Recent Bonds</h3>
@@ -375,6 +402,110 @@ function Dashboard() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CurrencyTracker() {
+  const { user } = useAuth();
+  const { openPaywall } = usePaywall();
+  const limits = tierLimits(user?.subscription_tier);
+  const isFree = user?.subscription_tier === 'free';
+
+  const [available, setAvailable] = useState<string[]>(['USD', 'BYN', 'EUR', 'XAU', 'XAG', 'XPT']);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const storageKey = `watched_currencies_${user?.id ?? 'anon'}`;
+
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as string[];
+        setSelected(parsed.slice(0, Math.max(limits.maxCurrencies, parsed.length)));
+      } catch {
+        setSelected(limits.maxCurrencies >= 1 ? ['USD'] : []);
+      }
+    } else {
+      setSelected(limits.maxCurrencies >= 1 ? ['USD'] : []);
+    }
+    setLoaded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, limits.maxCurrencies]);
+
+  useEffect(() => {
+    api.stats()
+      .then((s) => {
+        const curs = Object.keys(s.by_currency);
+        if (curs.length) setAvailable(curs);
+      })
+      .catch(() => {});
+  }, []);
+
+  const persist = (next: string[]) => {
+    setSelected(next);
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+
+  const toggle = (cur: string) => {
+    if (selected.includes(cur)) {
+      persist(selected.filter((c) => c !== cur));
+      return;
+    }
+    if (isFree && selected.length >= limits.maxCurrencies) {
+      openPaywall('currencies');
+      return;
+    }
+    persist([...selected, cur]);
+  };
+
+  const atLimit = isFree && selected.length >= limits.maxCurrencies;
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Globe2 size={16} className="text-emerald-400" /> Трекер валют (бирж)
+        </h3>
+        {isFree && (
+          <span className={`text-xs px-2 py-0.5 rounded border ${atLimit ? 'text-amber-400 bg-amber-900/30 border-amber-800' : 'text-gray-400 bg-gray-800 border-gray-700'}`}>
+            {selected.length}/{limits.maxCurrencies}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        {isFree
+          ? 'Бесплатный тариф — только 1 валюта. Pro / Enterprise — все биржи и валюты сразу.'
+          : 'Отслеживаемые валюты (биржи).'}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {available.map((cur) => {
+          const active = selected.includes(cur);
+          const blocked = isFree && !active && atLimit;
+          return (
+            <button
+              key={cur}
+              onClick={() => toggle(cur)}
+              disabled={loaded && blocked}
+              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${active
+                ? 'bg-emerald-600 text-white border-emerald-500'
+                : 'bg-gray-800 text-gray-300 border-gray-700 hover:border-gray-600'
+                } ${blocked ? 'opacity-40 cursor-not-allowed' : ''}`}
+            >
+              {cur}
+            </button>
+          );
+        })}
+      </div>
+      {isFree && atLimit && (
+        <button
+          onClick={() => openPaywall('currencies')}
+          className="mt-3 inline-flex items-center gap-1.5 text-sm text-amber-400 hover:text-amber-300 transition-colors"
+        >
+          <Lock size={14} /> Разблокировать все валюты
+        </button>
+      )}
     </div>
   );
 }
