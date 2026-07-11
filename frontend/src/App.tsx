@@ -12,11 +12,11 @@ import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator } from 'lucide-react';
 
 const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
 
-type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'settings' | 'subscribe';
+type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe';
 
 export default function App() {
   return (
@@ -68,6 +68,7 @@ function AppInner() {
     { id: 'forecast', label: 'Forecast', icon: <TrendingUp size={16} />, premium: true },
     { id: 'ml', label: 'ML', icon: <Brain size={16} />, premium: true },
     { id: 'alerts', label: 'Alerts', icon: <Bell size={16} />, premium: true },
+    { id: 'calculator', label: 'Калькулятор', icon: <Calculator size={16} /> },
   ];
 
   const goToPage = (id: Page) => {
@@ -136,6 +137,7 @@ function AppInner() {
         {page === 'forecast' && <ForecastPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'ml' && <MLPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'alerts' && <AlertsPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'calculator' && <BondCalculator />}
         {page === 'settings' && <SettingsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'subscribe' && <SubscribePage />}
       </main>
@@ -379,6 +381,8 @@ function Dashboard() {
 
       <CurrencyTracker />
 
+      <MarketsOverview />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Banknote size={16} className="text-emerald-400" /> Recent Bonds</h3>
@@ -546,6 +550,69 @@ function WatchlistCard() {
   );
 }
 
+function MarketsOverview() {
+  const [tiles, setTiles] = useState<{ currency: string; count: number; avg: number | null }[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      api.stats().then((s) => s.by_currency).catch(() => ({}) as Record<string, number>),
+      api.bonds.list({ limit: 1000 }).catch(() => [] as Bond[]),
+      api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
+    ])
+      .then(([byCur, bonds, sc]) => {
+        const scoreMap: Record<string, number> = {};
+        sc.forEach((s) => { scoreMap[s.internal_id] = s.score; });
+        const sums: Record<string, { n: number; sum: number }> = {};
+        bonds.forEach((b) => {
+          const s = scoreMap[b.internal_id];
+          if (s == null) return;
+          if (!sums[b.currency]) sums[b.currency] = { n: 0, sum: 0 };
+          sums[b.currency].n += 1;
+          sums[b.currency].sum += s;
+        });
+        const rows = Object.entries(byCur as Record<string, number>).map(([cur, count]) => ({
+          currency: cur,
+          count,
+          avg: sums[cur] ? sums[cur].sum / sums[cur].n : null,
+        })).sort((a, b) => b.count - a.count);
+        setTiles(rows);
+      })
+      .catch(() => {});
+  }, []);
+
+  if (tiles.length === 0) return null;
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <Globe2 size={16} className="text-emerald-400" /> Обзор рынков
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+        {tiles.map((t) => {
+          const avg = t.avg;
+          const tint = avg == null
+            ? 'bg-gray-800 border-gray-700'
+            : avg >= 70
+              ? 'bg-emerald-900/40 border-emerald-800'
+              : avg >= 50
+                ? 'bg-amber-900/30 border-amber-800'
+                : 'bg-red-900/30 border-red-800';
+          return (
+            <div key={t.currency} className={`rounded-lg border p-3 ${tint}`}>
+              <div className="flex items-center justify-between">
+                <CurrencyBadge currency={t.currency} />
+                <span className="text-xs text-gray-400">{t.count}</span>
+              </div>
+              <p className="mt-1 text-sm font-mono">{avg != null ? avg.toFixed(1) : '—'}</p>
+              <p className="text-[10px] text-gray-500">средн. скор</p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function BondsPage() {
   const { user } = useAuth();
   const [allBonds, setAllBonds] = useState<Bond[]>([]);
@@ -690,6 +757,15 @@ function BondsPage() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
   };
 
+  const applyPreset = (p: Partial<{ search: string; status: string; minYtm: string; minScore: string; currency: string }>) => {
+    setSearch(p.search ?? '');
+    setStatus(p.status ?? '');
+    setMinYtm(p.minYtm ?? '');
+    setMinScore(p.minScore ?? '');
+    setCurrency(p.currency ?? '');
+    setPage(1);
+  };
+
   const SortHeader = ({ label, k, className = '' }: { label: string; k: typeof sort.key; className?: string }) => (
     <th
       className={`text-left p-3 cursor-pointer select-none hover:text-white ${className} ${sort.key === k ? 'text-emerald-400' : 'text-gray-400'}`}
@@ -734,6 +810,16 @@ function BondsPage() {
               className="text-gray-400 hover:text-white">Сбросить</button>
           )}
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-gray-500">Быстрые фильтры:</span>
+        <button onClick={() => applyPreset({ minYtm: '10' })}
+          className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors">YTM ≥ 10%</button>
+        <button onClick={() => applyPreset({ minScore: '70' })}
+          className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors">Скор ≥ 70</button>
+        <button onClick={() => applyPreset({ status: 'active' })}
+          className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors">Только active</button>
       </div>
 
       {loading && <LoadingSkeleton />}
@@ -1598,6 +1684,97 @@ function SubscribePage() {
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function BondCalculator() {
+  const [face, setFace] = useState('100');
+  const [coupon, setCoupon] = useState('8');
+  const [freq, setFreq] = useState(2);
+  const [ytm, setYtm] = useState('9');
+  const [years, setYears] = useState('5');
+  const [accruedDays, setAccruedDays] = useState('0');
+  const [periodDays, setPeriodDays] = useState('182');
+
+  const result = useMemo(() => {
+    const F = Number(face);
+    const c = Number(coupon) / 100;
+    const y = Number(ytm) / 100;
+    const n = Number(years);
+    const f = freq;
+    if (!F || isNaN(c) || isNaN(y) || !n || !f) return null;
+    const periods = Math.round(n * f);
+    if (periods <= 0) return null;
+    const perY = y / f;
+    const cf = (F * c) / f;
+    let clean = 0;
+    for (let k = 1; k <= periods; k++) {
+      const flow = k === periods ? cf + F : cf;
+      clean += flow / Math.pow(1 + perY, k);
+    }
+    const pd = Number(periodDays) || 1;
+    const accrued = (F * c) / f * (Number(accruedDays) / pd);
+    const dirty = clean + accrued;
+    const currentYield = cf * f / clean;
+    return { clean, dirty, accrued, currentYield };
+  }, [face, coupon, freq, ytm, years, accruedDays, periodDays]);
+
+  const numField = (label: string, value: string, onChange: (v: string) => void, step = '1', type = 'number') => (
+    <div>
+      <label className="text-xs text-gray-400 block mb-1">{label}</label>
+      <input value={value} onChange={(e) => onChange(e.target.value)} type={type} step={step}
+        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+    </div>
+  );
+
+  return (
+    <div className="space-y-4 max-w-3xl">
+      <div className="flex items-center gap-2">
+        <Calculator size={22} className="text-emerald-400" />
+        <h2 className="text-2xl font-bold">Калькулятор облигации</h2>
+      </div>
+      <p className="text-sm text-gray-400">Расчёт цены по доходности (YTM), накопленного купонного дохода (НКД) и текущей доходности. Бесплатный инструмент, без бэкенда.</p>
+
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 grid grid-cols-2 lg:grid-cols-3 gap-4">
+        {numField('Номинал', face, setFace)}
+        {numField('Купон, % годовых', coupon, setCoupon, '0.1')}
+        <div>
+          <label className="text-xs text-gray-400 block mb-1">Выплат в год</label>
+          <select value={freq} onChange={(e) => setFreq(Number(e.target.value))}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm">
+            <option value={1}>1 (год)</option>
+            <option value={2}>2 (полгода)</option>
+            <option value={4}>4 (квартал)</option>
+            <option value={12}>12 (месяц)</option>
+          </select>
+        </div>
+        {numField('YTM, % годовых', ytm, setYtm, '0.1')}
+        {numField('Лет до погашения', years, setYears, '0.5')}
+        {numField('Дней с последнего купона', accruedDays, setAccruedDays)}
+        {numField('Дней в купонном периоде', periodDays, setPeriodDays)}
+      </div>
+
+      {result && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-xs text-gray-400">Чистая цена</p>
+            <p className="text-xl font-bold text-emerald-400">{result.clean.toFixed(2)}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-xs text-gray-400">НКД</p>
+            <p className="text-xl font-bold text-amber-400">{result.accrued.toFixed(2)}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-xs text-gray-400">Грязная цена</p>
+            <p className="text-xl font-bold text-white">{result.dirty.toFixed(2)}</p>
+          </div>
+          <div className="bg-gray-800/50 rounded-lg p-3">
+            <p className="text-xs text-gray-400">Текущая доходность</p>
+            <p className="text-xl font-bold text-blue-400">{(result.currentYield * 100).toFixed(2)}%</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
