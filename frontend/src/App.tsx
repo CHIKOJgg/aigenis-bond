@@ -12,7 +12,7 @@ import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check } from 'lucide-react';
 
 const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
 
@@ -29,13 +29,31 @@ export default function App() {
 }
 
 function AppInner() {
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
   const { openPaywall } = usePaywall();
   const [page, setPage] = useState<Page>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
   const [legalPage, setLegalPage] = useState<'terms' | 'privacy' | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(isOnboardingNeeded());
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Detect successful YooKassa payment redirect (?success=1) and refresh tier.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === '1') {
+      setToast('Оплата прошла успешно! Подписка активна.');
+      window.history.replaceState({}, '', window.location.pathname);
+      refreshUser().catch(() => {});
+      setTimeout(() => setToast(null), 6000);
+    }
+  }, [refreshUser]);
+
+  const trialDaysLeft =
+    user?.trial_end && new Date(user.trial_end).getTime() > Date.now()
+      ? Math.ceil((new Date(user.trial_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      : null;
+  const trialExpiring = trialDaysLeft != null && trialDaysLeft <= 3;
 
   if (showOnboarding) {
     return <OnboardingTour onDone={() => setShowOnboarding(false)} />;
@@ -129,7 +147,19 @@ function AppInner() {
         )}
       </header>
       <main className="max-w-7xl mx-auto p-4">
-        {page === 'dashboard' && <Dashboard />}
+        {trialExpiring && (
+          <div className="mb-4 flex items-center gap-3 bg-amber-900/30 border border-amber-800 text-amber-200 rounded-xl px-4 py-3 text-sm">
+            <Clock size={16} className="shrink-0" />
+            <span>
+              Пробный период заканчивается через <b>{trialDaysLeft} {trialDaysLeft === 1 ? 'день' : 'дня'}</b>.
+              Оформите подписку, чтобы не потерять доступ к Pro-функциям.
+            </span>
+            <button onClick={() => setPage('subscribe')} className="ml-auto bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+              Оформить
+            </button>
+          </div>
+        )}
+        {page === 'dashboard' && <Dashboard onPickCurrency={(cur) => { sessionStorage.setItem('bonds_currency', cur); setPage('bonds'); }} />}
         {page === 'bonds' && <BondsPage />}
         {page === 'scores' && <ScoresPage />}
         {page === 'desk' && <DeskPage onSubscribe={() => setPage('subscribe')} />}
@@ -155,6 +185,11 @@ function AppInner() {
           </div>
         </div>
       </footer>
+      {toast && (
+        <div className="fixed bottom-4 right-4 z-[110] bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg text-sm flex items-center gap-2 animate-fadeIn">
+          <Check size={16} /> {toast}
+        </div>
+      )}
     </div>
   );
 }
@@ -325,7 +360,7 @@ function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   );
 }
 
-function Dashboard() {
+function Dashboard({ onPickCurrency }: { onPickCurrency?: (cur: string) => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [bonds, setBonds] = useState<Bond[]>([]);
   const [scores, setScores] = useState<BondScore[]>([]);
@@ -381,7 +416,9 @@ function Dashboard() {
 
       <CurrencyTracker />
 
-      <MarketsOverview />
+      <MarketsOverview onPick={onPickCurrency} />
+
+      <AlertsWidget />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
@@ -529,12 +566,26 @@ function WatchlistCard() {
   if (loading) return null;
   if (items.length === 0) return null;
 
+  const exportNow = () => {
+    exportCsv(
+      'watchlist.csv',
+      ['Bond ID', 'Name', 'Score'],
+      items.map((it) => [it.internal_id, it.name, it.score != null ? it.score.toFixed(2) : '']),
+    );
+  };
+
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-        <Star size={16} className="text-amber-400" /> Избранное
-        <span className="text-xs text-gray-500 font-normal ml-auto">{items.length}</span>
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Star size={16} className="text-amber-400" /> Избранное
+          <span className="text-xs text-gray-500 font-normal">{items.length}</span>
+        </h3>
+        <button onClick={exportNow}
+          className="flex items-center gap-1 text-gray-400 hover:text-white" title="Экспорт CSV">
+          <Download size={14} />
+        </button>
+      </div>
       <div className="space-y-1">
         {items.slice(0, 8).map((it) => (
           <div key={it.internal_id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
@@ -550,7 +601,7 @@ function WatchlistCard() {
   );
 }
 
-function MarketsOverview() {
+function MarketsOverview({ onPick }: { onPick?: (cur: string) => void }) {
   const [tiles, setTiles] = useState<{ currency: string; count: number; avg: number | null }[]>([]);
 
   useEffect(() => {
@@ -598,17 +649,179 @@ function MarketsOverview() {
                 ? 'bg-amber-900/30 border-amber-800'
                 : 'bg-red-900/30 border-red-800';
           return (
-            <div key={t.currency} className={`rounded-lg border p-3 ${tint}`}>
+            <button key={t.currency} onClick={() => onPick?.(t.currency)}
+              className={`rounded-lg border p-3 text-left transition-colors hover:border-emerald-600 ${tint}`}>
               <div className="flex items-center justify-between">
                 <CurrencyBadge currency={t.currency} />
                 <span className="text-xs text-gray-400">{t.count}</span>
               </div>
               <p className="mt-1 text-sm font-mono">{avg != null ? avg.toFixed(1) : '—'}</p>
               <p className="text-[10px] text-gray-500">средн. скор</p>
-            </div>
+            </button>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function AlertsWidget() {
+  const { user } = useAuth();
+  const storageKey = `alerts_${user?.id ?? 'anon'}`;
+
+  interface AlertRule {
+    id: string;
+    scope: 'bond' | 'currency';
+    target: string;
+    metric: 'ytm' | 'score' | 'price';
+    op: '>' | '<';
+    value: number;
+    enabled: boolean;
+  }
+
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [triggered, setTriggered] = useState<{ rule: AlertRule; bond: Bond; value: number }[]>([]);
+  const [form, setForm] = useState<{ scope: 'bond' | 'currency'; target: string; metric: 'ytm' | 'score' | 'price'; op: '>' | '<'; value: string }>({
+    scope: 'currency', target: '', metric: 'ytm', op: '>', value: '',
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) setRules(JSON.parse(saved));
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+
+  const persist = (next: AlertRule[]) => {
+    setRules(next);
+    localStorage.setItem(storageKey, JSON.stringify(next));
+  };
+
+  const evaluate = async (rs: AlertRule[]) => {
+    if (rs.length === 0) { setTriggered([]); return; }
+    try {
+      const [bonds, sc] = await Promise.all([
+        api.bonds.list({ limit: 1000 }),
+        api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
+      ]);
+      const scoreMap: Record<string, number> = {};
+      sc.forEach((s) => { scoreMap[s.internal_id] = s.score; });
+      const out: { rule: AlertRule; bond: Bond; value: number }[] = [];
+      for (const r of rs.filter((x) => x.enabled)) {
+        const matched = bonds.filter((b) => (r.scope === 'bond' ? b.internal_id === r.target : b.currency === r.target));
+        for (const b of matched) {
+          const val = r.metric === 'score'
+            ? scoreMap[b.internal_id]
+            : r.metric === 'ytm'
+              ? (b.yield_to_maturity != null ? b.yield_to_maturity * 100 : null)
+              : b.price;
+          if (val == null) continue;
+          const hit = r.op === '>' ? val > r.value : val < r.value;
+          if (hit) out.push({ rule: r, bond: b, value: val });
+        }
+      }
+      setTriggered(out);
+    } catch {
+      setTriggered([]);
+    }
+  };
+
+  const addRule = () => {
+    const v = Number(form.value);
+    if (!form.target.trim() || isNaN(v)) return;
+    const rule: AlertRule = {
+      id: Math.random().toString(36).slice(2),
+      scope: form.scope,
+      target: form.target.trim().toUpperCase(),
+      metric: form.metric,
+      op: form.op,
+      value: v,
+      enabled: true,
+    };
+    const next = [...rules, rule];
+    persist(next);
+    setForm((f) => ({ ...f, target: '', value: '' }));
+    evaluate(next);
+  };
+
+  const removeRule = (id: string) => {
+    const next = rules.filter((r) => r.id !== id);
+    persist(next);
+    evaluate(next);
+  };
+
+  useEffect(() => { evaluate(rules); /* eslint-disable-next-line */ }, [rules]);
+
+  const metricLabel: Record<AlertRule['metric'], string> = { ytm: 'YTM %', score: 'Скор', price: 'Цена' };
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <Bell size={16} className="text-emerald-400" /> Мои алерты
+        {triggered.length > 0 && (
+          <span className="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded ml-auto">{triggered.length} сработало</span>
+        )}
+      </h3>
+
+      {triggered.length > 0 && (
+        <div className="mb-3 space-y-1">
+          {triggered.slice(0, 6).map((t, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm bg-red-900/20 border border-red-800 rounded-lg px-3 py-1.5">
+              <span className="font-mono text-xs text-gray-300">{t.bond.internal_id}</span>
+              <span className="text-gray-400">
+                {metricLabel[t.rule.metric]} {t.rule.op === '>' ? 'выше' : 'ниже'} {t.rule.value}
+              </span>
+              <span className="ml-auto font-mono text-red-300">
+                {t.value != null ? t.value.toFixed(2) : '—'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
+        <select value={form.scope} onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value as 'bond' | 'currency' }))}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
+          <option value="currency">Валюта</option>
+          <option value="bond">Облигация</option>
+        </select>
+        <input value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} placeholder={form.scope === 'bond' ? 'ID' : 'USD'}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs" />
+        <select value={form.metric} onChange={(e) => setForm((f) => ({ ...f, metric: e.target.value as 'ytm' | 'score' | 'price' }))}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
+          <option value="ytm">YTM %</option>
+          <option value="score">Скор</option>
+          <option value="price">Цена</option>
+        </select>
+        <div className="flex gap-1">
+          <select value={form.op} onChange={(e) => setForm((f) => ({ ...f, op: e.target.value as '>' | '<' }))}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
+            <option value=">">&gt;</option>
+            <option value="<">&lt;</option>
+          </select>
+          <input value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} type="number" step="0.1" placeholder="знач."
+            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs w-full" />
+        </div>
+        <button onClick={addRule}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2 py-1.5 text-xs transition-colors">Добавить</button>
+      </div>
+
+      {rules.length > 0 && (
+        <div className="space-y-1">
+          {rules.map((r) => (
+            <div key={r.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-800 last:border-0">
+              <span className="text-gray-300">
+                {r.scope === 'bond' ? 'Облигация' : 'Валюта'} <b className="font-mono">{r.target}</b>: {metricLabel[r.metric]} {r.op === '>' ? '>' : '<'} {r.value}
+              </span>
+              <button onClick={() => removeRule(r.id)} className="text-gray-500 hover:text-red-400" aria-label="Удалить">
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {rules.length === 0 && <p className="text-xs text-gray-500">Нет правил. Добавьте алерт, например: валюта BYN, YTM &gt; 12%.</p>}
     </div>
   );
 }
@@ -617,7 +830,7 @@ function BondsPage() {
   const { user } = useAuth();
   const [allBonds, setAllBonds] = useState<Bond[]>([]);
   const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
-  const [currency, setCurrency] = useState('');
+  const [currency, setCurrency] = useState(() => sessionStorage.getItem('bonds_currency') || '');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [minYtm, setMinYtm] = useState('');
@@ -634,6 +847,7 @@ function BondsPage() {
   const PAGE_SIZE = 25;
 
   useEffect(() => {
+    sessionStorage.removeItem('bonds_currency');
     setLoading(true);
     setError(null);
     setPage(1);
