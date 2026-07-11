@@ -23,7 +23,7 @@ def _cashflows(
         return []
     cf_per_period = float(nominal) * coupon_rate_pct / 100 / coupon_frequency
     years_total = (maturity - ref).days / 365.25
-    n_periods = max(int(round(years_total * coupon_frequency)), 1)
+    n_periods = max(round(years_total * coupon_frequency), 1)
     period_years = years_total / n_periods
     flows: list[tuple[float, float]] = []
     for k in range(1, n_periods + 1):
@@ -165,10 +165,7 @@ def key_rate_durations(
     for t in tenors:
         bumped: list[tuple[float, float]] = []
         for time, cf in flows:
-            if abs(time - t) < 0.5:
-                bump = 0.0001
-            else:
-                bump = 0.0
+            bump = 0.0001 if abs(time - t) < 0.5 else 0.0
             bumped.append((time, cf / ((1 + (ytm_pct / 100 + bump) / freq) ** (freq * time))))
         bumped_price = sum(cf for _, cf in bumped)
         krd = -(bumped_price - base_price) / (base_price * 0.0001) if base_price else 0.0

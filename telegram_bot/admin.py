@@ -58,7 +58,8 @@ async def cmd_broadcast(message: Message) -> None:
         try:
             await message.bot.send_message(chat_id=uid, text=f"📢 {text_to_send}")
             sent += 1
-        except Exception:
+        except Exception as exc:
+            logger.warning("broadcast_failed", user_id=uid, error=str(exc))
             failed += 1
     await message.answer(f"📢 Разослано: {sent} успешно, {failed} с ошибками.")
 

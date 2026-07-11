@@ -7,9 +7,11 @@ import {
 interface LandingPageProps {
   onLogin: () => void;
   onRegister: () => void;
+  onTerms?: () => void;
+  onPrivacy?: () => void;
 }
 
-export function LandingPage({ onLogin, onRegister }: LandingPageProps) {
+export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: LandingPageProps) {
   const [mobileMenu, setMobileMenu] = useState(false);
 
   const scrollTo = (id: string) => {
@@ -281,8 +283,8 @@ export function LandingPage({ onLogin, onRegister }: LandingPageProps) {
             <div>
               <h4 className="text-sm font-semibold mb-3">Legal</h4>
               <div className="space-y-2 text-sm text-gray-400">
-                <a href="/terms" className="block hover:text-white transition-colors">Terms of Service</a>
-                <a href="/privacy" className="block hover:text-white transition-colors">Privacy Policy</a>
+                <button onClick={onTerms} className="block hover:text-white transition-colors text-left">Terms of Service</button>
+                <button onClick={onPrivacy} className="block hover:text-white transition-colors text-left">Privacy Policy</button>
               </div>
             </div>
             <div>

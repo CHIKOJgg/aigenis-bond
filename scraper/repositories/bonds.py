@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
-from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -31,7 +30,7 @@ def _is_technical_name(name: str) -> bool:
     # Только цифры, тире, слеши, подчёркивания
     cleaned = re.sub(r"[0-9\-_/]", "", name).strip()
     # Если после удаления тех.символов осталось < 2 букв — это тех.код
-    return len(cleaned) < 2 or cleaned.isupper() and len(cleaned) < 5
+    return len(cleaned) < 2 or (cleaned.isupper() and len(cleaned) < 5)
 
 
 def _enrich_bond_name(bond: Bond) -> str:

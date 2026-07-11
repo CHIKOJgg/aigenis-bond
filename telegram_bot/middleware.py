@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import time
 import uuid
 from collections import defaultdict
@@ -102,24 +103,18 @@ class MetricsMiddleware(BaseMiddleware):
         from telegram_bot import metrics
 
         label = _command_label(event)
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover - metrics must never break the bot
             metrics.bot_commands.labels(command=label).inc()
-        except Exception:  # pragma: no cover - metrics must never break the bot
-            pass
         start = time.monotonic()
         try:
             return await handler(event, data)
         except Exception as exc:
-            try:
+            with contextlib.suppress(Exception):  # pragma: no cover
                 metrics.bot_errors.labels(error_type=type(exc).__name__).inc()
-            except Exception:  # pragma: no cover
-                pass
             raise
         finally:
-            try:
+            with contextlib.suppress(Exception):  # pragma: no cover
                 metrics.bot_latency.labels(command=label).observe(time.monotonic() - start)
-            except Exception:  # pragma: no cover
-                pass
 
 
 # Commands that require a paid (Pro/Enterprise) subscription.

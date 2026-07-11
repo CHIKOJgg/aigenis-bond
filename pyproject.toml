@@ -75,11 +75,16 @@ target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM", "ARG", "C4", "RUF"]
-ignore = ["E501", "RUF012"]
+# E501 (long lines) and RUF012 (mutable default in dataclass) are intentionally allowed.
+# RUF001/002/003 fire on the project's intentional Russian (Cyrillic) UI strings.
+# B008 (Depends(...) in FastAPI route signatures) is idiomatic and unavoidable.
+ignore = ["E501", "RUF012", "RUF001", "RUF002", "RUF003", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-# The Telegram bot's UI strings are intentionally in Russian (Cyrillic).
-"telegram_bot/**" = ["RUF001"]
+# scikit-learn convention: `X` holds the feature matrix.
+"ml/**" = ["N806"]
+# pytest fixtures are passed as test-function arguments but never referenced directly.
+"tests/**" = ["ARG001"]
 
 fixable = ["I", "UP", "W"]
 

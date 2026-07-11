@@ -7,6 +7,7 @@ import type {
 } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { PaywallProvider, usePaywall } from './lib/PaywallContext';
+import { Modal } from './lib/Modal';
 import { PaywallModal } from './PaywallModal';
 import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
@@ -74,7 +75,7 @@ function AppInner() {
   if (!user) {
     if (authPage === 'login') return <LoginPage onRegister={() => setAuthPage('register')} />;
     if (authPage === 'register') return <RegisterPage onSwitch={() => setAuthPage('login')} />;
-    return <LandingPage onLogin={() => setAuthPage('login')} onRegister={() => setAuthPage('register')} />;
+    return <LandingPage onLogin={() => setAuthPage('login')} onRegister={() => setAuthPage('register')} onTerms={() => setLegalPage('terms')} onPrivacy={() => setLegalPage('privacy')} />;
   }
 
   const navItems: { id: Page; label: string; icon: React.ReactNode; premium?: boolean }[] = [
@@ -127,7 +128,7 @@ function AppInner() {
               <User size={16} />{user.name.split(' ')[0]}
             </button>
           </nav>
-          <button className="md:hidden p-2 text-gray-400" onClick={() => setMobileMenu(!mobileMenu)}>
+          <button className="md:hidden p-2 text-gray-400" onClick={() => setMobileMenu(!mobileMenu)} aria-label={mobileMenu ? 'Закрыть меню' : 'Открыть меню'}>
             {mobileMenu ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
@@ -186,7 +187,7 @@ function AppInner() {
         </div>
       </footer>
       {toast && (
-        <div className="fixed bottom-4 right-4 z-[110] bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg text-sm flex items-center gap-2 animate-fadeIn">
+        <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-[110] bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-lg text-sm flex items-center gap-2 animate-fadeIn">
           <Check size={16} /> {toast}
         </div>
       )}
@@ -1141,58 +1142,56 @@ function ComparisonModal({ bonds, scoreMap, onClose }: { bonds: Bond[]; scoreMap
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 max-w-4xl w-full max-h-[85vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold">Сравнение облигаций ({bonds.length})</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><X size={18} /></button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-800 text-gray-400">
-                <th className="text-left p-3 sticky left-0 bg-gray-900">Метрика</th>
+    <Modal onClose={onClose} className="max-w-4xl w-full max-h-[85vh] overflow-auto">
+      <div className="flex items-center justify-between p-6 pb-2">
+        <h3 className="text-lg font-bold" id="comparison-title">Сравнение облигаций ({bonds.length})</h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-white p-1" aria-label="Закрыть"><X size={18} /></button>
+      </div>
+      <div className="px-6 pb-6 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-800 text-gray-400">
+              <th className="text-left p-3 sticky left-0 bg-gray-900">Метрика</th>
+              {bonds.map((b) => (
+                <th key={b.internal_id} className="text-left p-3 min-w-[150px]">
+                  <div className="font-semibold text-white">{b.name}</div>
+                  <div className="text-xs text-gray-500 font-mono">{b.internal_id}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {metrics.map((m) => (
+              <tr key={m.label} className="border-b border-gray-800">
+                <td className="p-3 text-gray-400 sticky left-0 bg-gray-900">{m.label}</td>
                 {bonds.map((b) => (
-                  <th key={b.internal_id} className="text-left p-3 min-w-[150px]">
-                    <div className="font-semibold text-white">{b.name}</div>
-                    <div className="text-xs text-gray-500 font-mono">{b.internal_id}</div>
-                  </th>
+                  <td key={b.internal_id} className="p-3 font-mono">{m.get(b)}</td>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {metrics.map((m) => (
-                <tr key={m.label} className="border-b border-gray-800">
-                  <td className="p-3 text-gray-400 sticky left-0 bg-gray-900">{m.label}</td>
-                  {bonds.map((b) => (
-                    <td key={b.internal_id} className="p-3 font-mono">{m.get(b)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond: Bond; isFavorite?: boolean; onToggleFavorite?: () => void; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <Modal onClose={onClose} className="max-w-lg w-full max-h-[80vh] overflow-y-auto">
+      <div className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold">{bond.internal_id}</h3>
+          <h3 className="text-lg font-bold" id="detail-title">{bond.internal_id}</h3>
           <div className="flex items-center gap-2">
             {onToggleFavorite && (
-              <button onClick={onToggleFavorite} className="text-gray-400 hover:text-amber-400 p-1" title="В избранное">
+              <button onClick={onToggleFavorite} className="text-gray-400 hover:text-amber-400 p-1" title="В избранное" aria-label="В избранное">
                 <Star size={18} className={isFavorite ? 'fill-amber-400 text-amber-400' : ''} />
               </button>
             )}
-            <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><X size={18} /></button>
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-1" aria-label="Закрыть"><X size={18} /></button>
           </div>
         </div>
-        <div className="space-y-3 text-sm">
+        <dl className="space-y-3 text-sm">
           <DetailRow label="Name" value={bond.name} />
           <DetailRow label="Currency" value={bond.currency} />
           <DetailRow label="Issuer" value={bond.issuer || '-'} />
@@ -1203,9 +1202,9 @@ function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond
           <DetailRow label="Maturity" value={bond.maturity_date ? new Date(bond.maturity_date).toLocaleDateString() : '-'} />
           <DetailRow label="Status" value={bond.status} />
           <DetailRow label="Last Updated" value={bond.fetched_at ? new Date(bond.fetched_at).toLocaleString() : '-'} />
-        </div>
+        </dl>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -1362,6 +1361,28 @@ function YieldCurveChart({ points, color = '#34d399' }: { points: { tenor: strin
   );
 }
 
+function MiniBarChart({ data, formatValue }: { data: { label: string; value: number }[]; formatValue?: (v: number) => string }) {
+  if (data.length === 0) return null;
+  const max = Math.max(...data.map((d) => Math.abs(d.value)), 0.0001);
+  return (
+    <div className="space-y-1.5">
+      {data.map((d, i) => {
+        const pct = Math.min(100, (Math.abs(d.value) / max) * 100);
+        const positive = d.value >= 0;
+        return (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            <span className="w-28 shrink-0 truncate text-gray-400 font-mono">{d.label}</span>
+            <div className="flex-1 bg-gray-800 rounded h-3 relative overflow-hidden">
+              <div className={`h-3 rounded ${positive ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
+            </div>
+            <span className="w-16 shrink-0 text-right font-mono">{formatValue ? formatValue(d.value) : d.value.toFixed(2)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DeskCurve({ onSubscribe }: { onSubscribe?: () => void }) {
   const { data: curves, loading, error, locked } = useGated<AnalyticsCurve[]>(() => api.analytics.curve());
 
@@ -1400,33 +1421,47 @@ function DeskRV({ onSubscribe }: { onSubscribe?: () => void }) {
   if (error) return <ErrorBanner message={error} />;
 
   const rows = signals ?? [];
+  const chart = rows
+    .filter((s) => s.z_score != null)
+    .slice()
+    .sort((a, b) => Math.abs(b.z_score!) - Math.abs(a.z_score!))
+    .slice(0, 12)
+    .map((s) => ({ label: s.internal_id, value: s.z_score! }));
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-gray-800 text-gray-400">
-            <th className="text-left p-3">ID</th>
-            <th className="text-right p-3">Spread</th>
-            <th className="text-right p-3">Z-Score</th>
-            <th className="text-left p-3">Signal</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 40).map((s, i) => (
-            <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
-              <td className="p-3 font-mono text-xs text-gray-300">{s.internal_id}</td>
-              <td className="p-3 text-right font-mono">{s.spread_pct != null ? `${s.spread_pct.toFixed(2)}%` : '-'}</td>
-              <td className="p-3 text-right font-mono">{s.z_score != null ? s.z_score.toFixed(2) : '-'}</td>
-              <td className="p-3">
-                <span className={`px-2 py-0.5 rounded text-xs ${s.side === 'buy' ? 'bg-green-900 text-green-300' : s.side === 'sell' ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-                  {s.side.toUpperCase()}
-                </span>
-              </td>
+    <div className="space-y-4">
+      {chart.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <h3 className="text-sm font-semibold mb-3 text-gray-300">Топ сигналов по модулю Z-Score</h3>
+          <MiniBarChart data={chart} />
+        </div>
+      )}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-800 text-gray-400">
+              <th className="text-left p-3">ID</th>
+              <th className="text-right p-3">Spread</th>
+              <th className="text-right p-3">Z-Score</th>
+              <th className="text-left p-3">Signal</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 && <EmptyState message="No RV signals available" />}
+          </thead>
+          <tbody>
+            {rows.slice(0, 40).map((s, i) => (
+              <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/50">
+                <td className="p-3 font-mono text-xs text-gray-300">{s.internal_id}</td>
+                <td className="p-3 text-right font-mono">{s.spread_pct != null ? `${s.spread_pct.toFixed(2)}%` : '-'}</td>
+                <td className="p-3 text-right font-mono">{s.z_score != null ? s.z_score.toFixed(2) : '-'}</td>
+                <td className="p-3">
+                  <span className={`px-2 py-0.5 rounded text-xs ${s.side === 'buy' ? 'bg-green-900 text-green-300' : s.side === 'sell' ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+                    {s.side.toUpperCase()}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <EmptyState message="No RV signals available" />}
+      </div>
     </div>
   );
 }
@@ -1442,8 +1477,19 @@ function DeskCarry({ onSubscribe }: { onSubscribe?: () => void }) {
   if (error) return <ErrorBanner message={error} />;
 
   const rows = trades ?? [];
+  const chart = rows
+    .slice()
+    .sort((a, b) => Math.abs(b.expected_pnl_pct) - Math.abs(a.expected_pnl_pct))
+    .slice(0, 12)
+    .map((t) => ({ label: t.internal_id, value: t.expected_pnl_pct }));
   return (
     <div className="space-y-4">
+      {chart.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <h3 className="text-sm font-semibold mb-3 text-gray-300">Топ по ожидаемому P&L</h3>
+          <MiniBarChart data={chart} formatValue={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`} />
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <label className="text-sm text-gray-400">Funding Rate:</label>
         <input value={funding} onChange={e => setFunding(e.target.value)} type="number" step="0.1" className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm w-24" />
@@ -1756,6 +1802,9 @@ function useGated<T>(fetcher: () => Promise<T>, deps: any[] = []) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [locked, setLocked] = useState(false);
+  // The dependency array is supplied by the caller via `deps`; `fetcher` is
+  // intentionally excluded so callers control re-fetch behaviour.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(null); setLocked(false);

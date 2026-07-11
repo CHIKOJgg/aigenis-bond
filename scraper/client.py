@@ -426,10 +426,7 @@ class AigenisClient:
                 iid = defn.get("state_security_id")
                 if not iid:
                     sym = item.get("symbol", "")
-                    if "/" in sym:
-                        iid = sym.rsplit("/", 1)[-1]
-                    else:
-                        iid = sym
+                    iid = sym.rsplit("/", 1)[-1] if "/" in sym else sym
                 if not iid:
                     continue
                 self._id_by_internal[str(iid)] = item.get("id")

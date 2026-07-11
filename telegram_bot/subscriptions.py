@@ -204,5 +204,8 @@ async def clear_subscription_by_telegram(telegram_id: int, charge_id: str | None
         user.subscription_tier = FREE_TIER
         user.subscription_expires_at = None
         user.last_charge_id = None
+        # A refund fully revokes access — also drop any promotional trial so the
+        # user does not silently keep `pro` via the trial window.
+        user.trial_end = None
         await session.flush()
     logger.info("subscription_revoked", telegram_id=telegram_id, charge_id=charge_id)

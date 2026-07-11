@@ -19,10 +19,10 @@ os.environ.setdefault("RATE_LIMIT_BACKEND", "memory")
 # ORM's BigInteger primary keys as INTEGER on the sqlite dialect so the test
 # suite can exercise the real ORM against in-memory SQLite. (Postgres keeps
 # BIGINT in production.)
-from sqlalchemy import BigInteger  # noqa: E402
-from sqlalchemy.ext.compiler import compiles  # noqa: E402
+from sqlalchemy import BigInteger
+from sqlalchemy.ext.compiler import compiles
 
 
 @compiles(BigInteger, "sqlite")
-def _compile_bigint_as_integer(type_, compiler, **kw):  # noqa: ANN001, ARG001
+def _compile_bigint_as_integer(type_, compiler, **kw):  # noqa: ARG001
     return "INTEGER"

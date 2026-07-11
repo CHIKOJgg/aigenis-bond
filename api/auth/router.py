@@ -83,7 +83,8 @@ async def refresh(req: RefreshRequest, session: AsyncSession = Depends(_get_sess
 async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_get_session)):
     try:
         import httpx
-        resp = httpx.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={req.id_token}", timeout=10)
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={req.id_token}")
         if resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Invalid Google token")
         data = resp.json()
@@ -93,7 +94,7 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Google auth failed: {e}")
+        raise HTTPException(status_code=401, detail=f"Google auth failed: {e}") from e
     user, _ = await find_or_create_google_user(session, google_id, email, name)
     return TokenResponse(
         access_token=create_access_token(user.id),

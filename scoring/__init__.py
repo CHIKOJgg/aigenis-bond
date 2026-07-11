@@ -11,10 +11,10 @@ from scoring.engine import (
 from scoring.models import BondScore, ScoreBreakdown
 
 __all__ = [
-    "BondScore",
-    "ScoreBreakdown",
     "CURRENCY_BONUS",
     "METAL_EXTRA_BONUS",
+    "BondScore",
+    "ScoreBreakdown",
     "score_bond",
     "score_bonds",
 ]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,7 +8,6 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.deps import _get_current_user
 from api.auth.service import get_user_by_id
 from scraper.db import session_scope
 from scraper.logging import get_logger
@@ -72,7 +70,7 @@ async def admin_login(request: Request, session: AsyncSession = Depends(_get_ses
 @router.get("")
 async def admin_dashboard(request: Request, admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
     total_users = (await session.execute(select(func.count(UserORM.id)))).scalar() or 0
-    active_users = (await session.execute(select(func.count(UserORM.id)).where(UserORM.is_active == True))).scalar() or 0
+    active_users = (await session.execute(select(func.count(UserORM.id)).where(UserORM.is_active.is_(True)))).scalar() or 0
     by_tier = await session.execute(
         select(UserORM.subscription_tier, func.count(UserORM.id)).group_by(UserORM.subscription_tier)
     )
@@ -108,7 +106,7 @@ async def admin_users(request: Request, admin: UserORM = Depends(_require_admin)
 
 
 @router.post("/users/{user_id}/toggle")
-async def admin_toggle_user(user_id: int, admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_toggle_user(user_id: int, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -118,7 +116,7 @@ async def admin_toggle_user(user_id: int, admin: UserORM = Depends(_require_admi
 
 
 @router.post("/users/{user_id}/tier")
-async def admin_set_tier(user_id: int, request: Request, admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_set_tier(user_id: int, request: Request, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

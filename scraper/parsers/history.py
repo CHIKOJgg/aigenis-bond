@@ -56,7 +56,7 @@ def _parse_table(soup: BeautifulSoup) -> list[dict[str, Any]]:
     return out
 
 
-def parse_history_html(html: str, internal_id: str) -> list[dict[str, Any]]:
+def parse_history_html(html: str, _internal_id: str) -> list[dict[str, Any]]:
     soup = BeautifulSoup(html, "lxml")
 
     state = _try_state(soup)

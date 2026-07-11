@@ -47,6 +47,8 @@ def relative_value_signals(
 
     signals: list[RVSignal] = []
     for (currency, tenor_bucket), items in groups.items():
+        if len(items) < 3:
+            continue
         ytm_values = [v for _, v in items]
         fair_avg, _ = _bucket_zscore(ytm_values, fmean(ytm_values))
         sd = pstdev(ytm_values) or 1e-6

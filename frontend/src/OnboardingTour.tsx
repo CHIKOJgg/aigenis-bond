@@ -70,9 +70,14 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 max-w-md w-full relative">
-        <button onClick={handleSkip} className="absolute top-4 right-4 text-gray-500 hover:text-white p-1">
+    <div
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-fadeIn"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="onboarding-title"
+    >
+      <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 max-w-md w-full relative outline-none">
+        <button onClick={handleSkip} className="absolute top-4 right-4 text-gray-500 hover:text-white p-1" aria-label="Пропустить">
           <X size={18} />
         </button>
 
@@ -80,7 +85,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
           <div className={`w-16 h-16 ${current.highlight ? 'bg-amber-600/20' : 'bg-gray-800'} rounded-2xl flex items-center justify-center mx-auto mb-4`}>
             {current.icon}
           </div>
-          <h2 className="text-xl font-bold mb-2">{current.title}</h2>
+          <h2 id="onboarding-title" className="text-xl font-bold mb-2">{current.title}</h2>
           <p className="text-sm text-gray-400 leading-relaxed">{current.description}</p>
         </div>
 

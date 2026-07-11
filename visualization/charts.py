@@ -8,10 +8,10 @@ from decimal import Decimal
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.pyplot as plt
 
-from forecast.engine import forecast_horizons  # noqa: E402
-from scoring.models import ForecastResult, PortfolioAllocation  # noqa: E402
+from forecast.engine import forecast_horizons
+from scoring.models import ForecastResult, PortfolioAllocation
 
 
 def _to_png(fig) -> bytes:

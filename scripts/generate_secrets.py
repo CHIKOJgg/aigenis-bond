@@ -11,7 +11,6 @@ import argparse
 import secrets
 import shutil
 import string
-import subprocess
 import sys
 from pathlib import Path
 

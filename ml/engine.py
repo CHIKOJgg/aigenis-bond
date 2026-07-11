@@ -196,7 +196,7 @@ def predict_one(
         Xs = scaler.transform(X)
         predicted_ytm = float(model.predict(Xs)[0])
         if hasattr(model, "feature_importances_"):
-            feature_importance = dict(zip(names, (float(x) for x in model.feature_importances_)))
+            feature_importance = dict(zip(names, (float(x) for x in model.feature_importances_), strict=False))
 
     decision: Decision = _decide(feature.score, None)
     confidence = min(max(feature.score / 100, 0.0), 1.0)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 from collections import defaultdict
@@ -27,6 +28,13 @@ from scraper.orm import BondORM, BondScoreORM
 
 logger = get_logger("api")
 
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _validate_production_config()
+    yield
+    await dispose()
+
+
 app = FastAPI(
     title="Aigenis Bonds API",
     description="Production-grade REST API for bond fixed income data",
@@ -34,6 +42,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 settings = get_settings()
@@ -359,6 +368,21 @@ if _frontend_dir and os.path.isdir(_frontend_dir):
     logger.info("frontend_mounted", directory=_frontend_dir)
 
 
-@app.on_event("shutdown")
-async def shutdown():
-    await dispose()
+def _validate_production_config() -> None:
+    """Surface insecure configuration at startup instead of failing silently.
+
+    Hard requirements (missing secret) are enforced earlier in
+    ``api.auth.service._resolve_jwt_secret``; here we only warn loudly.
+    """
+    from api.auth.service import is_jwt_secret_weak
+
+    if is_jwt_secret_weak():
+        logger.warning(
+            "security_risk: JWT_SECRET_KEY is using an insecure default — set a strong random "
+            "secret via JWT_SECRET_KEY before exposing this service."
+        )
+    db_url = os.environ.get("DATABASE_URL", "")
+    if "aigenis:aigenis" in db_url or ":aigenis@" in db_url:
+        logger.warning("security_risk: DATABASE_URL uses the default credentials — change POSTGRES_PASSWORD.")
+
+

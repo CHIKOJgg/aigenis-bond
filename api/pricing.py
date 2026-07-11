@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +51,7 @@ PLANS = {
 }
 
 
-async def get_available_plans() -> List[Dict[str, Any]]:
+async def get_available_plans() -> list[dict[str, Any]]:
     """Return pricing plans for frontend display"""
     plans = []
 
@@ -82,7 +80,7 @@ async def get_available_plans() -> List[Dict[str, Any]]:
     return plans
 
 
-async def get_current_plan(user_id: int, session: AsyncSession) -> Dict[str, Any]:
+async def get_current_plan(user_id: int, session: AsyncSession) -> dict[str, Any]:
     """Get current subscription plan for a user"""
     result = await session.execute(
         select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
@@ -102,19 +100,13 @@ async def can_user_access_feature(user_id: int, feature: str, session: AsyncSess
     )
     subscription = subscription_result.scalar_one_or_none()
 
-    if not subscription:
-        tier = "free"
-    else:
-        tier = subscription.plan
+    tier = "free" if not subscription else subscription.plan
 
     available_plans = PLANS
-    if tier in available_plans and feature in available_plans[tier]["features"]:
-        return True
-
-    return False
+    return tier in available_plans and feature in available_plans[tier]["features"]
 
 
-async def get_user_usage_stats(user_id: int, session: AsyncSession) -> Dict[str, Any]:
+async def get_user_usage_stats(user_id: int, session: AsyncSession) -> dict[str, Any]:
     """Get usage statistics for a user based on their current plan"""
     current_plan = await get_current_plan(user_id, session)
 
@@ -147,7 +139,7 @@ async def _get_user_tier(session: AsyncSession, user_id: int) -> str:
     return result.scalar_one_or_none() or "free"
 
 
-async def _get_next_billing_date(session: AsyncSession, user_id: int) -> Optional[str]:
+async def _get_next_billing_date(session: AsyncSession, user_id: int) -> str | None:
     """Get the next billing date for a user with a paid subscription"""
     result = await session.execute(
         select(SubscriptionORM.current_period_end).where(SubscriptionORM.user_id == user_id)
@@ -160,7 +152,7 @@ async def _get_next_billing_date(session: AsyncSession, user_id: int) -> Optiona
     return None
 
 
-async def calculate_upgrade_cost(from_plan: str, to_plan: str) -> Dict[str, Any]:
+async def calculate_upgrade_cost(from_plan: str, to_plan: str) -> dict[str, Any]:
     """Calculate the cost difference between two plans"""
     if from_plan == to_plan:
         return {"difference": 0, "price_change": 0, "upgrade": False}

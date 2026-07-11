@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
-from decimal import Decimal
+from datetime import UTC, date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,14 +30,6 @@ THRESHOLDS = {
 class MonitoringResult:
     new_alerts: int
     by_kind: dict[str, int]
-
-
-def _decimal(value) -> float:
-    if value is None:
-        return 0.0
-    if isinstance(value, Decimal):
-        return float(value)
-    return float(value)
 
 
 def _pct_change(old: float, new: float) -> float:
@@ -186,7 +177,7 @@ def assess_data_quality(bonds, now: datetime | None = None) -> DataQualityReport
     * too many active bonds missing YTM;
     * the freshest data being older than ``stale_hours``.
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     active = [b for b in bonds if getattr(b, "status", None) == "active"]
     total_active = len(active)
     empty_ytm = sum(1 for b in active if getattr(b, "yield_to_maturity", None) in (None,))
@@ -196,7 +187,7 @@ def assess_data_quality(bonds, now: datetime | None = None) -> DataQualityReport
     latest = max(fetch_times) if fetch_times else None
     stale_hours: float | None = None
     if latest is not None:
-        latest_aware = latest if latest.tzinfo else latest.replace(tzinfo=timezone.utc)
+        latest_aware = latest if latest.tzinfo else latest.replace(tzinfo=UTC)
         stale_hours = (now - latest_aware).total_seconds() / 3600.0
 
     issues: list[str] = []

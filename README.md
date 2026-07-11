@@ -167,5 +167,19 @@ cd frontend && npm install && npm run build   # -> frontend/dist
 - **V5** ✅ **Web-платформа + подписки Telegram Stars**, аналитический API с гейтингом,
   метрики бота, алерты качества данных
 
-Тесты: `pytest` — 29 проходят (desk-математика, гейтинг API, Stars-флоу с идемпотентностью
-и истечением, качество данных, subscribe-info).
+Тесты: `pytest` — 62 проходят (desk-математика, гейтинг API, Stars-флоу с идемпотентностью
+и истечением, качество данных, subscribe-info, рекомендации, ML-фичи, scoring).
+
+## Production readiness
+
+- **Fail-closed auth**: в `production` окружении (`AIGENIS_ENVIRONMENT=production`)
+  отсутствие `JWT_SECRET_KEY` приводит к падению старта — токены нельзя подделать.
+  Локально/в тестах используется небезопасный dev-секрет (предупреждение в логах).
+- **Безопасные умолчания docker**: `ADMIN_PASSWORD` и `GRAFANA_ADMIN_PASSWORD`
+  пусты по умолчанию (нужно задать явно), Prometheus/Grafana привязаны к
+  `127.0.0.1` (не экспонируются наружу).
+- **Публичный доступ**: опциональный Cloudflare Tunnel (`--profile tunnel`) — HTTPS
+  без проброса портов; токен задаётся в `CLOUDFLARED_TUNNEL_TOKEN`.
+- **Линт/типы**: backend — `ruff check .` чисто; frontend — `npm run lint` и
+  `npm run build` (tsc + vite) проходят. CI (`.github/workflows/ci.yml`) гоняет
+  `ruff` и `pytest`.

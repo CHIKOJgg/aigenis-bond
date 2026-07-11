@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-aigenis}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required. Run: python scripts/generate_secrets.py --write-env}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required. Run: python scripts/generate_secrets.py --write-env}"
       POSTGRES_DB: ${POSTGRES_DB:-aigenis}
     # Expose port only for host access; internal networking uses 5432
     ports:
@@ -198,7 +198,7 @@ services:
       YOOKASSA_ENTERPRISE_PRICE: ${YOOKASSA_ENTERPRISE_PRICE:-99.00}
       YOOKASSA_CURRENCY: ${YOOKASSA_CURRENCY:-BYN}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@aigenis.by}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -254,7 +254,7 @@ services:
       YOOKASSA_ENTERPRISE_PRICE: ${YOOKASSA_ENTERPRISE_PRICE:-99.00}
       YOOKASSA_CURRENCY: ${YOOKASSA_CURRENCY:-BYN}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@aigenis.by}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123456}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -305,6 +305,29 @@ services:
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do sleep 12h & wait $${!}; certbot renew; done'"
 
   # --------------------------------------------------------------------------
+  # Cloudflare Tunnel — public HTTPS access WITHOUT port forwarding (optional)
+  # --------------------------------------------------------------------------
+  # No router config, works behind CGNAT, gives a valid TLS cert for free.
+  # Setup:
+  #   1. Create a tunnel at dash.cloudflare.com -> Access -> Tunnels, copy token.
+  #   2. Put the token in .env:  CLOUDFLARED_TUNNEL_TOKEN=eyJ...
+  #   3. In the tunnel's Public Hostname config point your domain to:
+  #        Type=HTTPS, URL=frontend:443, and enable "No TLS Verify"
+  #        (nginx uses a self-signed cert; the tunnel terminates TLS publicly).
+  #   4. Start:  docker compose --profile tunnel up -d cloudflared
+  # The tunnel reaches the frontend service over the internal docker network.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: aigenis-cloudflared
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+    networks:
+      - aigenis-net
+
+  # --------------------------------------------------------------------------
   # Frontend (nginx) — React SPA + API proxy + SSL termination
   # --------------------------------------------------------------------------
   frontend:
@@ -350,8 +373,9 @@ services:
     volumes:
       - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
+    # Bound to localhost only — do NOT expose metrics publicly.
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     networks:
       - aigenis-net
     deploy:
@@ -370,15 +394,16 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
       GF_INSTALL_PLUGINS: ""
       GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    # Bound to localhost only — do NOT expose the dashboards publicly.
     ports:
-      - "3001:3000"
+      - "127.0.0.1:3001:3000"
     depends_on:
       - prometheus
     networks:

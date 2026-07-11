@@ -9,6 +9,6 @@ __all__ = [
     "allocate",
     "rank_bonds",
     "rebalance",
-    "run_scenario",
     "run_all_scenarios",
+    "run_scenario",
 ]

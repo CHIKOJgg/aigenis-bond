@@ -11,9 +11,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from scraper.logging import get_logger
 from scraper.orm import UserORM
 
+logger = get_logger("auth.service")
+
 logger = get_logger("api.auth")
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+_DEV_DEFAULT_SECRET = "dev-insecure-secret-do-not-use-in-production"
+
+
+def _resolve_jwt_secret() -> str:
+    """Resolve the JWT signing secret.
+
+    In production a real secret *must* be provided via ``JWT_SECRET_KEY`` — an
+    empty/placeholder secret makes every token forgeable, so we refuse to start.
+    In development/test the app falls back to an insecure default so local runs
+    and the test-suite still work without configuration.
+    """
+    secret = (os.getenv("JWT_SECRET_KEY") or "").strip()
+    if secret:
+        return secret
+    env = (os.getenv("AIGENIS_ENVIRONMENT") or "development").lower()
+    if env in ("production", "prod"):
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set. Generate one (e.g. `python scripts/generate_secrets.py "
+            "--write-env`) and set it before running in production — a missing secret makes auth forgeable."
+        )
+    return _DEV_DEFAULT_SECRET
+
+
+def is_jwt_secret_weak() -> bool:
+    """True when the active secret is the insecure dev fallback / placeholder."""
+    return SECRET_KEY in ("", "change-me-in-production", _DEV_DEFAULT_SECRET)
+
+
+SECRET_KEY = _resolve_jwt_secret()
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -63,9 +93,10 @@ async def register_user(session: AsyncSession, email: str, password: str, name: 
     # Send welcome email if SMTP is configured (non-blocking)
     try:
         from api.notifications.email import send_welcome_email
+
         send_welcome_email(email, name)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("welcome_email_failed", email=email, error=str(exc))
     return user, None
 
 

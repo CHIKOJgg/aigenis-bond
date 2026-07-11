@@ -61,7 +61,7 @@ def fit_nelson_siegel(points: list[CurvePoint]) -> NelsonSiegelParams:
     )
 
 
-def interpolate(curve: YieldCurve, params: NelsonSiegelParams, tenor: str) -> float:
+def interpolate(_curve: YieldCurve, params: NelsonSiegelParams, tenor: str) -> float:
     years = TENOR_YEARS.get(tenor)
     if years is None:
         raise ValueError(f"unknown tenor {tenor}")
@@ -100,5 +100,5 @@ def curve_slope(curve: YieldCurve) -> float:
     return curve.slope()
 
 
-def curve_curvature(curve: YieldCurve, params: NelsonSiegelParams) -> float:
+def curve_curvature(_curve: YieldCurve, params: NelsonSiegelParams) -> float:
     return params.beta2

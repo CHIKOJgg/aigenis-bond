@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from alembic import op
-
 revision: str = "0006_merge_heads"
 down_revision: str | tuple[str, str] = (
     "0006_bond_extra_fields_2",

@@ -8,7 +8,6 @@ import json
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 
 import httpx
 from sqlalchemy import select
@@ -49,7 +48,9 @@ def _idempotency_key() -> str:
     return str(uuid.uuid4())
 
 
-async def create_payment(user: UserORM, plan: str, success_url: str, cancel_url: str) -> dict | None:
+async def create_payment(
+    user: UserORM, plan: str, success_url: str, cancel_url: str  # noqa: ARG001  # accepted for API symmetry
+) -> dict | None:
     """Create a YooKassa payment for subscription and return payment info."""
     plan_config = PLANS.get(plan)
     if not plan_config:
@@ -189,17 +190,16 @@ async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
 
         user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
         user = user_result.scalar_one_or_none()
-        if user and user.subscription_tier != "free":
+        if user and user.subscription_tier != "free" and sub and sub.yookassa_payment_id == payment_id:
             # Only downgrade if this was their active payment
-            if sub and sub.yookassa_payment_id == payment_id:
-                user.subscription_tier = "free"
-                user.subscription_expires_at = None
+            user.subscription_tier = "free"
+            user.subscription_expires_at = None
 
         await session.commit()
         logger.info("payment_canceled", user_id=user_id, payment_id=payment_id)
 
 
-async def _handle_refund_succeeded(obj: dict, metadata: dict) -> None:
+async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
     from scraper.db import session_scope
 
     payment_id = obj.get("payment_id", "")

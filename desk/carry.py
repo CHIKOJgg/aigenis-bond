@@ -43,7 +43,7 @@ def carry_for_bond(
                 curve_params.beta2,
                 curve_params.tau,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             ytm_next = ytm_pct
     else:
         ytm_next = ytm_pct
