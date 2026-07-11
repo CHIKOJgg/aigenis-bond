@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { api, ApiError } from './lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { api, ApiError, exportCsv } from './lib/api';
 import type {
-  Bond, BondScore, Stats, SubscribeInfo,
+  Bond, BondScore, Stats, SubscribeInfo, WatchlistItem,
   AnalyticsCurve, AnalyticsRV, AnalyticsCarry, AnalyticsStress, AnalyticsRepo,
   AnalyticsPortfolio, AnalyticsForecast, AnalyticsRecommendation, AnalyticsAlert,
 } from './lib/api';
@@ -12,7 +12,7 @@ import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2 } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download } from 'lucide-react';
 
 const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
 
@@ -379,7 +379,7 @@ function Dashboard() {
 
       <CurrencyTracker />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-lg font-semibold mb-3 flex items-center gap-2"><Banknote size={16} className="text-emerald-400" /> Recent Bonds</h3>
           <div className="space-y-1">
@@ -401,6 +401,7 @@ function Dashboard() {
             ))}
           </div>
         </div>
+        <WatchlistCard />
       </div>
     </div>
   );
@@ -510,82 +511,284 @@ function CurrencyTracker() {
   );
 }
 
+function WatchlistCard() {
+  const [items, setItems] = useState<WatchlistItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.bonds.watchlist()
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+  if (items.length === 0) return null;
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <Star size={16} className="text-amber-400" /> Избранное
+        <span className="text-xs text-gray-500 font-normal ml-auto">{items.length}</span>
+      </h3>
+      <div className="space-y-1">
+        {items.slice(0, 8).map((it) => (
+          <div key={it.internal_id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+            <span className="text-sm text-gray-300 font-mono text-xs truncate">{it.internal_id}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-mono text-emerald-400">{it.score != null ? it.score.toFixed(1) : '-'}</span>
+              {it.score != null && <TierBadge tier={it.score >= 80 ? 'A' : it.score >= 60 ? 'B' : it.score >= 40 ? 'C' : 'D'} />}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BondsPage() {
-  const [bonds, setBonds] = useState<Bond[]>([]);
+  const { user } = useAuth();
+  const [allBonds, setAllBonds] = useState<Bond[]>([]);
+  const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
   const [currency, setCurrency] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [minYtm, setMinYtm] = useState('');
+  const [minScore, setMinScore] = useState('');
+  const [sort, setSort] = useState<{ key: 'yield_to_maturity' | 'price' | 'coupon_rate' | 'score' | 'name'; dir: 'asc' | 'desc' }>({ key: 'yield_to_maturity', dir: 'desc' });
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Bond | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const PAGE_SIZE = 25;
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    api.bonds.list({ currency: currency || undefined, limit: 100 })
-      .then(setBonds)
+    setPage(1);
+    Promise.all([
+      api.bonds.list({ currency: currency || undefined, limit: 1000 }),
+      api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
+    ])
+      .then(([bs, sc]) => {
+        setAllBonds(bs);
+        const m: Record<string, number> = {};
+        sc.forEach((s) => { m[s.internal_id] = s.score; });
+        setScoreMap(m);
+      })
       .catch(() => setError('Failed to load bonds'))
       .finally(() => setLoading(false));
   }, [currency]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.bonds.watchlist()
+      .then((items) => setFavorites(new Set(items.map((i) => i.internal_id))))
+      .catch(() => {});
+  }, [user]);
+
+  const toggleFav = async (id: string) => {
+    try {
+      if (favorites.has(id)) {
+        const r = await api.bonds.removeFromWatchlist(id);
+        setFavorites(new Set(r.watchlist));
+      } else {
+        const r = await api.bonds.addToWatchlist(id);
+        setFavorites(new Set(r.watchlist));
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let rows = allBonds;
+    const q = search.trim().toLowerCase();
+    if (q) rows = rows.filter((b) => b.name.toLowerCase().includes(q) || b.internal_id.toLowerCase().includes(q));
+    if (status) rows = rows.filter((b) => b.status === status);
+    if (minYtm !== '') {
+      const v = Number(minYtm);
+      rows = rows.filter((b) => b.yield_to_maturity != null && b.yield_to_maturity * 100 >= v);
+    }
+    if (minScore !== '') {
+      const v = Number(minScore);
+      rows = rows.filter((b) => (scoreMap[b.internal_id] ?? -1) >= v);
+    }
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      let av: number | string | null;
+      let bv: number | string | null;
+      if (sort.key === 'score') {
+        av = scoreMap[a.internal_id] ?? -Infinity;
+        bv = scoreMap[b.internal_id] ?? -Infinity;
+      } else if (sort.key === 'name') {
+        av = a.name.toLowerCase();
+        bv = b.name.toLowerCase();
+      } else {
+        av = (a as unknown as Record<string, number | null>)[sort.key];
+        bv = (b as unknown as Record<string, number | null>)[sort.key];
+      }
+      if (av == null) av = -Infinity;
+      if (bv == null) bv = -Infinity;
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [allBonds, search, status, minYtm, minScore, sort, scoreMap]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const statuses = Array.from(new Set(allBonds.map((b) => b.status))).sort();
+
+  const exportNow = () => {
+    const headers = ['Name', 'ID', 'Currency', 'Price', 'YTM %', 'Coupon %', 'Maturity', 'Status', 'Score'];
+    const rows = filtered.map((b) => [
+      b.name,
+      b.internal_id,
+      b.currency,
+      b.price != null ? b.price.toFixed(2) : '',
+      b.yield_to_maturity != null ? (b.yield_to_maturity * 100).toFixed(2) : '',
+      b.coupon_rate != null ? (b.coupon_rate * 100).toFixed(2) : '',
+      b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '',
+      b.status,
+      scoreMap[b.internal_id] != null ? scoreMap[b.internal_id].toFixed(2) : '',
+    ]);
+    exportCsv('bonds.csv', headers, rows);
+  };
+
+  const setSortKey = (key: typeof sort.key) => {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
+  };
+
+  const SortHeader = ({ label, k, className = '' }: { label: string; k: typeof sort.key; className?: string }) => (
+    <th
+      className={`text-left p-3 cursor-pointer select-none hover:text-white ${className} ${sort.key === k ? 'text-emerald-400' : 'text-gray-400'}`}
+      onClick={() => setSortKey(k)}
+    >
+      {label} {sort.key === k ? (sort.dir === 'asc' ? '▲' : '▼') : ''}
+    </th>
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <h2 className="text-2xl font-bold">Bonds</h2>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <button onClick={exportNow} disabled={filtered.length === 0}
+          className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 px-3 py-2 rounded-lg text-sm transition-colors">
+          <Download size={15} /> CSV
+        </button>
+      </div>
+
+      {/* Screener */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="flex items-center gap-2">
           <Search size={16} className="text-gray-500 shrink-0" />
-          <input value={currency} onChange={e => setCurrency(e.target.value.toUpperCase())} placeholder="Filter by currency (USD, BYN...)"
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full sm:w-48" />
+          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Поиск по названию / ID"
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
+        </div>
+        <input value={currency} onChange={(e) => { setCurrency(e.target.value.toUpperCase()); setPage(1); }} placeholder="Валюта (USD, BYN...)"
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full">
+          <option value="">Все статусы</option>
+          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input value={minYtm} onChange={(e) => { setMinYtm(e.target.value); setPage(1); }} type="number" step="0.1" placeholder="Мин. YTM, %"
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
+        <input value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1); }} type="number" step="0.1" placeholder="Мин. скор"
+          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
+        <div className="flex items-center justify-between text-xs text-gray-500">
+          <span>Найдено: {filtered.length}</span>
+          {(search || status || minYtm || minScore || currency) && (
+            <button onClick={() => { setSearch(''); setStatus(''); setMinYtm(''); setMinScore(''); setCurrency(''); setPage(1); }}
+              className="text-gray-400 hover:text-white">Сбросить</button>
+          )}
         </div>
       </div>
+
       {loading && <LoadingSkeleton />}
       {error && <ErrorBanner message={error} />}
       {!loading && !error && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800 text-gray-400">
-                <th className="text-left p-3">Name</th>
+              <tr className="border-b border-gray-800">
+                <th className="text-left p-3 w-8"></th>
+                <SortHeader label="Name" k="name" />
                 <th className="text-left p-3 hidden sm:table-cell">ID</th>
                 <th className="text-left p-3">Cur</th>
-                <th className="text-right p-3">Price</th>
-                <th className="text-right p-3 hidden md:table-cell">YTM</th>
-                <th className="text-right p-3 hidden lg:table-cell">Coupon</th>
+                <SortHeader label="Price" k="price" className="text-right" />
+                <SortHeader label="YTM" k="yield_to_maturity" className="text-right hidden md:table-cell" />
+                <SortHeader label="Coupon" k="coupon_rate" className="text-right hidden lg:table-cell" />
+                <SortHeader label="Score" k="score" className="text-right" />
                 <th className="text-left p-3 hidden lg:table-cell">Maturity</th>
                 <th className="text-left p-3">Status</th>
               </tr>
             </thead>
             <tbody>
-              {bonds.map(b => (
+              {pageRows.map((b) => (
                 <tr key={b.internal_id} onClick={() => setSelected(selected?.internal_id === b.internal_id ? null : b)}
                   className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer transition-colors">
+                  <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => toggleFav(b.internal_id)} className="text-gray-500 hover:text-amber-400" title="В избранное">
+                      <Star size={15} className={favorites.has(b.internal_id) ? 'fill-amber-400 text-amber-400' : ''} />
+                    </button>
+                  </td>
                   <td className="p-3 text-white font-medium max-w-[200px] truncate">{b.name}</td>
                   <td className="p-3 text-gray-400 font-mono text-xs hidden sm:table-cell">{b.internal_id}</td>
                   <td className="p-3"><CurrencyBadge currency={b.currency} /></td>
                   <td className="p-3 text-right font-mono">{b.price?.toFixed(2) ?? '-'}</td>
                   <td className="p-3 text-right font-mono hidden md:table-cell">{b.yield_to_maturity != null ? `${(b.yield_to_maturity * 100).toFixed(2)}%` : '-'}</td>
                   <td className="p-3 text-right font-mono hidden lg:table-cell">{b.coupon_rate != null ? `${(b.coupon_rate * 100).toFixed(2)}%` : '-'}</td>
+                  <td className="p-3 text-right font-mono text-emerald-400">{scoreMap[b.internal_id] != null ? scoreMap[b.internal_id].toFixed(1) : '-'}</td>
                   <td className="p-3 text-gray-400 text-xs hidden lg:table-cell">{b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '-'}</td>
                   <td className="p-3">{b.status === 'active' ? <span className="px-2 py-0.5 rounded text-xs bg-green-900 text-green-300">active</span> : <span className="px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-400">{b.status}</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {bonds.length === 0 && <EmptyState message="No bonds found. Run the scraper first." />}
+          {filtered.length === 0 && <EmptyState message="Ничего не найдено. Измените фильтры." />}
         </div>
       )}
+
+      {/* Pagination */}
+      {!loading && !error && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 text-sm">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
+            className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200">Назад</button>
+          <span className="text-gray-400">{page} / {totalPages}</span>
+          <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+            className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200">Вперёд</button>
+        </div>
+      )}
+
       {selected && (
-        <BondDetailModal bond={selected} onClose={() => setSelected(null)} />
+        <BondDetailModal
+          bond={selected}
+          isFavorite={favorites.has(selected.internal_id)}
+          onToggleFavorite={() => toggleFav(selected.internal_id)}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );
 }
 
-function BondDetailModal({ bond, onClose }: { bond: Bond; onClose: () => void }) {
+function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond: Bond; isFavorite?: boolean; onToggleFavorite?: () => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold">{bond.internal_id}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><X size={18} /></button>
+          <div className="flex items-center gap-2">
+            {onToggleFavorite && (
+              <button onClick={onToggleFavorite} className="text-gray-400 hover:text-amber-400 p-1" title="В избранное">
+                <Star size={18} className={isFavorite ? 'fill-amber-400 text-amber-400' : ''} />
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><X size={18} /></button>
+          </div>
         </div>
         <div className="space-y-3 text-sm">
           <DetailRow label="Name" value={bond.name} />

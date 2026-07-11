@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from sqlalchemy import text as sa_text
 from api.access_control import add_feature_access_headers
 from api.admin.router import router as admin_router
 from api.analytics import router as analytics_router
+from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
 from scraper.config import get_settings
@@ -255,6 +256,42 @@ async def get_bond(internal_id: str) -> BondResponse:
     if bond is None:
         raise HTTPException(status_code=404, detail=f"Bond {internal_id} not found")
     return _bond_to_response(bond)
+
+
+# --- Watchlist (favorites), persisted server-side per user -----------------
+class WatchlistResponse(BaseModel):
+    watchlist: list[str]
+
+
+@app.post("/api/v1/watchlist", response_model=WatchlistResponse)
+async def add_to_watchlist(
+    internal_id: str,
+    user_id: int = Depends(_get_current_user),
+) -> WatchlistResponse:
+    """Add a bond to the current user's watchlist (favorites)."""
+    async with session_scope() as session:
+        bond = (
+            await session.execute(select(BondORM).where(BondORM.internal_id == internal_id))
+        ).scalar_one_or_none()
+        if bond is None:
+            raise HTTPException(status_code=404, detail=f"Bond {internal_id} not found")
+        from telegram_bot.preferences_repository import add_to_watchlist as repo_add
+
+        prefs = await repo_add(session, user_id, internal_id)
+    return WatchlistResponse(watchlist=prefs.watchlist)
+
+
+@app.delete("/api/v1/watchlist/{internal_id}", response_model=WatchlistResponse)
+async def remove_from_watchlist(
+    internal_id: str,
+    user_id: int = Depends(_get_current_user),
+) -> WatchlistResponse:
+    """Remove a bond from the current user's watchlist (favorites)."""
+    from telegram_bot.preferences_repository import remove_from_watchlist as repo_remove
+
+    async with session_scope() as session:
+        prefs = await repo_remove(session, user_id, internal_id)
+    return WatchlistResponse(watchlist=prefs.watchlist)
 
 
 @app.get("/api/v1/scores", response_model=list[BondScoreResponse])
