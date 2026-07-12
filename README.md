@@ -5,6 +5,11 @@ V2: Reward/Risk Score, Portfolio Optimizer, сценарии USD/BYN, Telegram-�
 V3: ML-прогноз, классификатор buy/hold/wait/avoid, рекомендации, auto-rebalance.
 **V4: Mini Fixed Income Desk** — Duration, Yield Curve (Nelson-Siegel), Relative Value, Carry, Repo, Stress Testing.
 
+## Deployment
+
+Полное руководство по развёртыванию (Docker Compose, секреты, HTTPS, бот, мониторинг,
+бэкапы, troubleshooting) — **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
 ## Структура
 
 ```
