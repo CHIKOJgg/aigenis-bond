@@ -328,6 +328,25 @@ services:
       - aigenis-net
 
   # --------------------------------------------------------------------------
+  # Cloudflare Quick Tunnel — free, no domain/token needed (temporary URL)
+  # --------------------------------------------------------------------------
+  # Gives a random https://xxx.trycloudflare.com URL. No DNS config required.
+  # URL changes on restart — good for getting started, not for production.
+  # Usage:
+  #   docker compose --profile quick-tunnel up -d cloudflared-quick
+  # Logs will show the URL: look for "trycloudflare.com" in `docker compose logs -f cloudflared-quick`
+  cloudflared-quick:
+    image: cloudflare/cloudflared:latest
+    container_name: aigenis-cloudflared-quick
+    restart: unless-stopped
+    profiles: ["quick-tunnel"]
+    command: tunnel --url http://frontend:80 --no-autoupdate
+    depends_on:
+      - frontend
+    networks:
+      - aigenis-net
+
+  # --------------------------------------------------------------------------
   # Frontend (nginx) — React SPA + API proxy + SSL termination
   # --------------------------------------------------------------------------
   frontend:
