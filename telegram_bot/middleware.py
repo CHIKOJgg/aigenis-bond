@@ -11,7 +11,7 @@ from scraper import repositories
 from scraper.db import session_scope
 
 # Команды, доступные всегда (до и после парсинга)
-ALLOWED_BEFORE_PARSE = {"start", "help", "menu", "parse", "subscribe", "rates"}
+ALLOWED_BEFORE_PARSE = {"start", "help", "menu", "parse", "subscribe", "rates", "status"}
 
 
 async def db_has_bonds() -> bool:
@@ -23,9 +23,8 @@ async def db_has_bonds() -> bool:
 
 def locked_message_text() -> str:
     return (
-        "🔒 База облигаций пуста.\n"
-        "Сначала запустите парсинг командой /parse (или кнопкой 🚀 Старт парсинга), "
-        "после этого станут доступны остальные команды."
+        "⏳ Котировки ещё загружаются.\n"
+        "Откройте /start и нажмите «🔄 Обновить данные» — через минуту всё будет готово."
     )
 
 
@@ -127,7 +126,7 @@ PRO_COMMANDS = {
 
 # Commands always allowed regardless of tier (free market overview + account).
 _ALWAYS_ALLOWED = {
-    "start", "help", "menu", "parse", "subscribe", "rates", "curve",
+    "start", "help", "menu", "parse", "subscribe", "rates", "curve", "status",
     "top", "usd", "byn", "metals", "new", "stats",
     "settings", "set", "cancel", "watchlist", "watch", "unwatch",
 }

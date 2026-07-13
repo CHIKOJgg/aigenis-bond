@@ -15,19 +15,14 @@ from scraper.orm import PortfolioPositionORM, RebalanceHistoryORM
 async def upsert_position(
     session: AsyncSession, user_id: int, internal_id: str, amount: Decimal
 ) -> None:
-    ins = pg_insert(PortfolioPositionORM)
-    stmt = ins.values(
-        user_id=user_id,
-        internal_id=internal_id,
-        amount=amount,
-    ).on_conflict_do_update(
-        index_elements=[
-            PortfolioPositionORM.user_id,
-            PortfolioPositionORM.internal_id,
-        ],
-        set_={"amount": ins.excluded.amount},
+    from scraper.db import upsert_row
+
+    await upsert_row(
+        session,
+        PortfolioPositionORM,
+        ["user_id", "internal_id"],
+        {"user_id": user_id, "internal_id": internal_id, "amount": amount},
     )
-    await session.execute(stmt)
 
 
 async def remove_position(session: AsyncSession, user_id: int, internal_id: str) -> None:

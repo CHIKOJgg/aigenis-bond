@@ -112,6 +112,58 @@ async def session_scope_with_retry(**kwargs: Any) -> AsyncIterator[AsyncSession]
                 yield session
 
 
+def _is_postgresql() -> bool:
+    """Best-effort detection of the active dialect.
+
+    Used by :func:`upsert_row` to pick a dialect-appropriate upsert strategy.
+    Defaults to Postgres when the engine isn't reachable yet (production).
+    """
+    try:
+        from scraper.db import get_engine
+
+        return get_engine().dialect.name == "postgresql"
+    except Exception:  # pragma: no cover - defensive fallback
+        return True
+
+
+async def upsert_row(
+    session: AsyncSession,
+    model: Any,
+    index_elements: list[str],
+    values: dict[str, Any],
+    set_columns: list[str] | None = None,
+) -> None:
+    """Insert a row, or update it on conflict — dialect-agnostic.
+
+    On PostgreSQL this compiles to ``INSERT ... ON CONFLICT``. On SQLite (and
+    any other dialect) it falls back to a SELECT-then-UPDATE/INSERT so the same
+    repository code is testable against the project's in-memory SQLite suite.
+    """
+    if set_columns is None:
+        set_columns = [c for c in values if c not in index_elements]
+
+    if _is_postgresql():
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        excluded = pg_insert(model).excluded
+        set_ = {c: getattr(excluded, c) for c in set_columns}
+        stmt = pg_insert(model).values(**values).on_conflict_do_update(
+            index_elements=index_elements, set_=set_
+        )
+        await session.execute(stmt)
+        return
+
+    from sqlalchemy import select
+
+    conditions = [getattr(model, col) == values[col] for col in index_elements]
+    existing = (await session.execute(select(model).where(*conditions))).scalar_one_or_none()
+    if existing is not None:
+        for col, val in values.items():
+            setattr(existing, col, val)
+    else:
+        session.add(model(**values))
+
+
 async def check_db_health() -> dict[str, Any]:
     """Check database connectivity and return status."""
     from sqlalchemy import text as sa_text

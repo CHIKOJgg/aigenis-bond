@@ -36,3 +36,15 @@ async def scheduled_stress() -> int:
     except Exception as e:
         logger.exception("scheduled_stress_failed", error=str(e))
     return 0
+
+
+async def scheduled_alerts() -> int:
+    logger.info("scheduled_alerts_start")
+    try:
+        from notifications.alerts_service import run_alert_checks
+
+        fired = await run_alert_checks()
+        logger.info("scheduled_alerts_done", fired=fired)
+    except Exception as e:  # pragma: no cover - defensive
+        logger.exception("scheduled_alerts_failed", error=str(e))
+    return 0

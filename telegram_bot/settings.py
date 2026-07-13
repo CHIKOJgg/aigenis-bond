@@ -19,16 +19,32 @@ from aiogram.types import (
 
 from scraper.db import session_scope
 from telegram_bot.handler_state import pending_edit
-from telegram_bot.helpers import user_id_from_message
+from telegram_bot.helpers import fmt_num, user_id_from_message
 from telegram_bot.menus import _home_kb
 
 router = Router()
 
 _PRESETS = {
-    "Conserv": (0.3, 0.5, 0.1, 0.1),
+    "Conservative": (0.3, 0.5, 0.1, 0.1),
     "Balanced": (0.5, 0.3, 0.2, 0.0),
-    "Aggressv": (0.7, 0.1, 0.1, 0.1),
+    "Aggressive": (0.7, 0.1, 0.1, 0.1),
     "Metals++": (0.2, 0.1, 0.6, 0.1),
+}
+_PRESET_LABELS = {
+    "Conservative": "Консервативный",
+    "Balanced": "Сбалансированный",
+    "Aggressive": "Агрессивный",
+    "Metals++": "Металлы+",
+}
+
+_FIELD_RU = {
+    "capital": "Капитал",
+    "contribution": "Пополнение/мес",
+    "strategy": "Стратегия",
+    "share_usd": "Доля USD",
+    "share_byn": "Доля BYN",
+    "share_metals": "Доля металлов",
+    "share_eur": "Доля EUR",
 }
 
 
@@ -41,24 +57,24 @@ async def cmd_settings(message: Message) -> None:
         prefs = await get_preferences(session, uid)
     shares = (
         f"USD: {prefs.share_usd:.0%}, BYN: {prefs.share_byn:.0%}, "
-        f"Metals: {prefs.share_metals:.0%}, EUR: {prefs.share_eur:.0%}"
+        f"Металлы: {prefs.share_metals:.0%}, EUR: {prefs.share_eur:.0%}"
     )
     text = (
         f"<b>⚙️ Настройки портфеля</b>\n\n"
-        f"Капитал: <code>{prefs.initial_capital}</code>\n"
-        f"Пополнение/мес: <code>{prefs.monthly_contribution}</code>\n"
+        f"Капитал: <code>{prefs.initial_capital} BYN</code>\n"
+        f"Пополнение/мес: <code>{prefs.monthly_contribution} BYN</code>\n"
         f"Прогноз USD/BYN: <code>{prefs.usd_byn_forecast}</code>\n"
         f"Доли: {shares}\n"
-        f"Стратегия: <b>{prefs.strategy}</b>\n\n"
-        f"Выберите пресет распределения или используйте /set:"
+        f"Стратегия: <b>{_PRESET_LABELS.get(prefs.strategy, prefs.strategy)}</b>\n\n"
+        f"Выберите пресет распределения или задайте сумму кнопками выше:"
     )
     rows = []
-    for label, (usd, byn, metals, eur) in _PRESETS.items():
+    for key, (usd, byn, metals, eur) in _PRESETS.items():
         rows.append(
             [
                 InlineKeyboardButton(
-                    text=f"{label} ({usd:.0%}/{byn:.0%}/{metals:.0%}/{eur:.0%})",
-                    callback_data=f"preset:{label}",
+                    text=f"{_PRESET_LABELS[key]} ({usd:.0%}/{byn:.0%}/{metals:.0%}/{eur:.0%})",
+                    callback_data=f"preset:{key}",
                 ),
             ]
         )
@@ -98,10 +114,10 @@ async def cb_preset(callback_query) -> None:
         prefs.share_eur = shares[3]
         prefs.strategy = label
         await upsert_preferences(session, prefs)
-    await callback_query.message.edit_text(
-        f"✅ Применён пресет <b>{label}</b>: "
-        f"USD {shares[0]:.0%}, BYN {shares[1]:.0%}, "
-        f"Metals {shares[2]:.0%}, EUR {shares[3]:.0%}",
+        await callback_query.message.edit_text(
+            f"✅ Применён пресет «{_PRESET_LABELS.get(label, label)}»: "
+            f"USD {shares[0]:.0%}, BYN {shares[1]:.0%}, "
+            f"Металлы {shares[2]:.0%}, EUR {shares[3]:.0%}",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
@@ -192,7 +208,14 @@ async def apply_setting(uid: int, field: str, val_str: str) -> tuple[bool, str]:
             await upsert_preferences(session, prefs)
         except (ValueError, InvalidOperation) as exc:
             return False, f"❌ Ошибка: {exc}"
-    return True, f"✅ <b>{field}</b> = {val_str}"
+    ru = _FIELD_RU.get(field, field)
+    if field in ("capital", "contribution"):
+        return True, f"✅ <b>{ru}</b> = {fmt_num(getattr(prefs, field))} BYN"
+    if field == "strategy":
+        return True, f"✅ <b>{ru}</b> = {getattr(prefs, field)}"
+    if field.startswith("share_"):
+        return True, f"✅ <b>{ru}</b> = {getattr(prefs, field):.0%}"
+    return True, f"✅ <b>{ru}</b> = {val_str}"
 
 
 @router.message(Command("set"))
@@ -200,9 +223,9 @@ async def cmd_set(message: Message) -> None:
     args = (message.text or "").split(maxsplit=2)
     if len(args) < 3:
         await message.answer(
-            "Использование: /set <field> <value>\n\n"
-            "Поля: capital, contribution, strategy (Aggressive/Balanced/Conservative), "
-            "share_usd, share_byn, share_metals, share_eur (0.0–1.0)"
+            "Откройте ⚙️ Настройки и задайте капитал или доли кнопками — так проще.\n"
+            "Команда /set capital 50000 тоже работает, если привычнее.",
+            reply_markup=_home_kb(),
         )
         return
     field, val_str = args[1].lower(), args[2]

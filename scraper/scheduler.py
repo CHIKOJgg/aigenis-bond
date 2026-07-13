@@ -66,11 +66,17 @@ def build_scheduler() -> AsyncIOScheduler:
         logger.warning("fx_module_not_available")
 
     try:
-        from scraper.scheduler_v4 import scheduled_curve, scheduled_rv, scheduled_stress
+        from scraper.scheduler_v4 import (
+            scheduled_alerts,
+            scheduled_curve,
+            scheduled_rv,
+            scheduled_stress,
+        )
 
         jobs.append(("desk_curve_daily", "30 4 * * *", scheduled_curve, 1800))
         jobs.append(("desk_rv_daily", "0 5 * * *", scheduled_rv, 1800))
         jobs.append(("desk_stress_weekly", "0 5 * * 0", scheduled_stress, 3600))
+        jobs.append(("alerts_check_daily", "0 8 * * *", scheduled_alerts, 1800))
     except ImportError:
         logger.warning("scheduler_v4_not_available")
 

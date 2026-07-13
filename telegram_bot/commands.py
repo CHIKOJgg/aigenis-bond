@@ -31,6 +31,7 @@ from desk import yield_curve as desk_curve
 from desk.repository import latest_rv_signals, latest_stress_runs
 from forecast.engine import forecast_horizons
 from ml.repository import latest_model_version, predictions_for_bond
+from notifications.alerts_repository import list_events, list_rules
 from notifications.fx_repository import latest_fx, latest_metal
 from notifications.repository import list_recent
 from portfolio.optimizer import allocate, rebalance
@@ -46,16 +47,19 @@ from scraper.models import Bond
 from scraper.orm import BondORM
 from telegram_bot.handler_state import PAGE_SIZE, parse_lock
 from telegram_bot.helpers import (
+    alert_direction_sign,
+    alert_metric_label,
     bonds_for_bot,
     fetch_all_bonds,
     fetch_bonds_by_currency,
     fetch_bonds_with_history,
+    fmt_num,
     paginate_kb,
     parse_bond_args,
     parse_funding_rate,
     user_id_from_message,
 )
-from telegram_bot.menus import _home_kb, _show_main_menu
+from telegram_bot.menus import _DESK_MENU, _OVERVIEW_MENU, _home_kb, _show_main_menu
 from telegram_bot.middleware import db_has_bonds, locked_message_text
 from visualization.charts import (
     plot_capital_forecast,
@@ -64,6 +68,13 @@ from visualization.charts import (
 )
 
 router = Router()
+
+_STRATEGY_RU = {
+    "Conservative": "Консервативный",
+    "Balanced": "Сбалансированный",
+    "Aggressive": "Агрессивный",
+    "Metals++": "Металлы+",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -88,25 +99,95 @@ def _locked_message() -> str:
 # ---------------------------------------------------------------------------
 
 
+def _account_banner(status) -> str | None:
+    """Short line about the user's current access, shown on /start."""
+    if status.is_trial and status.days_left:
+        return (
+            f"🎁 <b>Пробный Pro активен</b> — осталось {status.days_left} дн.\n"
+            "Все функции открыты: аналитика, прогнозы, доход по купонам и алерты."
+        )
+    if status.tier in ("pro", "enterprise") and status.days_left:
+        name = "Enterprise" if status.tier == "enterprise" else "Pro"
+        return f"⭐ <b>Тариф {name}</b> — активен ещё {status.days_left} дн."
+    return (
+        "🔓 <b>Тариф Free.</b> Оформите Pro (/subscribe), чтобы открыть аналитику, "
+        "ML-прогнозы, доход по купонам и персональные алерты."
+    )
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
-    unlocked = await _is_unlocked(message)
-    if not unlocked:
+    if not await _is_unlocked(message):
         await message.answer(
             "👋 <b>Bond Fixed Income Assistant</b>\n\n"
-            "🔒 База облигаций пока пуста.\n"
-            "Нажмите <b>🚀 Старт парсинга</b> (или отправьте /parse), чтобы загрузить "
-            "облигации и курсы валют с aigenis.by / НБ РБ. После этого откроются все команды.",
+            "⏳ Котировки ещё загружаются. Нажмите кнопку ниже, чтобы обновить "
+            "данные по облигациям и курсам валют — это займёт до минуты.",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [InlineKeyboardButton(text="🚀 Старт парсинга", callback_data="cmd_parse")]
+                    [InlineKeyboardButton(text="🔄 Обновить данные", callback_data="cmd_parse")]
                 ]
             ),
         )
         return
+    # Data is ready — this is the first real interaction, so create the account
+    # and start the trial clock only now (free days must not tick while the user
+    # is stuck on the "loading" screen).
+    await _show_main_menu_for(message)
 
+
+async def _show_main_menu_for(message: Message) -> None:
+    """Ensure the user row exists (starts the trial) and show the menu + banner."""
+    from telegram_bot.subscriptions import get_account_status
+
+    status = await get_account_status(user_id_from_message(message))
+    banner = _account_banner(status)
+    if banner:
+        await message.answer(banner, parse_mode=ParseMode.HTML)
     await _show_main_menu(message)
+
+
+async def _status_text(telegram_id: int) -> str:
+    from telegram_bot.subscriptions import get_account_status
+
+    status = await get_account_status(telegram_id)
+    if status.is_trial:
+        return (
+            "🎁 <b>Пробный период Pro</b>\n"
+            f"Осталось: <b>{status.days_left} дн.</b>\n\n"
+            "Открыты все функции. Чтобы сохранить доступ после пробного периода — "
+            "оформите подписку: /subscribe"
+        )
+    if status.tier in ("pro", "enterprise"):
+        name = "Enterprise" if status.tier == "enterprise" else "Pro"
+        left = f"{status.days_left} дн." if status.days_left else "—"
+        return (
+            f"⭐ <b>Тариф {name}</b>\n"
+            f"Активен ещё: <b>{left}</b>\n\n"
+            "Продлить можно в любой момент: /subscribe"
+        )
+    return (
+        "🔓 <b>Тариф Free</b>\n\n"
+        "Доступны: топ облигаций, курсы, кривая доходности, карточка облигации "
+        "с вердиктом.\n"
+        "В Pro открываются: аналитика Desk, ML-прогнозы, доход по купонам, "
+        "портфель и персональные алерты.\n\n"
+        "Оформить Pro: /subscribe"
+    )
+
+
+@router.message(Command("status"))
+async def cmd_status(message: Message) -> None:
+    text = await _status_text(user_id_from_message(message))
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+
+
+@router.callback_query(lambda c: c.data == "cmd_status")
+async def cb_status(callback_query) -> None:
+    uid = callback_query.from_user.id if callback_query.from_user else 0
+    text = await _status_text(uid)
+    await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+    await callback_query.answer()
 
 
 @router.message(Command("help"))
@@ -163,7 +244,7 @@ async def cmd_parse(message: Message) -> None:
             f"Металлы (BYN/oz): {metals_str}\n\n"
             "Готово! Выберите раздел в меню ниже 👇"
         )
-        await _show_main_menu(message)
+        await _show_main_menu_for(message)
 
 
 @router.message(Command("rates"))
@@ -244,16 +325,8 @@ async def cb_paginate(callback_query) -> None:
 
 @router.message(Command("overview"))
 async def cmd_overview(message: Message) -> None:
-    text = (
-        "<b>📊 Обзор рынка</b>\n\n"
-        "/top — TOP облигаций по рейтингу\n"
-        "/usd — Облигации в USD\n"
-        "/byn — Облигации в BYN\n"
-        "/metals — Золото / серебро / платина\n"
-        "/rates — Курсы валют и металлов\n"
-        "/curve — Кривая доходности"
-    )
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+    title, kb = _OVERVIEW_MENU
+    await message.answer(title, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +339,7 @@ async def cmd_top(message: Message, page: int = 0) -> None:
     async with session_scope() as session:
         top = await top_scores(session, limit=PAGE_SIZE, offset=page * PAGE_SIZE)
         if not top and page == 0:
-            await message.answer("База пуста. Сначала запустите `python -m scraper once`.")
+            await message.answer("⏳ Данные ещё загружаются. Откройте /start и нажмите «🔄 Обновить данные».")
             return
         if not top:
             await message.answer("Нет облигаций на этой странице.")
@@ -276,7 +349,7 @@ async def cmd_top(message: Message, page: int = 0) -> None:
         for i, s in enumerate(top, page * PAGE_SIZE + 1):
             name_display = bonds_map.get(s.internal_id, "")
             name_part = f" — {name_display}" if name_display else ""
-            lines.append(f"{i}. <code>{s.internal_id}</code>{name_part} — Score: {float(s.score):.0f}")
+            lines.append(f"{i}. <code>{s.internal_id}</code>{name_part} — Score: {float(s.score):.0f} (0–100, выше — лучше)")
         total = page + 1
         await message.answer(
             "\n".join(lines),
@@ -294,7 +367,7 @@ async def _currency_view(message: Message, currency: str, title: str, page: int 
     prefix = currency.lower()
     bonds = await fetch_bonds_by_currency(currency)
     if not bonds:
-        await message.answer(f"Нет облигаций в {currency}. Запустите парсер.")
+        await message.answer(f"Пока нет облигаций в {currency}. Данные обновляются — попробуйте позже.")
         return
     rows = []
     for b in bonds:
@@ -385,7 +458,11 @@ async def cmd_new(message: Message) -> None:
         res = await session.execute(select(BondORM).order_by(desc(BondORM.fetched_at)).limit(10))
         bonds = list(res.scalars().all())
         if not bonds:
-            await message.answer("Нет данных.")
+            await message.answer(
+                "Пока нет свежих облигаций. Нажмите «🔄 Обновить данные» в меню, "
+                "чтобы подтянуть котировки.",
+                reply_markup=_home_kb(),
+            )
             return
         lines = ["<b>🆕 Новые/обновлённые</b>\n"]
         for b in bonds:
@@ -407,7 +484,12 @@ async def cmd_portfolio(message: Message) -> None:
         prefs = await get_preferences(session, uid)
         bonds = await fetch_all_bonds()
     if not bonds:
-        await message.answer("Нет данных по облигациям. Запустите парсер.")
+        await message.answer(
+            "⏳ Котировки ещё загружаются. Нажмите «🔄 Обновить данные» в меню, "
+            "чтобы подтянуть свежие цены.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=_home_kb(),
+        )
         return
     alloc = allocate(bonds, prefs, top_n=10)
     forecasts = forecast_horizons(
@@ -417,16 +499,21 @@ async def cmd_portfolio(message: Message) -> None:
         volatility_pct=alloc.volatility,
     )
     text = (
-        f"<b>📊 Портфель ({alloc.strategy})</b>\n\n"
-        f"Капитал: <b>{prefs.initial_capital}</b>\n"
-        f"Пополнение/мес: <b>{prefs.monthly_contribution}</b>\n"
+        f"<b>📊 Портфель ({_STRATEGY_RU.get(alloc.strategy, alloc.strategy)})</b>\n\n"
+        f"Капитал: <b>{fmt_num(prefs.initial_capital)} BYN</b>\n"
+        f"Пополнение/мес: <b>{fmt_num(prefs.monthly_contribution)} BYN</b>\n"
         f"Ожидаемая доходность: <b>{alloc.expected_return:.2f}%</b>\n"
-        f"Sharpe: <b>{alloc.sharpe:.2f}</b>, Sortino: <b>{alloc.sortino:.2f}</b>\n"
-        f"Макс. просадка: <b>{alloc.max_drawdown:.2f}%</b>, VaR 95%: <b>{alloc.var_95:.2f}</b>\n\n"
-        f"<b>Прогноз:</b>\n"
+        f"Качество риска (Sharpe): <b>{alloc.sharpe:.2f}</b>, "
+        f"Sortino: <b>{alloc.sortino:.2f}</b> — чем выше, тем стабильнее\n"
+        f"Макс. просадка: <b>{alloc.max_drawdown:.2f}%</b>, риск потери (VaR 95%): "
+        f"<b>{alloc.var_95:.2f}%</b>\n\n"
+        f"<b>Прогноз капитала (BYN):</b>\n"
     )
     for f in forecasts:
-        text += f"  {f.horizon_years}Y: {f.expected_capital} (от {f.pessimistic_capital} до {f.optimistic_capital})\n"
+        text += (
+            f"  {f.horizon_years} г: {fmt_num(f.expected_capital)} "
+            f"(от {fmt_num(f.pessimistic_capital)} до {fmt_num(f.optimistic_capital)})\n"
+        )
 
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
     png = plot_portfolio_pie(alloc)
@@ -438,22 +525,33 @@ async def cmd_rebalance(message: Message) -> None:
     uid = user_id_from_message(message)
     async with session_scope() as session:
         from telegram_bot.preferences_repository import get_preferences
+        from telegram_bot.subscriptions import get_or_create_user_by_telegram
 
         prefs = await get_preferences(session, uid)
+        user = await get_or_create_user_by_telegram(session, uid)
         bonds = await fetch_all_bonds()
+        positions = await list_positions(session, user.id)
     if not bonds:
-        await message.answer("Нет данных.")
+        await message.answer(
+            "⏳ Котировки ещё загружаются. Нажмите «🔄 Обновить данные» в меню.",
+            reply_markup=_home_kb(),
+        )
         return
-    current = {
-        iid: prefs.initial_capital / Decimal("10")
-        for iid in [b.internal_id for b in bonds[:10]]
-    }
+    if positions:
+        current = {p.internal_id: p.amount for p in positions}
+        source = "вашего портфеля"
+    else:
+        current = {
+            iid: prefs.initial_capital / Decimal("10")
+            for iid in [b.internal_id for b in bonds[:10]]
+        }
+        source = "модельного портфеля (добавьте свои позиции в «📌 Мои позиции»)"
     _target, deltas = rebalance(current, bonds, prefs)
     if not deltas:
-        await message.answer("Ребалансировка не требуется.")
+        await message.answer("♻️ Ребалансировка не требуется — портфель сбалансирован.")
         return
     bonds_map_rb = {b.internal_id: b.name for b in bonds}
-    lines = ["<b>♻️ Ребалансировка</b>\n"]
+    lines = [f"<b>♻️ Ребалансировка ({source})</b>\n"]
     for iid, d in list(deltas.items())[:20]:
         sign = "+" if d >= 0 else ""
         n = bonds_map_rb.get(iid, "")
@@ -481,9 +579,9 @@ async def cmd_forecast(message: Message) -> None:
         volatility_pct=4.0,
     )
     text = (
-        f"<b>📈 Прогноз капитала</b>\n"
-        f"Старт: {prefs.initial_capital}\n"
-        f"Пополнение: {prefs.monthly_contribution}/мес\n"
+        f"<b>📈 Прогноз капитала (BYN)</b>\n"
+        f"Старт: {fmt_num(prefs.initial_capital)} BYN\n"
+        f"Пополнение: {fmt_num(prefs.monthly_contribution)} BYN/мес\n"
         f"Ожидаемая доходность: 7% (по умолчанию)\n"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
@@ -513,10 +611,11 @@ async def cmd_scenario(message: Message) -> None:
         eur_share=prefs.share_eur,
     )
     lines = [f"<b>🌍 Сценарии USD/BYN (текущий {current})</b>\n"]
+    lines.append("— изменение стоимости портфеля при шоке курса USD/BYN:")
     for r in results:
         lines.append(
             f"• <b>{r.scenario}</b>: курс → {r.usd_byn_end} ({r.fx_change_pct:+.1f}%), "
-            f"портфель {r.portfolio_value_change_pct:+.2f}%"
+            f"стоимость портфеля {r.portfolio_value_change_pct:+.2f}%"
         )
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
@@ -536,14 +635,17 @@ async def cmd_buy(message: Message) -> None:
     bond_dicts, history = await fetch_bonds_with_history()
     recs = recommend_bonds(bond_dicts, prefs, history_by_bond=history, top_k=5)
     if not recs:
-        await message.answer("Нет рекомендаций. Запустите `python -m scraper ml-train`.")
+        await message.answer(
+            "🤖 Рекомендации пока формируются — модель обновляется. Загляните чуть позже.",
+            reply_markup=_home_kb(),
+        )
         return
     lines = ["<b>🛒 Рекомендации (Score + ML)</b>\n"]
     for r in recs:
         ret = f", +{r.predicted_return_pct:.2f}%" if r.predicted_return_pct is not None else ""
         lines.append(
             f"#{r.rank} <code>{r.internal_id}</code> {r.name} — "
-            f"<b>{r.decision.upper()}</b> (conf {r.confidence:.2f}, score {r.score:.0f}{ret})"
+            f"<b>{r.decision.upper()}</b> (уверенность {float(r.confidence):.0%}, score {r.score:.0f}{ret})"
         )
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
@@ -561,7 +663,7 @@ async def cmd_ml(message: Message) -> None:
     parts = ["<b>🤖 ML-модели</b>\n"]
     for kind, mv in (("YTM Regression", mv_reg), ("Buy Classifier", mv_clf)):
         if mv is None:
-            parts.append(f"• <b>{kind}</b>: не обучена. Запустите `python -m scraper ml-train`")
+            parts.append(f"• <b>{kind}</b>: модель ещё обучается — скоро обновим")
             continue
         metrics = ", ".join(f"{k}={float(v):.3f}" for k, v in mv.metrics.items())
         parts.append(f"• <b>{kind}</b> v{mv.version} ({mv.train_rows} строк)\n  {metrics}")
@@ -572,7 +674,11 @@ async def cmd_ml(message: Message) -> None:
 async def cmd_predict(message: Message) -> None:
     bond_id = parse_bond_args(message)
     if not bond_id:
-        await message.answer("Использование: /predict OP-51")
+        await message.answer(
+            "Откройте облигацию через 🔍 Облигации и нажмите «📈 ML-прогноз» — "
+            "так прогноз подберётся автоматически.",
+            reply_markup=_home_kb(),
+        )
         return
     async with session_scope() as session:
         rows = await predictions_for_bond(session, bond_id, limit=1)
@@ -586,15 +692,18 @@ async def cmd_predict(message: Message) -> None:
             )
         ).scalar_one_or_none() or bond_id
     if not rows:
-        await message.answer("Нет прогнозов. Запустите `python -m scraper ml-predict`.")
+        await message.answer(
+            "🔄 Прогнозы обновляются — загляните чуть позже.",
+            reply_markup=_home_kb(),
+        )
         return
     p = rows[0]
     expl = "\n".join(f"  • {e}" for e in (p.explanation or []))
     text = (
         f"<b>📈 Прогноз {bond_id}</b> ({bond_name})\n"
-        f"Решение: <b>{p.decision}</b> (conf {float(p.confidence):.2f})\n"
-        f"Predicted YTM: {float(p.predicted_ytm) if p.predicted_ytm is not None else '—'}\n"
-        f"Predicted return: {float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
+        f"Решение: <b>{p.decision}</b> (уверенность {float(p.confidence):.0%})\n"
+        f"Прогноз доходности (YTM): {float(p.predicted_ytm) if p.predicted_ytm is not None else '—'}\n"
+        f"Прогноз доходности: {float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
         f"Объяснение:\n{expl or '—'}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
@@ -606,9 +715,11 @@ async def cmd_rebalance_auto(message: Message) -> None:
     _bond_dicts, _history = await fetch_bonds_with_history()
     async with session_scope() as session:
         from telegram_bot.preferences_repository import get_preferences
+        from telegram_bot.subscriptions import get_or_create_user_by_telegram
 
         prefs = await get_preferences(session, uid)
-        positions = await list_positions(session, uid)
+        user = await get_or_create_user_by_telegram(session, uid)
+        positions = await list_positions(session, user.id)
         bonds_q = await repositories.bonds.get_all_internal_ids(session)
         bonds_orm = (
             (await session.execute(select(BondORM).where(BondORM.internal_id.in_(list(bonds_q)))))
@@ -667,14 +778,17 @@ async def cmd_watchlist(message: Message) -> None:
 
         prefs = await get_preferences(session, uid)
         if not prefs.watchlist:
-            await message.answer("Watchlist пуст. Добавьте: /watch OP-51")
+            await message.answer(
+                "Избранное пусто. Откройте 🔍 Облигации и нажмите «⭐ В избранное».",
+                reply_markup=_home_kb(),
+            )
             return
         from scraper.orm import BondORM
         result_bonds = await session.execute(
             select(BondORM).where(BondORM.internal_id.in_(prefs.watchlist))
         )
         watch_bonds = {b.internal_id: b.name for b in result_bonds.scalars().all()}
-        lines = ["<b>👀 Watchlist</b>\n"]
+        lines = ["<b>👀 Избранное</b>\n"]
         for iid in prefs.watchlist:
             sc = await get_score(session, iid)
             score_text = f"Score {float(sc.score):.0f}" if sc else "нет скора"
@@ -688,7 +802,10 @@ async def cmd_watchlist(message: Message) -> None:
 async def cmd_watch(message: Message) -> None:
     iid = parse_bond_args(message)
     if not iid:
-        await message.answer("Использование: /watch OP-51")
+        await message.answer(
+            "Откройте облигацию через 🔍 Облигации и нажмите «⭐ В избранное».",
+            reply_markup=_home_kb(),
+        )
         return
     bond_name = iid
     async with session_scope() as session:
@@ -711,7 +828,7 @@ async def cmd_watch(message: Message) -> None:
 
         prefs = await add_to_watchlist(session, uid, iid)
     await message.answer(
-        f"✅ <code>{iid}</code> ({bond_name}) добавлен в watchlist ({len(prefs.watchlist)} шт.)",
+        f"✅ <code>{iid}</code> ({bond_name}) добавлен в избранное ({len(prefs.watchlist)} шт.)",
         parse_mode=ParseMode.HTML,
         reply_markup=_home_kb(),
     )
@@ -721,7 +838,10 @@ async def cmd_watch(message: Message) -> None:
 async def cmd_unwatch(message: Message) -> None:
     iid = parse_bond_args(message)
     if not iid:
-        await message.answer("Использование: /unwatch OP-51")
+        await message.answer(
+            "Откройте облигацию в 🔍 Облигации и нажмите «🗑 Из избранного».",
+            reply_markup=_home_kb(),
+        )
         return
     bond_name = iid
     async with session_scope() as session:
@@ -744,7 +864,7 @@ async def cmd_unwatch(message: Message) -> None:
 
         await remove_from_watchlist(session, uid, iid)
     await message.answer(
-        f"❌ <code>{iid}</code> ({bond_name}) убран из watchlist", parse_mode=ParseMode.HTML,
+        f"❌ <code>{iid}</code> ({bond_name}) убран из избранного", parse_mode=ParseMode.HTML,
         reply_markup=_home_kb(),
     )
 
@@ -756,15 +876,40 @@ async def cmd_unwatch(message: Message) -> None:
 
 @router.message(Command("alerts"))
 async def cmd_alerts(message: Message) -> None:
+    from telegram_bot.subscriptions import get_or_create_user_by_telegram
+
+    telegram_id = user_id_from_message(message)
+    lines: list[str] = []
     async with session_scope() as session:
-        alerts = await list_recent(session, limit=10)
-        if not alerts:
-            await message.answer("Алерты отсутствуют.")
-            return
-        lines = ["<b>🔔 Последние алерты</b>\n"]
-        for a in alerts:
+        user = await get_or_create_user_by_telegram(session, telegram_id)
+        rules = await list_rules(session, user.id)
+        events = await list_events(session, user.id, limit=5)
+        system = await list_recent(session, limit=5)
+
+    if rules:
+        lines.append("<b>🔔 Мои алерты</b>")
+        for r in rules:
+            sign = alert_direction_sign(r.direction)
+            label = alert_metric_label(r.metric)
+            lines.append(f"• {r.internal_id}: {label} {sign} {fmt_num(r.threshold)}")
+        lines.append("")
+    if events:
+        lines.append("<b>✅ Сработавшие</b>")
+        for e in events:
+            lines.append(f"• {e.message}")
+        lines.append("")
+    if system:
+        lines.append("<b>📰 Рыночные события</b>")
+        for a in system:
             lines.append(f"• <b>{a.title}</b>\n  {a.message}")
-        await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+
+    if not lines:
+        lines = [
+            "🔔 <b>Алертов пока нет.</b>\n",
+            "Откройте любую облигацию (🔍 Облигации) и нажмите "
+            "«🔔 Следить за ценой», чтобы получать уведомления.",
+        ]
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
 # ---------------------------------------------------------------------------
@@ -774,17 +919,8 @@ async def cmd_alerts(message: Message) -> None:
 
 @router.message(Command("desk"))
 async def cmd_desk(message: Message) -> None:
-    text = (
-        "<b>🔬 Аналитика (Fixed Income Desk)</b>\n\n"
-        "Команды:\n"
-        "/rv — Relative Value (rich/cheap)\n"
-        "/duration [ID] — Duration-отчёт\n"
-        "/carry [funding] — Carry-ранжирование\n"
-        "/repo ID [notional] [tenor] — Сделка РЕПО\n"
-        "/stress — Стресс-тесты (7 сценариев)\n"
-        "/desk_status — Последние сигналы"
-    )
-    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+    title, kb = _DESK_MENU
+    await message.answer(title, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 @router.message(Command("curve"))
@@ -801,8 +937,8 @@ async def cmd_curve(message: Message) -> None:
             continue
         params = desk_curve.fit_nelson_siegel(curve.points)
         lines.append(
-            f"<b>{cur}</b> — slope {curve.slope():.2f}%, beta0={params.beta0:.2f}, "
-            f"beta1={params.beta1:.2f}, beta2={params.beta2:.2f}"
+            f"<b>{cur}</b> — наклон кривой: {curve.slope():.2f}% "
+            f"(уровень {params.beta0:.2f}, изгиб {params.beta1:.2f}, длинный конец {params.beta2:.2f})"
         )
         for p in curve.points:
             lines.append(f"  {p.tenor}: {p.rate_pct:.2f}%")
@@ -814,7 +950,10 @@ async def cmd_rv(message: Message, page: int = 0) -> None:
     bonds = await bonds_for_bot()
     signals = desk_rv.relative_value_signals(bonds)
     if not signals:
-        await message.answer("Нет данных для Relative Value.")
+        await message.answer(
+            "Пока нет сигналов Relative Value. Нажмите «🔄 Обновить данные» в меню.",
+            reply_markup=_home_kb(),
+        )
         return
     total_pages = max(1, (len(signals) + PAGE_SIZE - 1) // PAGE_SIZE)
     page_slice = signals[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
@@ -825,7 +964,7 @@ async def cmd_rv(message: Message, page: int = 0) -> None:
         n = bonds_map_rv.get(s.internal_id, "")
         n_part = f" {n}" if n else ""
         lines.append(
-            f"{sign} <code>{s.internal_id}</code>{n_part} (Z={s.z_score:+.2f}, spread {s.spread_pct:+.2f}%)"
+            f"{sign} <code>{s.internal_id}</code>{n_part} (отклонение Z={s.z_score:+.2f}, спред {s.spread_pct:+.2f}%)"
         )
     await message.answer(
         "\n".join(lines),
@@ -844,18 +983,18 @@ async def cmd_duration(message: Message) -> None:
             await message.answer(f"Облигация {args[1]} не найдена")
             return
         rep = desk_duration.duration_report(bond)
-        title = f"<b>⏱ Duration Report</b> — <code>{bond.internal_id}</code> ({bond.name})\n"
+        title = f"<b>⏱ Duration — {bond.internal_id}</b> ({bond.name})\n"
     else:
         weights = {b.internal_id: 1 / len(bonds) for b in bonds} if bonds else {}
         rep = desk_duration.portfolio_duration(bonds, weights=weights)
-        title = "<b>⏱ Duration Report (Портфель)</b>\n"
+        title = "<b>⏱ Duration (Портфель)</b>\n"
     lines = [
         title,
-        f"Macaulay: {rep.macaulay_duration:.3f}",
-        f"Modified: {rep.modified_duration:.3f}",
-        f"Convexity: {rep.convexity:.3f}",
-        f"DV01: {rep.dv01:.4f}\n",
-        "<b>Key-rate durations:</b>",
+        f"Дюрация Маколея: <b>{rep.macaulay_duration:.2f}</b> (срок в годах)",
+        f"Модифицированная дюрация: <b>{rep.modified_duration:.2f}</b> — чувствительность цены к ставке",
+        f"Выпуклость: <b>{rep.convexity:.2f}</b>",
+        f"DV01: <b>{rep.dv01:.4f}</b> — изменение цены при росте ставки на 0.01 п.п.",
+        "<b>Дюрация по срокам:</b>",
     ]
     for tenor, krd in rep.key_rate_durations.items():
         lines.append(f"  {tenor}: {krd:.4f}")
@@ -868,19 +1007,23 @@ async def cmd_carry(message: Message, page: int = 0) -> None:
     bonds = await bonds_for_bot()
     trades = desk_carry.rank_carry(bonds, funding_rate_pct=funding)
     if not trades:
-        await message.answer("Нет данных для carry-анализа")
+        await message.answer(
+            "Пока нет данных для carry-анализа. Нажмите «🔄 Обновить данные» в меню.",
+            reply_markup=_home_kb(),
+        )
         return
     total_pages = max(1, (len(trades) + PAGE_SIZE - 1) // PAGE_SIZE)
     page_slice = trades[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
     bonds_map_carry = {b.internal_id: b.name for b in bonds}
-    lines = [f"<b>💰 Carry (funding {funding}%)</b> (стр. {page + 1}/{total_pages})\n"]
+    lines = [f"<b>💰 Carry — доход от удержания (ставка фондирования {funding}%)</b> (стр. {page + 1}/{total_pages})\n"]
     for t in page_slice:
         sign = "🟢" if t.expected_pnl_pct > 0 else "🔴"
         n = bonds_map_carry.get(t.internal_id, "")
         n_part = f" {n}" if n else ""
         lines.append(
             f"{sign} <code>{t.internal_id}</code>{n_part}: купон {t.coupon_pct:.2f}%, "
-            f"rolldown {t.rolldown_bps:+.1f}bp, P&L {t.expected_pnl_pct:+.3f}%"
+            f"доход от схлопывания кривой {t.rolldown_bps:+.1f} п.п., "
+            f"прибыль {t.expected_pnl_pct:+.3f}%"
         )
     await message.answer(
         "\n".join(lines),
@@ -893,14 +1036,22 @@ async def cmd_carry(message: Message, page: int = 0) -> None:
 async def cmd_repo(message: Message) -> None:
     args = (message.text or "").split()
     if len(args) < 2:
-        await message.answer("Использование: /repo OP-51 [notional=1000] [tenor_days=30]")
+        await message.answer(
+            "Откройте облигацию в 🔍 Облигации → «🔬 Для профи» → «🏦 РЕПО» — "
+            "сделка рассчитается автоматически.",
+            reply_markup=_home_kb(),
+        )
         return
     internal_id = args[1]
     try:
         notional = float(args[2]) if len(args) > 2 else 1000.0
         tenor = int(args[3]) if len(args) > 3 else 30
     except (ValueError, IndexError):
-        await message.answer("❌ Неверный формат. Использование: /repo OP-51 [notional=1000] [tenor_days=30]")
+        await message.answer(
+            "Откройте облигацию в 🔍 Облигации → «🔬 Для профи» → «🏦 РЕПО» — "
+            "сделка рассчитается автоматически.",
+            reply_markup=_home_kb(),
+        )
         return
     bonds = await bonds_for_bot()
     bond = next((b for b in bonds if b.internal_id == internal_id), None)
@@ -917,10 +1068,10 @@ async def cmd_repo(message: Message) -> None:
     )
     text = (
         f"<b>🏦 РЕПО {internal_id}</b> ({bond.name})\n"
-        f"Залог: {deal.collateral_value}\n"
-        f"Haircut: {deal.haircut_pct}%\n"
-        f"Кэш выдано: {deal.cash_lent}\n"
-        f"Ставка: {deal.repo_rate_pct}%, тенор {deal.tenor_days}d\n"
+        f"Залог: <b>{deal.collateral_value}</b>\n"
+        f"Скидка к залогу (haircut): {deal.haircut_pct}%\n"
+        f"Кэш выдано: <b>{deal.cash_lent}</b>\n"
+        f"Ставка: {deal.repo_rate_pct}%, срок {deal.tenor_days} дн.\n"
         f"Проценты: {deal.accrued_interest}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
@@ -930,7 +1081,7 @@ async def cmd_repo(message: Message) -> None:
 async def cmd_stress(message: Message) -> None:
     bonds = await bonds_for_bot()
     weights = {b.internal_id: Decimal("1000") for b in bonds}
-    lines = ["<b>⚠️ Stress-тесты (Δ P&L)</b>\n"]
+    lines = ["<b>⚠️ Стресс-тесты (изменение стоимости портфеля)</b>\n"]
     for name, scn in desk_stress.PRESET_SCENARIOS.items():
         res = desk_stress.run_stress(scn, [(b, weights[b.internal_id]) for b in bonds])
         lines.append(f"• <b>{name}</b> ({scn.kind}): {res.pnl_pct:+.3f}% ({float(res.pnl):+.0f})")
@@ -949,8 +1100,8 @@ async def cmd_desk_status(message: Message) -> None:
     for s in rv:
         n = desk_bonds_map.get(s.internal_id, "")
         n_part = f" ({n})" if n else ""
-        lines.append(f"  {s.internal_id}{n_part}: Z={float(s.z_score):+.2f} ({s.side})")
-    lines.append("\n<b>Stress (recent):</b>")
+        lines.append(f"  {s.internal_id}{n_part}: отклонение Z={float(s.z_score):+.2f} ({s.side})")
+    lines.append("\n<b>Стресс-тесты (недавние):</b>")
     for r in stress_runs:
-        lines.append(f"  {r.scenario_name}: P&L {float(r.pnl_pct):+.3f}%")
+        lines.append(f"  {r.scenario_name}: изменение стоимости {float(r.pnl_pct):+.3f}%")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())

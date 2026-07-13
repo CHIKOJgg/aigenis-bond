@@ -5,11 +5,11 @@ from __future__ import annotations
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scoring.engine import score_bond
 from scoring.models import BondScore, ScoreBreakdown
+from scraper.db import upsert_row
 from scraper.orm import BondORM, BondScoreORM
 
 
@@ -24,22 +24,25 @@ def _to_orm(score: BondScore) -> dict:
 
 
 async def upsert_score(session: AsyncSession, score: BondScore) -> None:
-    values = _to_orm(score)
-    stmt = pg_insert(BondScoreORM).values(**values)
-    update_cols = {c: stmt.excluded[c] for c in values if c != "internal_id"}
-    stmt = stmt.on_conflict_do_update(index_elements=[BondScoreORM.internal_id], set_=update_cols)
-    await session.execute(stmt)
+    await upsert_row(
+        session,
+        BondScoreORM,
+        index_elements=["internal_id"],
+        values=_to_orm(score),
+    )
 
 
 async def upsert_scores_batch(session: AsyncSession, scores: list[BondScore]) -> int:
     if not scores:
         return 0
-    rows = [_to_orm(s) for s in scores]
-    stmt = pg_insert(BondScoreORM).values(rows)
-    update_cols = {c: stmt.excluded[c] for c in rows[0] if c != "internal_id"}
-    stmt = stmt.on_conflict_do_update(index_elements=[BondScoreORM.internal_id], set_=update_cols)
-    await session.execute(stmt)
-    return len(rows)
+    for s in scores:
+        await upsert_row(
+            session,
+            BondScoreORM,
+            index_elements=["internal_id"],
+            values=_to_orm(s),
+        )
+    return len(scores)
 
 
 async def top_scores(session: AsyncSession, limit: int = 20, offset: int = 0) -> list[BondScoreORM]:

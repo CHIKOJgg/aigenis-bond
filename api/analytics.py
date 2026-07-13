@@ -11,11 +11,12 @@ import os
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.access_control import (
     RequireFeature,
+    get_current_tier,
     get_optional_user_id,
 )
 from desk import carry as desk_carry
@@ -25,14 +26,30 @@ from desk import repo as desk_repo
 from desk import stress as desk_stress
 from desk import yield_curve as desk_curve
 from desk.repository import latest_rv_signals, latest_stress_runs
-from forecast.engine import forecast_horizons
+from forecast.engine import forecast_capital, forecast_horizons
 from ml.repository import latest_model_version, predictions_for_bond
+from notifications.alerts_repository import (
+    create_rule,
+    delete_rule,
+    list_events,
+    list_rules,
+)
 from notifications.repository import list_recent
+from portfolio.income import bond_cashflows, portfolio_income
 from portfolio.optimizer import allocate
+from portfolio.positions_repository import (
+    list_positions,
+    remove_position,
+    total_value,
+    upsert_position,
+)
+from portfolio.rebalance import build_plan, maybe_auto_rebalance
 from portfolio.scenarios import run_all_scenarios
 from recommendations.engine import recommend_bonds
+from scoring.engine import score_bond
+from scoring.explain import explain_score
 from scoring.models import UserPreferences
-from scoring.repository import get_score, top_scores
+from scoring.repository import get_score, score_from_orm, top_scores
 from scraper.config import get_settings
 from scraper.db import session_scope
 from scraper.models import Bond
@@ -158,6 +175,169 @@ async def api_bonds_by_currency(currency: str):
         }
         for b in out
     ]
+
+
+# --------------------------------------------------------------------------- #
+# Free / Pro: Single-bond deep-dive card ("should I buy this bond?")
+# --------------------------------------------------------------------------- #
+async def _get_bond_or_404(internal_id: str) -> Bond:
+    async with session_scope() as session:
+        row = (
+            await session.execute(select(BondORM).where(BondORM.internal_id == internal_id))
+        ).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Bond {internal_id} not found")
+        return _orm_to_bond(row)
+
+
+def _bond_facts(b: Bond) -> dict:
+    return {
+        "internal_id": b.internal_id,
+        "name": b.name,
+        "currency": b.currency,
+        "issuer": b.issuer,
+        "yield_to_maturity": float(b.yield_to_maturity) if b.yield_to_maturity else None,
+        "coupon_rate": float(b.coupon_rate) if b.coupon_rate else None,
+        "price": float(b.price) if b.price else None,
+        "nominal": float(b.nominal) if b.nominal else None,
+        "maturity_date": b.maturity_date.isoformat() if b.maturity_date else None,
+        "status": b.status,
+    }
+
+
+async def _score_for_bond(b: Bond):
+    """Return a BondScore, preferring the stored one (persisted breakdown)."""
+    async with session_scope() as session:
+        orm = await get_score(session, b.internal_id)
+    if orm is not None:
+        return score_from_orm(orm)
+    return score_bond(
+        internal_id=b.internal_id,
+        yield_to_maturity=b.yield_to_maturity,
+        currency=b.currency,
+        maturity_date=b.maturity_date,
+        status=b.status,
+        issuer=b.issuer,
+        price=b.price,
+    )
+
+
+@router.get("/bond/{internal_id}", dependencies=[Depends(RequireFeature("access_bond_detail"))])
+async def api_bond_card(
+    internal_id: str,
+    tier: str = Depends(get_current_tier),
+):
+    """Карточка облигации: факты + Score + вердикт.
+
+    Free-пользователь видит факты, число Score и тир, но полный разбор
+    («почему») скрыт. Pro получает объяснение сразу внутри карточки —
+    это и есть точка апселла.
+    """
+    bond = await _get_bond_or_404(internal_id)
+    score = await _score_for_bond(bond)
+    is_pro = tier in {"pro", "enterprise"}
+    payload: dict = {
+        "bond": _bond_facts(bond),
+        "score": round(float(score.score), 2),
+        "tier": score.tier,
+    }
+    if is_pro:
+        ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity else None
+        payload["analysis"] = explain_score(score, currency=bond.currency, ytm_pct=ytm).as_dict()
+        payload["analysis_locked"] = False
+    else:
+        payload["analysis"] = None
+        payload["analysis_locked"] = True
+        payload["upgrade_hint"] = "Полный разбор и вердикт доступны в подписке Pro."
+    return payload
+
+
+@router.get(
+    "/bond/{internal_id}/analysis",
+    dependencies=[Depends(RequireFeature("access_recommendations"))],
+)
+async def api_bond_analysis(internal_id: str):
+    """Полный разбор одной облигации: объяснение Score, ML-прогноз, RV-сигнал.
+
+    Единый ответ на вопрос «покупать или нет и почему» — ключевая ценность Pro.
+    """
+    bond = await _get_bond_or_404(internal_id)
+    score = await _score_for_bond(bond)
+    ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity else None
+    explained = explain_score(score, currency=bond.currency, ytm_pct=ytm)
+
+    all_bonds = await _all_bonds()
+    rv_signal = None
+    for s in desk_rv.relative_value_signals(all_bonds):
+        if s.internal_id == internal_id:
+            rv_signal = {
+                "side": s.side,
+                "z_score": round(float(s.z_score), 3) if s.z_score is not None else None,
+                "spread_pct": round(float(s.spread_pct), 3) if s.spread_pct is not None else None,
+            }
+            break
+
+    ml_prediction = None
+    async with session_scope() as session:
+        rows = await predictions_for_bond(session, internal_id, limit=1)
+    if rows:
+        p = rows[0]
+        ml_prediction = {
+            "decision": p.decision,
+            "confidence": round(float(p.confidence), 3),
+            "predicted_ytm": float(p.predicted_ytm) if p.predicted_ytm is not None else None,
+            "predicted_return_pct": float(p.predicted_return_pct)
+            if p.predicted_return_pct is not None
+            else None,
+            "explanation": p.explanation or [],
+        }
+
+    return {
+        "bond": _bond_facts(bond),
+        "analysis": explained.as_dict(),
+        "relative_value": rv_signal,
+        "ml_prediction": ml_prediction,
+    }
+
+
+@router.get(
+    "/bond/{internal_id}/cashflow",
+    dependencies=[Depends(RequireFeature("access_portfolio"))],
+)
+async def api_bond_cashflow(
+    internal_id: str,
+    amount: float = Query(1000.0, gt=0),
+):
+    """График купонных выплат при вложении ``amount`` в облигацию.
+
+    «Сколько денег и когда я получу» — суть fixed income. Возвращает даты и
+    суммы купонов + возврат номинала при погашении, годовой доход и доходность
+    на вложенные средства (yield-on-cost).
+    """
+    bond = await _get_bond_or_404(internal_id)
+    flows = bond_cashflows(
+        internal_id=internal_id,
+        amount_invested=Decimal(str(amount)),
+        coupon_rate=bond.coupon_rate,
+        coupon_frequency=bond.coupon_frequency,
+        maturity_date=bond.maturity_date,
+        price=bond.price,
+    )
+    total_coupons = sum(
+        (f.amount for f in flows if f.kind == "coupon"), start=Decimal("0")
+    )
+    ann = Decimal("0")
+    if bond.coupon_rate and bond.coupon_rate > 0:
+        face = Decimal(str(amount)) * Decimal("100") / bond.price if bond.price else Decimal(str(amount))
+        ann = (face * bond.coupon_rate / Decimal("100")).quantize(Decimal("0.01"))
+    return {
+        "bond": _bond_facts(bond),
+        "amount_invested": round(amount, 2),
+        "annual_income": float(ann),
+        "yield_on_cost": round(float(ann / Decimal(str(amount)) * 100), 2) if amount > 0 else 0.0,
+        "total_coupons": float(total_coupons),
+        "cashflows": [f.as_dict() for f in flows],
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -393,39 +573,10 @@ async def api_ml_predict(bond_id: str):
 # --------------------------------------------------------------------------- #
 # Pro: Portfolio / Forecast / Scenarios
 # --------------------------------------------------------------------------- #
-@router.get("/portfolio", dependencies=[Depends(RequireFeature("access_portfolio"))])
-async def api_portfolio():
-    bonds = await _all_bonds()
-    prefs = _default_prefs(0)
-    alloc = allocate(bonds, prefs, top_n=10)
-    forecasts = forecast_horizons(
-        initial_capital=prefs.initial_capital,
-        monthly_contribution=prefs.monthly_contribution,
-        expected_annual_return_pct=max(alloc.expected_return, 0.1),
-        volatility_pct=alloc.volatility,
-    )
-    return {
-        "strategy": alloc.strategy,
-        "expected_return": round(float(alloc.expected_return), 3),
-        "sharpe": round(float(alloc.sharpe), 3),
-        "sortino": round(float(alloc.sortino), 3),
-        "max_drawdown": round(float(alloc.max_drawdown), 3),
-        "var_95": round(float(alloc.var_95), 3),
-        "forecast": [
-            {
-                "horizon_years": f.horizon_years,
-                "expected_capital": f.expected_capital,
-                "pessimistic_capital": f.pessimistic_capital,
-                "optimistic_capital": f.optimistic_capital,
-            }
-            for f in forecasts
-        ],
-    }
-
-
 @router.get("/forecast", dependencies=[Depends(RequireFeature("access_forecast"))])
-async def api_forecast():
-    prefs = _default_prefs(0)
+async def api_forecast(user_id: int | None = Depends(get_optional_user_id)):
+    async with session_scope() as session:
+        prefs = await get_preferences(session, user_id or 0)
     forecasts = forecast_horizons(
         initial_capital=prefs.initial_capital,
         monthly_contribution=prefs.monthly_contribution,
@@ -444,10 +595,15 @@ async def api_forecast():
 
 
 @router.get("/scenarios", dependencies=[Depends(RequireFeature("access_portfolio"))])
-async def api_scenarios():
-    prefs = _default_prefs(0)
+async def api_scenarios(user_id: int | None = Depends(get_optional_user_id)):
+    async with session_scope() as session:
+        prefs = await get_preferences(session, user_id or 0)
+        from notifications.fx_repository import latest_fx
+
+        fx = await latest_fx(session, "USD/BYN")
+    current = fx.rate if fx else Decimal("3.30")
     results = run_all_scenarios(
-        current_usd_byn=Decimal("3.30"),
+        current_usd_byn=current,
         usd_share=prefs.share_usd,
         byn_share=prefs.share_byn,
         metals_share=prefs.share_metals,
@@ -500,3 +656,522 @@ async def api_watchlist(user_id: int | None = Depends(get_optional_user_id)):
                 }
             )
     return lines
+
+
+# --------------------------------------------------------------------------- #
+# Pro: Personal portfolio (mirrors the Telegram bot, for the website)
+# --------------------------------------------------------------------------- #
+class PositionRequest(BaseModel):
+    internal_id: str
+    amount: float = 1000.0
+
+
+def _build_forecast(prefs: UserPreferences, expected_return: float, volatility: float) -> list[dict]:
+    return [
+        {
+            "horizon_years": f.horizon_years,
+            "expected_capital": f.expected_capital,
+            "pessimistic_capital": f.pessimistic_capital,
+            "optimistic_capital": f.optimistic_capital,
+        }
+        for f in forecast_horizons(
+            initial_capital=prefs.initial_capital,
+            monthly_contribution=prefs.monthly_contribution,
+            expected_annual_return_pct=max(expected_return, 0.1),
+            volatility_pct=volatility,
+        )
+    ]
+
+
+@router.get("/positions", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_list_positions(user_id: int | None = Depends(get_optional_user_id)):
+    uid = user_id or 0
+    async with session_scope() as session:
+        positions = await list_positions(session, uid)
+    bonds = {b.internal_id: b for b in await _all_bonds()}
+    items = []
+    for p in positions:
+        b = bonds.get(p.internal_id)
+        items.append(
+            {
+                "internal_id": p.internal_id,
+                "amount": float(p.amount),
+                "name": b.name if b else None,
+                "currency": b.currency if b else None,
+                "yield_to_maturity": float(b.yield_to_maturity)
+                if (b and b.yield_to_maturity)
+                else None,
+                "price": float(b.price) if (b and b.price) else None,
+            }
+        )
+    return {"positions": items, "total_invested": round(sum(i["amount"] for i in items), 2)}
+
+
+@router.post("/positions", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_add_position(
+    req: PositionRequest,
+    user_id: int | None = Depends(get_optional_user_id),
+):
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be positive")
+    uid = user_id or 0
+    async with session_scope() as session:
+        bond = (
+            await session.execute(select(BondORM).where(BondORM.internal_id == req.internal_id))
+        ).scalar_one_or_none()
+        if bond is None:
+            raise HTTPException(status_code=404, detail=f"Bond {req.internal_id} not found")
+        await upsert_position(session, uid, req.internal_id, Decimal(str(req.amount)))
+    return {"status": "ok", "internal_id": req.internal_id, "amount": req.amount}
+
+
+@router.delete("/positions/{internal_id}", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_remove_position(
+    internal_id: str,
+    user_id: int | None = Depends(get_optional_user_id),
+):
+    uid = user_id or 0
+    async with session_scope() as session:
+        await remove_position(session, uid, internal_id)
+    return {"status": "ok", "internal_id": internal_id}
+
+
+@router.get("/portfolio/plan", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_portfolio_plan(user_id: int | None = Depends(get_optional_user_id)):
+    """Rebalance plan: target allocation vs the user's actual holdings."""
+    uid = user_id or 0
+    async with session_scope() as session:
+        prefs = await get_preferences(session, uid)
+        positions = await list_positions(session, uid)
+    if not positions:
+        return {"mode": "empty", "max_drift_observed": 0.0, "estimated_cost": 0.0, "actions": []}
+    bonds = await _all_bonds()
+    total = total_value(positions) or prefs.initial_capital
+    plan = build_plan(
+        bonds=bonds, prefs=prefs, current_positions=positions, current_total=total
+    )
+    if plan is None:
+        return {"mode": "portfolio", "max_drift_observed": 0.0, "estimated_cost": 0.0, "actions": []}
+    return {
+        "mode": "portfolio",
+        "strategy": plan.strategy,
+        "max_drift_observed": round(float(plan.max_drift_observed), 4),
+        "estimated_cost": round(float(plan.estimated_cost), 2),
+        "actions": [
+            {
+                "internal_id": a.internal_id,
+                "side": a.side,
+                "amount": float(a.amount),
+                "weight_before": a.weight_before,
+                "weight_after": a.weight_after,
+                "reason": a.reason,
+            }
+            for a in plan.actions
+        ],
+    }
+
+
+@router.get("/portfolio/income", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_portfolio_income(
+    user_id: int | None = Depends(get_optional_user_id),
+    horizon_months: int = Query(12, ge=1, le=120),
+):
+    """Календарь купонного дохода по фактическим позициям пользователя.
+
+    Отвечает на главный вопрос держателя облигаций: сколько денег в год я
+    получаю, какая доходность на вложенное, когда следующая выплата и как
+    доход распределён по месяцам.
+    """
+    uid = user_id or 0
+    async with session_scope() as session:
+        positions = await list_positions(session, uid)
+    if not positions:
+        return {
+            "mode": "empty",
+            "total_invested": 0.0,
+            "annual_income": 0.0,
+            "yield_on_cost": 0.0,
+            "next_payment": None,
+            "monthly_calendar": [],
+            "per_bond": [],
+        }
+    bonds_by_id = {b.internal_id: b for b in await _all_bonds()}
+    holdings = []
+    for p in positions:
+        b = bonds_by_id.get(p.internal_id)
+        holdings.append(
+            {
+                "internal_id": p.internal_id,
+                "amount": float(p.amount),
+                "name": b.name if b else None,
+                "currency": b.currency if b else None,
+                "coupon_rate": b.coupon_rate if b else None,
+                "coupon_frequency": b.coupon_frequency if b else None,
+                "maturity_date": b.maturity_date if b else None,
+                "price": b.price if b else None,
+            }
+        )
+    result = portfolio_income(holdings, horizon_months=horizon_months)
+    result["mode"] = "portfolio"
+    return result
+
+
+@router.get("/portfolio", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_portfolio(user_id: int | None = Depends(get_optional_user_id)):
+    """Personalized portfolio: real holdings + metrics, or a starter basket.
+
+    Unlike the previous implementation (which always assumed a default
+    10 000 / 500 capital), this uses the authenticated user's actual positions
+    and saved preferences — so the website now matches the Telegram bot.
+    """
+    uid = user_id or 0
+    async with session_scope() as session:
+        prefs = await get_preferences(session, uid)
+        positions = await list_positions(session, uid)
+    bonds = await _all_bonds()
+    bonds_by_id = {b.internal_id: b for b in bonds}
+
+    if not positions:
+        alloc = allocate(bonds, prefs, top_n=10)
+        return {
+            "mode": "recommendation",
+            "strategy": alloc.strategy,
+            "positions_count": 0,
+            "total_invested": 0,
+            "expected_return": round(float(alloc.expected_return), 3),
+            "sharpe": round(float(alloc.sharpe), 3),
+            "sortino": round(float(alloc.sortino), 3),
+            "max_drawdown": round(float(alloc.max_drawdown), 3),
+            "var_95": round(float(alloc.var_95), 3),
+            "forecast": _build_forecast(prefs, alloc.expected_return, alloc.volatility),
+        }
+
+    held = [b for b in bonds if b.internal_id in {p.internal_id for p in positions}]
+    alloc = allocate(held, prefs, top_n=max(len(held), 1))
+    total = total_value(positions)
+    holdings = []
+    for p in positions:
+        b = bonds_by_id.get(p.internal_id)
+        weight = float(p.amount / total) if total > 0 else 0.0
+        holdings.append(
+            {
+                "internal_id": p.internal_id,
+                "name": b.name if b else None,
+                "currency": b.currency if b else None,
+                "amount": float(p.amount),
+                "weight": round(weight, 4),
+                "yield_to_maturity": float(b.yield_to_maturity)
+                if (b and b.yield_to_maturity)
+                else None,
+            }
+        )
+    return {
+        "mode": "portfolio",
+        "strategy": prefs.strategy,
+        "positions_count": len(positions),
+        "total_invested": round(float(total), 2),
+        "expected_return": round(float(alloc.expected_return), 3),
+        "sharpe": round(float(alloc.sharpe), 3),
+        "sortino": round(float(alloc.sortino), 3),
+        "max_drawdown": round(float(alloc.max_drawdown), 3),
+        "var_95": round(float(alloc.var_95), 3),
+        "holdings": sorted(holdings, key=lambda h: h["amount"], reverse=True),
+        "forecast": _build_forecast(prefs, alloc.expected_return, alloc.volatility),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Pro: Goal-based allocation ("подобрать под мою цель")
+# --------------------------------------------------------------------------- #
+class AllocateRequest(BaseModel):
+    amount: float = Field(10000.0, gt=0)
+    horizon_years: int = Field(3, ge=1, le=30)
+    risk: str = "Balanced"
+    share_usd: float | None = None
+    share_byn: float | None = None
+    share_metals: float | None = None
+    share_eur: float | None = None
+    top_n: int = Field(10, ge=1, le=30)
+
+
+_VALID_STRATEGIES = {
+    "Conservative",
+    "Balanced",
+    "Aggressive",
+    "Carry Trade",
+    "Dollarization",
+    "Maximum Reward/Risk",
+}
+
+
+@router.post("/allocate", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_allocate(
+    req: AllocateRequest,
+    user_id: int | None = Depends(get_optional_user_id),
+):
+    """Подобрать конкретную корзину облигаций под сумму, срок и риск-профиль.
+
+    Это самая понятная ценность для пользователя: «у меня X, горизонт Y лет,
+    риск Z — что купить прямо сейчас». Возвращает доли, ожидаемую доходность и
+    проекцию капитала. Не требует наличия сохранённого портфеля.
+    """
+    if req.risk not in _VALID_STRATEGIES:
+        raise HTTPException(status_code=400, detail=f"unknown risk '{req.risk}'")
+    prefs = UserPreferences(
+        user_id=user_id or 0,
+        initial_capital=Decimal(str(req.amount)),
+        monthly_contribution=Decimal("0"),
+        share_usd=req.share_usd if req.share_usd is not None else 0.5,
+        share_byn=req.share_byn if req.share_byn is not None else 0.3,
+        share_metals=req.share_metals if req.share_metals is not None else 0.1,
+        share_eur=req.share_eur if req.share_eur is not None else 0.1,
+        strategy=req.risk,
+    )
+    bonds = await _all_bonds()
+    alloc = allocate(bonds, prefs, top_n=req.top_n)
+    bonds_by_id = {b.internal_id: b for b in bonds}
+
+    basket = []
+    for iid, amount in alloc.items.items():
+        b = bonds_by_id.get(iid)
+        if b is None:
+            continue
+        basket.append(
+            {
+                "internal_id": iid,
+                "name": b.name,
+                "currency": b.currency,
+                "yield_to_maturity": float(b.yield_to_maturity)
+                if b.yield_to_maturity
+                else None,
+                "amount": round(float(amount), 2),
+                "weight": round(float(amount / prefs.initial_capital), 4)
+                if prefs.initial_capital > 0
+                else 0.0,
+            }
+        )
+    projection = forecast_capital(
+        initial_capital=prefs.initial_capital,
+        monthly_contribution=Decimal("0"),
+        expected_annual_return_pct=max(float(alloc.expected_return), 0.1),
+        horizon_years=req.horizon_years,
+        volatility_pct=alloc.volatility,
+    )
+    return {
+        "strategy": alloc.strategy,
+        "total_allocated": round(
+            sum(float(a) for a in alloc.items.values()), 2
+        ),
+        "expected_return": round(float(alloc.expected_return), 3),
+        "sharpe": round(float(alloc.sharpe), 3),
+        "sortino": round(float(alloc.sortino), 3),
+        "max_drawdown": round(float(alloc.max_drawdown), 3),
+        "var_95": round(float(alloc.var_95), 3),
+        "basket": sorted(basket, key=lambda x: x["amount"], reverse=True),
+        "projection": {
+            "horizon_years": projection.horizon_years,
+            "expected_capital": projection.expected_capital,
+            "pessimistic_capital": projection.pessimistic_capital,
+            "optimistic_capital": projection.optimistic_capital,
+        },
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Pro: Rebalance plan + apply
+# --------------------------------------------------------------------------- #
+class BuildPlanRequest(BaseModel):
+    positions: list[dict] | None = None
+    drift_threshold: float = 0.05
+    top_n: int = Field(10, ge=1, le=30)
+
+
+@router.post("/build_plan", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_build_plan(
+    req: BuildPlanRequest,
+    user_id: int | None = Depends(get_optional_user_id),
+):
+    """План ребалансировки: целевое распределение vs текущих позиций.
+
+    Если ``positions`` не переданы — берутся сохранённые позиции пользователя.
+    """
+    uid = user_id or 0
+    bonds = await _all_bonds()
+    async with session_scope() as session:
+        prefs = await get_preferences(session, uid)
+
+    if req.positions:
+        current = [
+            type("Pos", (), {"internal_id": p["internal_id"], "amount": Decimal(str(p["amount"]))})
+            for p in req.positions
+        ]
+        total = sum((p.amount for p in current), start=Decimal("0"))
+    else:
+        async with session_scope() as session:
+            current = await list_positions(session, uid)
+        total = total_value(current) or prefs.initial_capital
+
+    if not current:
+        return {"mode": "empty", "max_drift_observed": 0.0, "estimated_cost": 0.0, "actions": []}
+
+    plan = build_plan(
+        bonds=bonds,
+        prefs=prefs,
+        current_positions=current,
+        current_total=total,
+        drift_threshold=req.drift_threshold,
+        top_n=req.top_n,
+    )
+    if plan is None:
+        return {"mode": "ok", "max_drift_observed": 0.0, "estimated_cost": 0.0, "actions": []}
+    return {
+        "mode": "plan",
+        "strategy": plan.strategy,
+        "max_drift_observed": round(float(plan.max_drift_observed), 4),
+        "estimated_cost": round(float(plan.estimated_cost), 2),
+        "actions": [
+            {
+                "internal_id": a.internal_id,
+                "side": a.side,
+                "amount": float(a.amount),
+                "weight_before": a.weight_before,
+                "weight_after": a.weight_after,
+                "reason": a.reason,
+            }
+            for a in plan.actions
+        ],
+    }
+
+
+@router.post("/rebalance", dependencies=[Depends(RequireFeature("access_portfolio"))])
+async def api_rebalance(
+    user_id: int | None = Depends(get_optional_user_id),
+    drift_threshold: float = 0.05,
+):
+    """Применить ребалансировку к сохранённым позициям пользователя."""
+    uid = user_id or 0
+    bonds = await _all_bonds()
+    async with session_scope() as session:
+        prefs = await get_preferences(session, uid)
+    plan = await maybe_auto_rebalance(
+        user_id=uid, prefs=prefs, bonds=bonds, drift_threshold=drift_threshold
+    )
+    if plan is None:
+        return {"rebalanced": False, "reason": "drift ниже порога — действие не требуется"}
+    return {
+        "rebalanced": True,
+        "strategy": plan.strategy,
+        "max_drift_observed": round(float(plan.max_drift_observed), 4),
+        "estimated_cost": round(float(plan.estimated_cost), 2),
+        "actions": [
+            {
+                "internal_id": a.internal_id,
+                "side": a.side,
+                "amount": float(a.amount),
+            }
+            for a in plan.actions
+        ],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Pro: User-configurable alerts on the watchlist / any bond
+# --------------------------------------------------------------------------- #
+class AlertRuleRequest(BaseModel):
+    internal_id: str
+    metric: str = Field("price", pattern="^(price|ytm)$")
+    direction: str = Field("below", pattern="^(above|below)$")
+    threshold: float
+    note: str | None = None
+
+
+@router.post("/alerts/rules", dependencies=[Depends(RequireFeature("access_alerts"))])
+async def api_create_alert_rule(
+    req: AlertRuleRequest,
+    user_id: int | None = Depends(get_optional_user_id),
+):
+    uid = user_id or 0
+    async with session_scope() as session:
+        bond = (
+            await session.execute(select(BondORM).where(BondORM.internal_id == req.internal_id))
+        ).scalar_one_or_none()
+        if bond is None:
+            raise HTTPException(status_code=404, detail=f"Bond {req.internal_id} not found")
+        rule = await create_rule(
+            session,
+            user_id=uid,
+            internal_id=req.internal_id,
+            metric=req.metric,
+            direction=req.direction,
+            threshold=Decimal(str(req.threshold)),
+            note=req.note,
+        )
+        return {
+            "id": rule.id,
+            "internal_id": rule.internal_id,
+            "metric": rule.metric,
+            "direction": rule.direction,
+            "threshold": float(rule.threshold),
+            "active": rule.active,
+        }
+
+
+@router.get("/alerts/rules", dependencies=[Depends(RequireFeature("access_alerts"))])
+async def api_list_alert_rules(user_id: int | None = Depends(get_optional_user_id)):
+    uid = user_id or 0
+    async with session_scope() as session:
+        rules = await list_rules(session, uid)
+    return [
+        {
+            "id": r.id,
+            "internal_id": r.internal_id,
+            "metric": r.metric,
+            "direction": r.direction,
+            "threshold": float(r.threshold),
+            "note": r.note,
+            "active": r.active,
+            "last_value": float(r.last_value) if r.last_value is not None else None,
+            "triggered_at": r.triggered_at.isoformat() if r.triggered_at else None,
+        }
+        for r in rules
+    ]
+
+
+@router.delete(
+    "/alerts/rules/{rule_id}", dependencies=[Depends(RequireFeature("access_alerts"))]
+)
+async def api_delete_alert_rule(
+    rule_id: int,
+    user_id: int | None = Depends(get_optional_user_id),
+):
+    uid = user_id or 0
+    async with session_scope() as session:
+        removed = await delete_rule(session, uid, rule_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"status": "ok", "id": rule_id}
+
+
+@router.get("/alerts/feed", dependencies=[Depends(RequireFeature("access_alerts"))])
+async def api_alert_feed(
+    user_id: int | None = Depends(get_optional_user_id),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Лента сработавших пользовательских алертов (не системных)."""
+    uid = user_id or 0
+    async with session_scope() as session:
+        events = await list_events(session, uid, limit=limit)
+    return [
+        {
+            "id": e.id,
+            "internal_id": e.internal_id,
+            "metric": e.metric,
+            "message": e.message,
+            "value": float(e.value) if e.value is not None else None,
+            "delivered": e.delivered,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in events
+    ]
+
+

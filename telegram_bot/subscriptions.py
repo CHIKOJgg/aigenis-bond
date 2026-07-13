@@ -7,6 +7,7 @@ granted by Stars payments handled in `telegram_bot.stars_payments`.
 """
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -145,6 +146,43 @@ async def get_tier_by_telegram(telegram_id: int) -> str:
         if user is None:
             return FREE_TIER
         return effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end)
+
+
+def _days_left(dt: datetime | None) -> int | None:
+    """Whole days remaining until ``dt`` (rounded up), or ``None``/0 in the past."""
+    dt = _as_aware(dt)
+    if dt is None:
+        return None
+    delta = dt - _now()
+    if delta.total_seconds() <= 0:
+        return 0
+    return max(1, math.ceil(delta.total_seconds() / 86400))
+
+
+@dataclass(frozen=True)
+class AccountStatus:
+    tier: str            # effective tier right now (free / pro / enterprise)
+    is_trial: bool       # True if access comes from the free trial
+    days_left: int | None  # days until trial/paid access ends
+    expires_at: datetime | None
+
+
+async def get_account_status(telegram_id: int) -> AccountStatus:
+    """Account snapshot for onboarding banners and /status.
+
+    Creates the user row on first contact (which starts the trial clock), then
+    reports the effective tier and how long access lasts.
+    """
+    async with session_scope() as session:
+        user = await get_or_create_user_by_telegram(session, telegram_id)
+        tier = effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end)
+        if is_paid(user.subscription_tier) and tier != FREE_TIER:
+            expires = _as_aware(user.subscription_expires_at)
+            return AccountStatus(tier, False, _days_left(expires), expires)
+        if tier == "pro":  # entitled via trial
+            expires = _as_aware(user.trial_end)
+            return AccountStatus(tier, True, _days_left(expires), expires)
+        return AccountStatus(FREE_TIER, False, None, None)
 
 
 async def set_tier_by_telegram(

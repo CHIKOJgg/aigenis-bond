@@ -502,3 +502,53 @@ class StressRunORM(Base):
         Index("ix_stress_name", "scenario_name"),
         Index("ix_stress_asof", "asof_date"),
     )
+
+
+class AlertRuleORM(Base):
+    """Пользовательские правила алертов (цена / доходность пробила порог)."""
+
+    __tablename__ = "alert_rules"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    internal_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    metric: Mapped[str] = mapped_column(String(16), nullable=False)  # price | ytm
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)  # above | below
+    threshold: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
+    last_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    triggered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_alert_rules_user", "user_id"),
+        Index("ix_alert_rules_active", "active"),
+    )
+
+
+class AlertEventORM(Base):
+    """Срабатывания пользовательских алертов (лента уведомлений)."""
+
+    __tablename__ = "alert_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    rule_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    internal_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    metric: Mapped[str] = mapped_column(String(16), nullable=False)
+    message: Mapped[str] = mapped_column(String(512), nullable=False)
+    value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    delivered: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_alert_events_user", "user_id"),
+        Index("ix_alert_events_created", "created_at"),
+    )

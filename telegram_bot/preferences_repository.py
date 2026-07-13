@@ -5,7 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scoring.models import UserPreferences
@@ -43,11 +42,14 @@ def _from_orm(orm: UserPreferencesORM) -> UserPreferences:
 
 
 async def upsert_preferences(session: AsyncSession, prefs: UserPreferences) -> None:
-    values = _to_orm(prefs)
-    stmt = pg_insert(UserPreferencesORM).values(**values)
-    update_cols = {c: stmt.excluded[c] for c in values if c != "user_id"}
-    stmt = stmt.on_conflict_do_update(index_elements=[UserPreferencesORM.user_id], set_=update_cols)
-    await session.execute(stmt)
+    from scraper.db import upsert_row
+
+    await upsert_row(
+        session,
+        UserPreferencesORM,
+        ["user_id"],
+        _to_orm(prefs),
+    )
 
 
 async def get_preferences(session: AsyncSession, user_id: int) -> UserPreferences:

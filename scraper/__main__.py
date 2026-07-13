@@ -16,6 +16,7 @@ from scraper.commands_v3 import (
     cmd_recs,
 )
 from scraper.commands_v4 import (
+    cmd_alerts_check,
     cmd_desk_carry,
     cmd_desk_curve,
     cmd_desk_duration,
@@ -54,6 +55,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default="",
         help="Список валют через запятую (пусто = все)",
     )
+
+    sub.add_parser("alerts-check", help="Проверить пользовательские алерты и уведомить")
 
     sub.add_parser("score", help="Пересчитать Reward/Risk Score")
     sub.add_parser("monitor", help="Запустить мониторинг и сформировать алерты")
@@ -191,6 +194,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(cmd_desk_stress())
     if args.command == "desk-status":
         return asyncio.run(cmd_desk_status())
+    if args.command == "alerts-check":
+        return asyncio.run(cmd_alerts_check())
     if args.command == "fx-fetch":
         return asyncio.run(_cmd_fx_fetch())
     if args.command == "fx-metals":

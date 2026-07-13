@@ -17,13 +17,14 @@ from __future__ import annotations
 
 from aiogram import Router
 
-from telegram_bot import admin, bond_picker, commands, menus, settings
+from telegram_bot import admin, bond_picker, commands, menus, positions, settings
 
 router = Router()
 router.include_router(commands.router)
 router.include_router(menus.router)
 router.include_router(bond_picker.router)
 router.include_router(settings.router)
+router.include_router(positions.router)
 router.include_router(admin.router)
 
 # --- Re-exports so existing imports keep working ---------------------------

@@ -206,3 +206,11 @@ async def cmd_desk_status() -> int:
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
+
+
+async def cmd_alerts_check() -> int:
+    from notifications.alerts_service import run_alert_checks
+
+    fired = await run_alert_checks()
+    print(json.dumps({"fired_alerts": fired}, ensure_ascii=False, indent=2))
+    return 0

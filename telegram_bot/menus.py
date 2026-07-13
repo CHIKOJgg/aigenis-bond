@@ -34,6 +34,7 @@ HELP_TEXT = (
     "• <b>💼 Портфель</b> — прогноз капитала, ребалансировка, сценарии (Pro).\n"
     "• <b>🔍 Облигации</b> — найдите нужную и получите прогноз / duration / РЕПО.\n"
     "• <b>⚙️ Настройки</b> — капитал и доли валют (пресеты одним тапом).\n"
+    "• <b>👤 Мой тариф</b> — текущий доступ и сколько дней осталось (/status).\n"
     "• <b>⭐ Подписка</b> — Pro/Enterprise через Telegram Stars.\n\n"
     "Откройте <b>🆘 Как пользоваться</b> в меню для краткой справки по каждому разделу."
 )
@@ -42,18 +43,12 @@ HELP_TEXT = (
 def _main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🏆 Топ-10", callback_data="cmd_top"),
-                InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates"),
-            ],
+            [InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates")],
             [InlineKeyboardButton(text="📊 Обзор рынка", callback_data="menu:overview")],
             [InlineKeyboardButton(text="🔬 Аналитика (Desk)", callback_data="menu:desk")],
             [InlineKeyboardButton(text="🤖 Рекомендации", callback_data="menu:buy")],
             [InlineKeyboardButton(text="💼 Портфель", callback_data="menu:portfolio")],
-            [
-                InlineKeyboardButton(text="🤖 Что купить", callback_data="cmd_buy"),
-                InlineKeyboardButton(text="🔍 Облигации", callback_data="bonds:menu"),
-            ],
+            [InlineKeyboardButton(text="🔍 Облигации", callback_data="bonds:menu")],
             [
                 InlineKeyboardButton(text="👀 Избранное", callback_data="cmd_watchlist"),
                 InlineKeyboardButton(text="⚙️ Настройки", callback_data="menu:settings"),
@@ -64,6 +59,7 @@ def _main_menu_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="⭐ Подписка", callback_data="stars:menu"),
+                InlineKeyboardButton(text="👤 Мой тариф", callback_data="cmd_status"),
             ],
         ]
     )
@@ -115,7 +111,7 @@ _BUY_MENU = _submenu(
     "🤖 <b>Рекомендации</b>\n\nВыберите действие:",
     [
         [("🛒 Что купить сейчас", "cmd_buy"), ("🤖 ML-модели", "cmd_ml")],
-        [("♻️ Auto-rebalance", "cmd_rebalance_auto"), ("📈 Прогноз по облигации", "bonds:menu")],
+        [("♻️ Auto-rebalance", "cmd_rebalance_auto")],
         [("🔍 Выбрать облигацию", "bonds:menu")],
     ],
 )
@@ -123,9 +119,9 @@ _BUY_MENU = _submenu(
 _PORTFOLIO_MENU = _submenu(
     "💼 <b>Портфель</b>\n\nВыберите действие:",
     [
-        [("📊 Мой портфель", "cmd_portfolio"), ("♻️ Ребалансировка", "cmd_rebalance")],
-        [("📈 Прогноз капитала", "cmd_forecast"), ("🌍 Сценарии", "cmd_scenario")],
-        [("👀 Избранное", "cmd_watchlist"), ("➕ Добавить в избранное", "bonds:menu")],
+        [("📌 Мои позиции", "positions:menu"), ("📊 Модельный портфель", "cmd_portfolio")],
+        [("♻️ Ребалансировка", "cmd_rebalance"), ("📈 Прогноз капитала", "cmd_forecast")],
+        [("🌍 Сценарии", "cmd_scenario"), ("👀 Избранное", "cmd_watchlist")],
     ],
 )
 
@@ -149,11 +145,11 @@ _HELP_TEXTS = {
     ),
     "desk": (
         "🔬 <b>Аналитика (Desk)</b> — тариф Pro/Enterprise\n"
-        "• /rv — Relative Value (дорого/дёшево)\n"
-        "• /duration [ID] — duration-отчёт\n"
-        "• /carry [funding] — carry-ранжирование\n"
-        "• /repo ID [notional] [tenor] — сделка РЕПО\n"
-        "• /stress — стресс-тесты, /desk_status — сигналы"
+        "• ⚖️ Relative Value — дорого/дёшево относительно кривой\n"
+        "• ⏱ Duration — процентный риск (по портфелю или облигации)\n"
+        "• 💰 Carry — ранжирование по carry, ⚠️ Стресс-тесты\n"
+        "• 🏛 Desk Status — сводные сигналы, 📈 Кривая доходности\n"
+        "• 🏦 РЕПО — откройте облигацию → «🔬 Для профи» → «🏦 РЕПО»"
     ),
     "buy": (
         "🤖 <b>Рекомендации</b> — тариф Pro/Enterprise\n"
@@ -162,18 +158,20 @@ _HELP_TEXTS = {
     ),
     "portfolio": (
         "💼 <b>Портфель</b> — тариф Pro/Enterprise\n"
-        "• 📊 Мой портфель и прогноз капитала\n"
-        "• ♻️ Ребалансировка, 📈 Прогноз, 🌍 Сценарии USD/BYN"
+        "• 📌 Мои позиции — ваши реальные облигации и купонный доход\n"
+        "• 📊 Модельный портфель — рекомендуемое распределение и прогноз\n"
+        "• ♻️ Ребалансировка, 📈 Прогноз капитала, 🌍 Сценарии USD/BYN"
     ),
     "settings": (
         "⚙️ <b>Настройки</b>\n"
-        "• Капитал, пополнение, доли валют — пресеты одним тапом\n"
-        "• Быстрая установка: /set capital 50000"
+        "• Капитал, пополнение, доли валют — пресеты и кнопки одним тапом\n"
+        "• Быстрая установка суммы — кнопками в разделе ⚙️ Настройки"
     ),
     "alerts": (
         "🔔 <b>Алерты</b>\n"
-        "• Последние уведомления о рынке и качестве данных\n"
-        "• Команда: /alerts"
+        "• Персональные: откройте облигацию → «🔔 Следить за ценой» (Pro)\n"
+        "• Уведомим, когда цена упадёт или доходность вырастет до порога\n"
+        "• Мои правила, срабатывания и рыночные события: /alerts"
     ),
     "stars": (
         "💳 <b>Подписка</b>\n"
@@ -184,7 +182,11 @@ _HELP_TEXTS = {
     "bonds": (
         "🔍 <b>Облигации</b>\n"
         "• Кнопка 🔍 Облигации → валюта → облигация\n"
-        "• Доступно: прогноз, duration, РЕПО (Pro), в избранное"
+        "• 💡 Стоит купить? — рейтинг и вердикт простыми словами\n"
+        "• 💰 Доход — сколько купонов получите (Pro)\n"
+        "• 🔔 Следить за ценой — персональные алерты (Pro)\n"
+        "• ➕ В портфель — учёт реальной позиции (Pro)\n"
+        "• 🔬 Для профи — Duration и РЕПО, ⭐ в избранное"
     ),
 }
 

@@ -64,7 +64,7 @@ def test_submenus_only_reference_known_callbacks():
         h._BUY_MENU,
         h._PORTFOLIO_MENU,
     ]
-    pattern = re.compile(r"^(menu:|bonds:|bond:|bondact:|preset:|edit:|cmd_)")
+    pattern = re.compile(r"^(menu:|bonds:|bond:|bondact:|preset:|edit:|positions:|pos:|cmd_)")
     for _title, kb in menus:
         for data in _collect_callback_data(kb):
             assert data in known or pattern.match(data), f"unhandled callback: {data}"

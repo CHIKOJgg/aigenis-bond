@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
@@ -90,6 +92,27 @@ async def fetch_bonds_with_history() -> tuple[list[dict], dict[str, list[dict]]]
 
 def user_id_from_message(message) -> int:
     return message.from_user.id if message.from_user else 0
+
+
+def fmt_num(value) -> str:
+    """Human-friendly number: drop trailing zeros (95.00 -> 95, 95.50 -> 95.5)."""
+    try:
+        d = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return str(value)
+    s = format(d, "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s or "0"
+
+
+def alert_metric_label(metric: str) -> str:
+    """Display name for an alert metric (kept consistent across the bot)."""
+    return "Цена" if metric == "price" else "Доходность"
+
+
+def alert_direction_sign(direction: str) -> str:
+    return "≤" if direction == "below" else "≥"
 
 
 def parse_bond_args(message) -> str:

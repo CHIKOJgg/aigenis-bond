@@ -17,3 +17,8 @@ parse_lock = asyncio.Lock()
 
 # Per-user state for inline settings editing (lightweight FSM, no storage needed).
 pending_edit: dict[int, str] = {}
+
+# Per-user state for adding a portfolio position: uid -> internal_id awaiting an
+# amount reply. Kept separate from ``pending_edit`` so the two input flows never
+# collide across their message handlers.
+pending_position: dict[int, str] = {}
