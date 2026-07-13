@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, exportCsv } from './lib/api';
 import type {
   Bond, BondScore, Stats, SubscribeInfo, WatchlistItem,
@@ -106,6 +106,7 @@ function AppInner() {
             <TrendingUp className="text-emerald-400" size={22} />
             <span className="hidden sm:inline">Aigenis Bonds</span>
           </h1>
+          <GlobalSearch />
           <nav className="hidden md:flex gap-1 overflow-x-auto">
             {navItems.map(({ id, label, icon, premium }) => {
               const locked = premium && user?.subscription_tier === 'free';
@@ -191,6 +192,106 @@ function AppInner() {
           <Check size={16} /> {toast}
         </div>
       )}
+    </div>
+  );
+}
+
+function GlobalSearch() {
+  const { user } = useAuth();
+  const [all, setAll] = useState<Bond[] | null>(null);
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<Bond | null>(null);
+  const [loadingBond, setLoadingBond] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!user || all) return;
+    let alive = true;
+    api.bonds
+      .list({ limit: 1000 })
+      .then((b) => { if (alive) setAll(b); })
+      .catch(() => { if (alive) setAll([]); });
+    return () => { alive = false; };
+  }, [user, all]);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const results = useMemo(() => {
+    if (!all || q.trim().length < 1) return [];
+    const n = q.trim().toLowerCase();
+    return all
+      .filter((b) => b.name.toLowerCase().includes(n) || b.internal_id.toLowerCase().includes(n))
+      .slice(0, 8);
+  }, [all, q]);
+
+  const openBond = async (id: string) => {
+    setLoadingBond(true);
+    try {
+      const b = await api.bonds.get(id);
+      setSelected(b);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingBond(false);
+      setOpen(false);
+      setQ('');
+    }
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && results.length > 0) {
+      e.preventDefault();
+      openBond(results[0].internal_id);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  if (!user) return null;
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <div className="flex items-center gap-2 bg-gray-800 rounded-lg pl-3 pr-2 py-2 w-full">
+        {loadingBond ? (
+          <span className="w-4 h-4 border-2 border-gray-600 border-t-emerald-400 rounded-full animate-spin shrink-0" />
+        ) : (
+          <Search size={16} className="text-gray-500 shrink-0" />
+        )}
+        <input
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={onKeyDown}
+          placeholder="Поиск облигаций..."
+          className="bg-transparent outline-none text-sm text-white w-36 md:w-56 placeholder-gray-500"
+          aria-label="Поиск облигаций"
+        />
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-50 mt-1 w-72 md:w-96 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto">
+          {results.map((b) => (
+            <button
+              key={b.internal_id}
+              onClick={() => openBond(b.internal_id)}
+              className="w-full text-left px-4 py-2.5 hover:bg-gray-800 flex items-center justify-between gap-3 border-b border-gray-800 last:border-0"
+            >
+              <span className="min-w-0">
+                <span className="block text-sm text-white truncate">{b.name}</span>
+                <span className="block text-xs text-gray-500 font-mono">{b.internal_id}</span>
+              </span>
+              <span className="shrink-0"><CurrencyBadge currency={b.currency} /></span>
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && <BondDetailModal bond={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
