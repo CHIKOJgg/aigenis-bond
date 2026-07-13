@@ -13,6 +13,7 @@ import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
+import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
 import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check } from 'lucide-react';
 
 const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
@@ -928,15 +929,40 @@ function AlertsWidget() {
   );
 }
 
+function maturityBucket(b: Bond): string | null {
+  if (!b.maturity_date) return null;
+  const yrs = (new Date(b.maturity_date).getTime() - Date.now()) / (365.25 * 24 * 3600 * 1000);
+  if (yrs < 0) return 'expired';
+  if (yrs < 1) return '<1y';
+  if (yrs < 3) return '1-3y';
+  if (yrs < 5) return '3-5y';
+  if (yrs < 10) return '5-10y';
+  return '>10y';
+}
+
+function defaultForPreset(id: string): Partial<BondFiltersState> {
+  switch (id) {
+    case 'ytm10':
+      return { ytm: [null, null] };
+    case 'score70':
+      return { score: [null, null] };
+    case 'active':
+      return { statuses: [] };
+    case 'short':
+      return { maturities: [] };
+    case 'fav':
+      return { favoritesOnly: false };
+    default:
+      return {};
+  }
+}
+
 function BondsPage() {
   const { user } = useAuth();
   const [allBonds, setAllBonds] = useState<Bond[]>([]);
   const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
-  const [currency, setCurrency] = useState(() => sessionStorage.getItem('bonds_currency') || '');
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [minYtm, setMinYtm] = useState('');
-  const [minScore, setMinScore] = useState('');
+  const [filters, setFilters] = useState<BondFiltersState>({ ...defaultFilters });
+  const [activePresets, setActivePresets] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<{ key: 'yield_to_maturity' | 'price' | 'coupon_rate' | 'score' | 'name'; dir: 'asc' | 'desc' }>({ key: 'yield_to_maturity', dir: 'desc' });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -954,7 +980,7 @@ function BondsPage() {
     setError(null);
     setPage(1);
     Promise.all([
-      api.bonds.list({ currency: currency || undefined, limit: 1000 }),
+      api.bonds.list({ limit: 1000 }),
       api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
     ])
       .then(([bs, sc]) => {
@@ -965,7 +991,7 @@ function BondsPage() {
       })
       .catch(() => setError('Failed to load bonds'))
       .finally(() => setLoading(false));
-  }, [currency]);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -1001,18 +1027,56 @@ function BondsPage() {
   };
 
   const filtered = useMemo(() => {
-    let rows = allBonds;
-    const q = search.trim().toLowerCase();
-    if (q) rows = rows.filter((b) => b.name.toLowerCase().includes(q) || b.internal_id.toLowerCase().includes(q));
-    if (status) rows = rows.filter((b) => b.status === status);
-    if (minYtm !== '') {
-      const v = Number(minYtm);
-      rows = rows.filter((b) => b.yield_to_maturity != null && b.yield_to_maturity * 100 >= v);
-    }
-    if (minScore !== '') {
-      const v = Number(minScore);
-      rows = rows.filter((b) => (scoreMap[b.internal_id] ?? -1) >= v);
-    }
+    const f = filters;
+    const q = f.search.trim().toLowerCase();
+    const ytmLo = f.ytm[0] != null ? f.ytm[0] / 100 : null;
+    const ytmHi = f.ytm[1] != null ? f.ytm[1] / 100 : null;
+    const couponLo = f.coupon[0] != null ? f.coupon[0] / 100 : null;
+    const couponHi = f.coupon[1] != null ? f.coupon[1] / 100 : null;
+
+    let rows = allBonds.filter((b) => {
+      if (q && !(b.name.toLowerCase().includes(q) || b.internal_id.toLowerCase().includes(q))) return false;
+      if (f.currencies.length && !f.currencies.includes(b.currency)) return false;
+      if (f.statuses.length && !f.statuses.includes(b.status)) return false;
+      if (f.favoritesOnly && !favorites.has(b.internal_id)) return false;
+
+      if (b.yield_to_maturity != null) {
+        if (ytmLo != null && b.yield_to_maturity < ytmLo) return false;
+        if (ytmHi != null && b.yield_to_maturity > ytmHi) return false;
+      } else if (ytmLo != null || ytmHi != null) {
+        return false;
+      }
+
+      if (b.price != null) {
+        if (f.price[0] != null && b.price < f.price[0]) return false;
+        if (f.price[1] != null && b.price > f.price[1]) return false;
+      } else if (f.price[0] != null || f.price[1] != null) {
+        return false;
+      }
+
+      if (b.coupon_rate != null) {
+        if (couponLo != null && b.coupon_rate < couponLo) return false;
+        if (couponHi != null && b.coupon_rate > couponHi) return false;
+      } else if (couponLo != null || couponHi != null) {
+        return false;
+      }
+
+      const sc = scoreMap[b.internal_id];
+      if (sc != null) {
+        if (f.score[0] != null && sc < f.score[0]) return false;
+        if (f.score[1] != null && sc > f.score[1]) return false;
+      } else if (f.score[0] != null || f.score[1] != null) {
+        return false;
+      }
+
+      if (f.maturities.length) {
+        const bucket = maturityBucket(b);
+        if (!bucket || !f.maturities.includes(bucket)) return false;
+      }
+
+      return true;
+    });
+
     const dir = sort.dir === 'asc' ? 1 : -1;
     return [...rows].sort((a, b) => {
       let av: number | string | null;
@@ -1033,11 +1097,36 @@ function BondsPage() {
       if (av > bv) return 1 * dir;
       return 0;
     });
-  }, [allBonds, search, status, minYtm, minScore, sort, scoreMap]);
+  }, [allBonds, filters, sort, scoreMap, favorites]);
+
+  // Presets toggle a single filter dimension on/off (composable — activating
+  // one never wipes the rest of the user's filters).
+  const togglePreset = (p: { id: string; apply: Partial<BondFiltersState> }) => {
+    setActivePresets((prev) => {
+      const next = new Set(prev);
+      if (next.has(p.id)) {
+        next.delete(p.id);
+        setFilters((f) => ({ ...f, ...defaultForPreset(p.id) }));
+      } else {
+        next.add(p.id);
+        setFilters((f) => ({ ...f, ...p.apply }));
+      }
+      return next;
+    });
+  };
+
+  const presets: { id: string; label: string; apply: Partial<BondFiltersState> }[] = [
+    { id: 'ytm10', label: 'YTM ≥ 10%', apply: { ytm: [10, null] } },
+    { id: 'score70', label: 'Скор ≥ 70', apply: { score: [70, null] } },
+    { id: 'active', label: 'Только active', apply: { statuses: ['active'] } },
+    { id: 'short', label: 'Короткие (<3 г)', apply: { maturities: ['<1y', '1-3y'] } },
+    { id: 'fav', label: 'Избранное', apply: { favoritesOnly: true } },
+  ];
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const statuses = Array.from(new Set(allBonds.map((b) => b.status))).sort();
+  const statusOptions = Array.from(new Set(allBonds.map((b) => b.status))).sort();
+  const currencyOptions = Array.from(new Set(allBonds.map((b) => b.currency))).sort();
 
   const pageIds = pageRows.map((b) => b.internal_id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
@@ -1073,15 +1162,6 @@ function BondsPage() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' }));
   };
 
-  const applyPreset = (p: Partial<{ search: string; status: string; minYtm: string; minScore: string; currency: string }>) => {
-    setSearch(p.search ?? '');
-    setStatus(p.status ?? '');
-    setMinYtm(p.minYtm ?? '');
-    setMinScore(p.minScore ?? '');
-    setCurrency(p.currency ?? '');
-    setPage(1);
-  };
-
   const SortHeader = ({ label, k, className = '' }: { label: string; k: typeof sort.key; className?: string }) => (
     <th
       className={`text-left p-3 cursor-pointer select-none hover:text-white ${className} ${sort.key === k ? 'text-emerald-400' : 'text-gray-400'}`}
@@ -1102,40 +1182,30 @@ function BondsPage() {
       </div>
 
       {/* Screener */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <div className="flex items-center gap-2">
-          <Search size={16} className="text-gray-500 shrink-0" />
-          <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Поиск по названию / ID"
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
-        </div>
-        <input value={currency} onChange={(e) => { setCurrency(e.target.value.toUpperCase()); setPage(1); }} placeholder="Валюта (USD, BYN...)"
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full">
-          <option value="">Все статусы</option>
-          {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input value={minYtm} onChange={(e) => { setMinYtm(e.target.value); setPage(1); }} type="number" step="0.1" placeholder="Мин. YTM, %"
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
-        <input value={minScore} onChange={(e) => { setMinScore(e.target.value); setPage(1); }} type="number" step="0.1" placeholder="Мин. скор"
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm w-full" />
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <span>Найдено: {filtered.length}</span>
-          {(search || status || minYtm || minScore || currency) && (
-            <button onClick={() => { setSearch(''); setStatus(''); setMinYtm(''); setMinScore(''); setCurrency(''); setPage(1); }}
-              className="text-gray-400 hover:text-white">Сбросить</button>
-          )}
-        </div>
-      </div>
+      <BondFilters
+        filters={filters}
+        onChange={(next) => { setFilters(next); setPage(1); }}
+        currencyOptions={currencyOptions}
+        statusOptions={statusOptions}
+        resultCount={filtered.length}
+        totalCount={allBonds.length}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-gray-500">Быстрые фильтры:</span>
-        <button onClick={() => applyPreset({ minYtm: '10' })}
-          className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors">YTM ≥ 10%</button>
-        <button onClick={() => applyPreset({ minScore: '70' })}
-          className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors">Скор ≥ 70</button>
-        <button onClick={() => applyPreset({ status: 'active' })}
-          className="px-3 py-1.5 rounded-lg text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 transition-colors">Только active</button>
+        {presets.map((p) => {
+          const active = activePresets.has(p.id);
+          return (
+            <button key={p.id} onClick={() => togglePreset(p)}
+              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                active
+                  ? 'bg-emerald-600 border-emerald-500 text-white'
+                  : 'bg-gray-800 hover:bg-gray-700 text-gray-200 border-gray-700'
+              }`}>
+              {p.label}
+            </button>
+          );
+        })}
       </div>
 
       {loading && <LoadingSkeleton />}
