@@ -10,47 +10,44 @@ export interface PaywallFeature {
 export const PAYWALL_FEATURES: Record<string, PaywallFeature> = {
   default: {
     key: 'default',
-    title: 'Функция Pro / Enterprise',
-    description:
-      'Эта возможность доступна по подписке. Оформите её — и доступ откроется здесь и в Telegram-боте одновременно.',
+    title: 'paywall.title.default',
+    description: 'paywall.desc.default',
     icon: 'lock',
   },
   currencies: {
     key: 'currencies',
-    title: 'Трекер валют (бирж)',
-    description:
-      'Бесплатный тариф позволяет отслеживать только 1 валюту. Оформите Pro, чтобы следить за всеми биржами и валютами сразу.',
+    title: 'paywall.title.currencies',
+    description: 'paywall.desc.currencies',
     icon: 'currencies',
   },
   desk: {
     key: 'desk',
-    title: 'Fixed Income Desk',
-    description:
-      'Кривая доходности, Relative Value, Carry, РЕПО и стресс-тесты доступны по подписке Pro / Enterprise.',
+    title: 'paywall.title.desk',
+    description: 'paywall.desc.desk',
     icon: 'desk',
   },
   portfolio: {
     key: 'portfolio',
-    title: 'Портфель и оптимизация',
-    description: 'Метрики портфеля, прогноз капитала и оптимизация — функции тарифа Pro / Enterprise.',
+    title: 'paywall.title.portfolio',
+    description: 'paywall.desc.portfolio',
     icon: 'lock',
   },
   forecast: {
     key: 'forecast',
-    title: 'Прогноз капитала',
-    description: 'Прогноз капитала по горизонтам доступен по подписке Pro / Enterprise.',
+    title: 'paywall.title.forecast',
+    description: 'paywall.desc.forecast',
     icon: 'lock',
   },
   ml: {
     key: 'ml',
-    title: 'ML-рекомендации',
-    description: 'Объяснимые рекомендации buy/hold/wait/avoid доступны по подписке Pro / Enterprise.',
+    title: 'paywall.title.ml',
+    description: 'paywall.desc.ml',
     icon: 'ml',
   },
   alerts: {
     key: 'alerts',
-    title: 'Алерты',
-    description: 'Уведомления о событиях рынка доступны по подписке Pro / Enterprise.',
+    title: 'paywall.title.alerts',
+    description: 'paywall.desc.alerts',
     icon: 'lock',
   },
 };

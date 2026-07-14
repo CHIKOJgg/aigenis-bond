@@ -1,40 +1,41 @@
 import { useState } from 'react';
 import { TrendingUp, Shield, LineChart, PieChart, Brain, Bell, Star, ArrowRight, Check, X } from 'lucide-react';
+import { useI18n } from './i18n';
 
 const STEPS = [
   {
-    title: 'Welcome to Aigenis Bonds',
-    description: 'Your comprehensive bond fixed income intelligence platform. Let us show you around.',
+    title: 'onboarding.welcome',
+    description: 'onboarding.welcomeDesc',
     icon: <TrendingUp size={32} className="text-emerald-400" />,
   },
   {
-    title: 'Market Overview',
-    description: 'The Dashboard shows you key metrics: total bonds, active issues, top scores, and recent listings at a glance.',
+    title: 'onboarding.market',
+    description: 'onboarding.marketDesc',
     icon: <Shield size={32} className="text-purple-400" />,
   },
   {
-    title: 'Fixed Income Desk',
-    description: 'Access professional tools: yield curves, relative value analysis, duration, carry trades, repo deals, and stress testing.',
+    title: 'onboarding.desk',
+    description: 'onboarding.deskDesc',
     icon: <LineChart size={32} className="text-blue-400" />,
   },
   {
-    title: 'Portfolio & Forecast',
-    description: 'Optimize your portfolio with mean-variance analysis, run USD/BYN scenarios, and forecast capital growth with Monte Carlo simulations.',
+    title: 'onboarding.portfolio',
+    description: 'onboarding.portfolioDesc',
     icon: <PieChart size={32} className="text-amber-400" />,
   },
   {
-    title: 'ML Recommendations',
-    description: 'Get explainable buy/hold/wait/avoid recommendations from our scikit-learn pipeline, trained on historical bond data.',
+    title: 'onboarding.ml',
+    description: 'onboarding.mlDesc',
     icon: <Brain size={32} className="text-pink-400" />,
   },
   {
-    title: 'Alerts & Monitoring',
-    description: 'Stay informed with real-time alerts on price changes, FX rates, and data quality — delivered to your Telegram.',
+    title: 'onboarding.alerts',
+    description: 'onboarding.alertsDesc',
     icon: <Bell size={32} className="text-red-400" />,
   },
   {
-    title: 'Free Trial Active',
-    description: 'You have 7 days of full Pro access. Explore all features, then subscribe via Telegram Stars or credit card to continue.',
+    title: 'onboarding.trial',
+    description: 'onboarding.trialDesc',
     icon: <Star size={32} className="text-amber-400" />,
     highlight: true,
   },
@@ -51,6 +52,7 @@ export function dismissOnboarding(): void {
 }
 
 export function OnboardingTour({ onDone }: { onDone: () => void }) {
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
   const current = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -77,7 +79,7 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
       aria-labelledby="onboarding-title"
     >
       <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 max-w-md w-full relative outline-none">
-        <button onClick={handleSkip} className="absolute top-4 right-4 text-gray-500 hover:text-white p-1" aria-label="Пропустить">
+        <button onClick={handleSkip} className="absolute top-4 right-4 text-gray-500 hover:text-white p-1"           aria-label={t('onboarding.skipAria')}>
           <X size={18} />
         </button>
 
@@ -85,8 +87,8 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
           <div className={`w-16 h-16 ${current.highlight ? 'bg-amber-600/20' : 'bg-gray-800'} rounded-2xl flex items-center justify-center mx-auto mb-4`}>
             {current.icon}
           </div>
-          <h2 id="onboarding-title" className="text-xl font-bold mb-2">{current.title}</h2>
-          <p className="text-sm text-gray-400 leading-relaxed">{current.description}</p>
+          <h2 id="onboarding-title" className="text-xl font-bold mb-2">{t(current.title)}</h2>
+          <p className="text-sm text-gray-400 leading-relaxed">{t(current.description)}</p>
         </div>
 
         {/* Progress dots */}
@@ -99,16 +101,16 @@ export function OnboardingTour({ onDone }: { onDone: () => void }) {
         <button onClick={handleNext}
           className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2">
           {isLast ? (
-            <>Get Started <Check size={16} /></>
+            <>{t('onboarding.getStarted')} <Check size={16} /></>
           ) : (
-            <>Next <ArrowRight size={16} /></>
+            <>{t('onboarding.next')} <ArrowRight size={16} /></>
           )}
         </button>
 
         {!isLast && (
           <button onClick={handleSkip}
             className="w-full text-center text-sm text-gray-500 hover:text-gray-300 mt-3 transition-colors">
-            Skip tour
+            {t('onboarding.skip')}
           </button>
         )}
       </div>
