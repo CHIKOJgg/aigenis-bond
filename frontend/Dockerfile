@@ -29,8 +29,14 @@ COPY nginx.conf /etc/nginx/nginx.conf
 # Copy built frontend from builder
 COPY --from=builder /build/dist /usr/share/nginx/html
 
+# Entrypoint: symlink Let's Encrypt certs (if mounted) then run official nginx entrypoint
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
 
 EXPOSE 80 443
+
+ENTRYPOINT ["/entrypoint.sh"]

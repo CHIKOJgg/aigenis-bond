@@ -7,7 +7,7 @@
 #
 # HTTPS (требует домена и настроенного DNS):
 #   docker compose --profile certbot run --rm certbot certonly \
-#     --email admin@example.com -d your-domain.com
+#     --webroot-path /var/www/certbot --email admin@example.com -d your-domain.com
 #   docker compose up -d
 #
 # Однократные команды:

@@ -151,6 +151,7 @@ docker compose up -d frontend
 
 # 2. Выпустить сертификат
 docker compose --profile certbot run --rm certbot certonly \
+  --webroot-path /var/www/certbot \
   --email admin@example.com -d your-domain.com --agree-tos --no-eff-email
 
 # 3. Перезапустить фронтенд, чтобы подхватить certs
