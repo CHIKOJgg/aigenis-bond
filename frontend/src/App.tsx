@@ -139,7 +139,7 @@ function AppInner() {
             )}
             <button onClick={() => setPage('settings')}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'settings' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
-              <User size={16} />{user.name.split(' ')[0]}
+              <User size={16} />{(user.name || '').split(' ')[0]}
             </button>
           </nav>
           <LanguageToggle />
@@ -222,11 +222,13 @@ function GlobalSearch() {
   useEffect(() => {
     if (!user || all) return;
     let alive = true;
-    api.bonds
-      .list({ limit: 1000 })
-      .then((b) => { if (alive) setAll(b); })
-      .catch(() => { if (alive) setAll([]); });
-    return () => { alive = false; };
+    const timer = setTimeout(() => {
+      api.bonds
+        .list({ limit: 1000 })
+        .then((b) => { if (alive) setAll(b); })
+        .catch(() => { if (alive) setAll(null); });
+    }, 1000);
+    return () => { alive = false; clearTimeout(timer); };
   }, [user, all]);
 
   useEffect(() => {
@@ -251,7 +253,7 @@ function GlobalSearch() {
       const b = await api.bonds.get(id);
       setSelected(b);
     } catch {
-      /* ignore */
+      setSelected(null);
     } finally {
       setLoadingBond(false);
       setOpen(false);
@@ -437,7 +439,7 @@ function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   const { t, lang } = useI18n();
   const { user, logout } = useAuth();
   const isOnTrial = user?.trial_end && new Date(user.trial_end) > new Date();
-  const trialDaysLeft = isOnTrial ? Math.ceil((new Date(user!.trial_end!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+  const trialDaysLeft = isOnTrial && user?.trial_end ? Math.ceil((new Date(user.trial_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
 
   return (
     <div className="space-y-4">
@@ -507,7 +509,7 @@ function Dashboard({ onPickCurrency }: { onPickCurrency?: (cur: string) => void 
       setBonds(b);
       setScores(sc);
       setHealth(h);
-    })    .catch(() => setError(t('dash.loadError'))).finally(() => setLoading(false));
+    }).finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSkeleton />;
@@ -1003,10 +1005,17 @@ function BondsPage() {
   const PAGE_SIZE = 25;
 
   useEffect(() => {
+    const savedCurrency = sessionStorage.getItem('bonds_currency');
     sessionStorage.removeItem('bonds_currency');
     setLoading(true);
     setError(null);
     setPage(1);
+    if (savedCurrency) {
+      setFilters((f) => ({
+        ...f,
+        currencies: f.currencies.includes(savedCurrency) ? f.currencies : [...f.currencies, savedCurrency],
+      }));
+    }
     Promise.all([
       api.bonds.list({ limit: 1000 }),
       api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
@@ -1246,6 +1255,7 @@ function BondsPage() {
                 <th className="text-left p-3 w-8">
                   <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="accent-emerald-500" aria-label={t('common.selectAll')} />
                 </th>
+                 <th className="text-left p-3 w-8 hidden sm:table-cell"></th>
                  <SortHeader label={t('common.name')} k="name" />
                  <th className="text-left p-3 w-8 hidden sm:table-cell">{t('common.id')}</th>
                  <th className="text-left p-3">{t('common.currencyShort')}</th>
@@ -1335,7 +1345,7 @@ function ComparisonModal({ bonds, scoreMap, onClose }: { bonds: Bond[]; scoreMap
     { label: t('common.price'), get: (b) => (b.price != null ? b.price.toFixed(2) : '-') },
     { label: t('common.ytm'), get: (b) => (b.yield_to_maturity != null ? `${(b.yield_to_maturity * 100).toFixed(2)}%` : '-') },
     { label: t('common.coupon'), get: (b) => (b.coupon_rate != null ? `${(b.coupon_rate * 100).toFixed(2)}%` : '-') },
-    { label: t('common.frequency'), get: (b) => (b.coupon_frequency != null ? `${b.coupon_frequency}x/год` : '-') },
+    { label: t('common.frequency'), get: (b) => (b.coupon_frequency != null ? `${b.coupon_frequency}x/${t('calc.freqYear')}` : '-') },
     { label: t('common.maturity'), get: (b) => (b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '-') },
     { label: t('common.status'), get: (b) => b.status },
     { label: t('common.score'), get: (b) => (scoreMap[b.internal_id] != null ? scoreMap[b.internal_id].toFixed(1) : '-') },
@@ -1529,7 +1539,7 @@ function YieldCurveChart({ points, color = '#34d399' }: { points: { tenor: strin
     .slice()
     .sort((a, b) => a.years - b.years);
   if (data.length < 2) {
-    return <p className="text-xs text-gray-500">Недостаточно точек для графика.</p>;
+    return <p className="text-xs text-gray-500">{t('desk.emptyYtm')}</p>;
   }
   const W = 320, H = 160, pad = 30;
   const xs = data.map((d) => d.years);
@@ -2020,16 +2030,17 @@ function useGated<T>(fetcher: () => Promise<T>, deps: any[] = []) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let alive = true;
+    const controller = new AbortController();
     setLoading(true); setError(null); setLocked(false);
     fetcher()
       .then(d => { if (alive) setData(d); })
       .catch((e: unknown) => {
-        if (!alive) return;
+        if (!alive || controller.signal.aborted) return;
         if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
         else setError(e instanceof Error ? e.message : 'Failed to load');
       })
       .finally(() => { if (alive) setLoading(false); });
-    return () => { alive = false; };
+    return () => { alive = false; controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
   return { data, loading, error, locked };
@@ -2070,15 +2081,18 @@ function SubscribePage() {
 
   const isPaid = user && user.subscription_tier !== 'free';
   const isOnTrial = user?.trial_end && new Date(user.trial_end) > new Date();
-  const trialDaysLeft = isOnTrial ? Math.ceil((new Date(user!.trial_end!).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+  const trialDaysLeft = isOnTrial && user?.trial_end ? Math.ceil((new Date(user.trial_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
+
+  const [payError, setPayError] = useState<string | null>(null);
 
   const handleYooKassaPayment = async (plan: string) => {
     try {
+      setPayError(null);
       const base = window.location.origin;
       const result = await api.billing.createPayment(plan, `${base}/subscribe?success=1`, `${base}/subscribe`);
       if (result.confirmation_url) window.location.href = result.confirmation_url;
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : t('payment.error'));
+      setPayError(e instanceof Error ? e.message : t('payment.error'));
     }
   };
 
@@ -2097,6 +2111,7 @@ function SubscribePage() {
             {t('trial.daysLeftFull', { days: trialDaysLeft, daysWord: trialDaysWord(trialDaysLeft, lang) })}
           </p>
         )}
+        {payError && <ErrorBanner message={payError} />}
         {isPaid && !isOnTrial && (
           <p className="mt-3 inline-block bg-emerald-900/40 border border-emerald-800 text-emerald-300 text-sm px-3 py-1.5 rounded-lg">
             {t('subscribe.currentTier', { tier: user!.subscription_tier })}
@@ -2220,10 +2235,10 @@ function BondCalculator() {
           <label className="text-xs text-gray-400 block mb-1">{t('calc.payments')}</label>
           <select value={freq} onChange={(e) => setFreq(Number(e.target.value))}
             className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm">
-            <option value={1}>1 (год)</option>
-            <option value={2}>2 (полгода)</option>
-            <option value={4}>4 (квартал)</option>
-            <option value={12}>12 (месяц)</option>
+            <option value={1}>1 ({t('calc.freqYear')})</option>
+            <option value={2}>2 ({t('calc.freqHalf')})</option>
+            <option value={4}>4 ({t('calc.freqQuarter')})</option>
+            <option value={12}>12 ({t('calc.freqMonth')})</option>
           </select>
         </div>
         {numField(t('calc.ytm'), ytm, setYtm, '0.1')}

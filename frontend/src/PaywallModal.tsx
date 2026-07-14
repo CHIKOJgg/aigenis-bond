@@ -41,12 +41,17 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
 
   const isPaid = user != null && user.subscription_tier !== 'free';
   const isFreeUser = user != null && user.subscription_tier === 'free';
-  const planFor = (tier: 'pro' | 'enterprise') => info?.plans.find((p) => p.tier === tier);
+  const planFor = (tier: 'pro' | 'enterprise') => info?.plans?.find((p) => p.tier === tier);
   const pro = planFor('pro');
   const ent = planFor('enterprise');
 
   const openInBot = () => {
-    if (info?.deep_link) window.open(info.deep_link, '_blank', 'noopener');
+    if (info?.deep_link) {
+      window.open(info.deep_link, '_blank', 'noopener');
+    } else {
+      onSubscribe();
+      closePaywall();
+    }
   };
 
   const TierCard = ({

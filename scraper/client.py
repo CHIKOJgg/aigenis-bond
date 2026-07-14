@@ -274,7 +274,10 @@ class AigenisClient:
                 logger.warning("api_token_expired_renewing")
                 await self._login()
                 opts["headers"] = {"Authorization": f"JWT {self._token}"}
-                resp = await page.request.get(url, **opts)
+                if method.upper() == "POST":
+                    resp = await page.request.post(url, **opts)
+                else:
+                    resp = await page.request.get(url, **opts)
             if resp.status >= 400:
                 raise FatalError(f"API returned {resp.status}: {await resp.text()[:200]}")
             return await resp.json()

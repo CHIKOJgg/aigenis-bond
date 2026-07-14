@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.orm import AlertORM
@@ -38,9 +37,10 @@ async def add_alert(session: AsyncSession, alert: dict[str, Any]) -> int | None:
         if existing.scalar_one_or_none() is not None:
             return None
     values = _to_orm(alert)
-    stmt = pg_insert(AlertORM).values(**values).returning(AlertORM.id)
-    result = await session.execute(stmt)
-    return result.scalar_one_or_none()
+    obj = AlertORM(**values)
+    session.add(obj)
+    await session.flush()
+    return obj.id
 
 
 async def list_recent(session: AsyncSession, limit: int = 50) -> list[AlertORM]:

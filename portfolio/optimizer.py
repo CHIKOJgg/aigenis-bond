@@ -43,7 +43,7 @@ def rank_bonds(bonds: Iterable[Bond], strategy: StrategyName = "Balanced") -> li
     for b in bonds:
         s = _bond_to_score(b)
         bd = s.breakdown
-        safety_score = max(bd.credit_risk_component, 0) + max(bd.duration_component, 0) / 4.0
+        safety_score = max(bd.credit_risk_component + bd.duration_component / 4.0, 0)
         weighted = (
             weights["score"] * s.score
             + weights["yield"] * bd.yield_component
@@ -87,15 +87,15 @@ def _max_drawdown(scores: list[BondScore]) -> float:
     if not scores:
         return 0.0
     worst = min(s.breakdown.yield_component for s in scores)
-    return max(-worst / 100.0, 0.0) * 100
+    return max(-worst, 0.0)
 
 
 def _var_95(scores: list[BondScore]) -> float:
-    if not scores:
+    if len(scores) < 2:
         return 0.0
     sorted_ytm = sorted(s.breakdown.yield_component for s in scores)
-    idx = max(int(len(sorted_ytm) * 0.05) - 1, 0)
-    return abs(sorted_ytm[idx]) * 0.5
+    idx = max(int(len(sorted_ytm) * 0.05), 0)
+    return abs(sorted_ytm[idx])
 
 
 def allocate(

@@ -14,17 +14,23 @@ from scraper.pipeline import run_once
 
 logger = get_logger("scraper.scheduler")
 
+_pipeline_lock = asyncio.Lock()
+
 
 async def scheduled_job() -> None:
-    settings = get_settings()
-    cid = correlation_id()
-    logger.info("scheduled_job_start", correlation_id=cid)
-    try:
-        async with AigenisClient(settings.aigenis) as client:
-            await run_once(client, settings.aigenis.currencies)
-        logger.info("scheduled_job_done", correlation_id=cid)
-    except Exception:
-        logger.exception("scheduled_job_failed", correlation_id=cid)
+    if _pipeline_lock.locked():
+        logger.info("scheduled_job_skipped_already_running")
+        return
+    async with _pipeline_lock:
+        settings = get_settings()
+        cid = correlation_id()
+        logger.info("scheduled_job_start", correlation_id=cid)
+        try:
+            async with AigenisClient(settings.aigenis) as client:
+                await run_once(client, settings.aigenis.currencies)
+            logger.info("scheduled_job_done", correlation_id=cid)
+        except Exception:
+            logger.exception("scheduled_job_failed", correlation_id=cid)
 
 
 def _wrap(name: str, fn: Callable[[], Awaitable[None]]) -> Callable[[], Awaitable[None]]:
@@ -114,10 +120,13 @@ async def run_forever() -> None:
             loop.add_signal_handler(sig, lambda s=sig: _shutdown(s))
 
     try:
-        await stop_event.wait()
+        try:
+            await stop_event.wait()
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("scheduler_interrupted")
     finally:
         logger.info("scheduler_shutting_down")
-        scheduler.shutdown(wait=False)
+        scheduler.shutdown(wait=True, timeout=120)
         from scraper.db import dispose as db_dispose
 
         await db_dispose()

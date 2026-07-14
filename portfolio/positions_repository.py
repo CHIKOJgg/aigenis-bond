@@ -5,7 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ml.models import RebalancePlan
@@ -70,9 +69,10 @@ async def save_rebalance_plan(session: AsyncSession, user_id: int, plan: Rebalan
         "actions": [a.model_dump(mode="json") for a in plan.actions],
         "applied": False,
     }
-    stmt = pg_insert(RebalanceHistoryORM).values(**values).returning(RebalanceHistoryORM.id)
-    result = await session.execute(stmt)
-    return int(result.scalar_one())
+    obj = RebalanceHistoryORM(**values)
+    session.add(obj)
+    await session.flush()
+    return obj.id
 
 
 async def list_rebalance_history(

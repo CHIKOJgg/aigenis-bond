@@ -30,7 +30,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
-      refreshUser().finally(() => setLoading(false));
+      const timeout = setTimeout(() => setLoading(false), 5000);
+      refreshUser().finally(() => {
+        clearTimeout(timeout);
+        setLoading(false);
+      });
     } else {
       setLoading(false);
     }

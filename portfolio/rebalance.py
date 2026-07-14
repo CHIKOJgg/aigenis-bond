@@ -11,6 +11,7 @@ from portfolio.optimizer import allocate
 from portfolio.positions_repository import (
     list_positions,
     mark_rebalance_applied,
+    remove_position,
     save_rebalance_plan,
     total_value,
     upsert_position,
@@ -27,15 +28,17 @@ def _compute_weights(
     positions: Iterable,
     target_alloc: dict[str, Decimal],
     total: Decimal,
+    initial_capital: Decimal | None = None,
 ) -> dict[str, tuple[Decimal, float, float]]:
     current = {p.internal_id: p.amount for p in positions}
     result: dict[str, tuple[Decimal, float, float]] = {}
     all_ids = set(current) | set(target_alloc)
+    denom = initial_capital if initial_capital and initial_capital > 0 else total
     for iid in all_ids:
         cur_amount = current.get(iid, Decimal("0"))
         tgt_amount = target_alloc.get(iid, Decimal("0"))
         weight_before = float(cur_amount / total) if total > 0 else 0.0
-        weight_after = float(tgt_amount / total) if total > 0 else 0.0
+        weight_after = float(tgt_amount / denom) if denom > 0 else 0.0
         result[iid] = (tgt_amount - cur_amount, weight_before, weight_after)
     return result
 
@@ -56,7 +59,9 @@ def build_plan(
     """Сформировать план ребалансировки, если drift > threshold."""
     target_alloc = allocate(bonds, prefs, top_n=top_n)
     target_items = target_alloc.items
-    deltas = _compute_weights(current_positions, target_items, current_total)
+    deltas = _compute_weights(
+        current_positions, target_items, current_total, initial_capital=prefs.initial_capital,
+    )
     drift = _drift(deltas)
 
     if drift < drift_threshold:
@@ -144,5 +149,7 @@ async def maybe_auto_rebalance(
                         new_amount = pos.amount - a.amount
                         if new_amount > 0:
                             await upsert_position(session, user_id, a.internal_id, new_amount)
+                        else:
+                            await remove_position(session, user_id, a.internal_id)
             await mark_rebalance_applied(session, plan_id)
         return plan
