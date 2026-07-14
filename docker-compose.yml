@@ -340,7 +340,7 @@ services:
     container_name: aigenis-cloudflared-quick
     restart: unless-stopped
     profiles: ["quick-tunnel"]
-    command: tunnel --url http://frontend:80 --no-autoupdate
+    command: tunnel --url https://frontend:443 --no-tls-verify --no-autoupdate
     depends_on:
       - frontend
     networks:
