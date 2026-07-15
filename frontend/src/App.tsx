@@ -877,7 +877,7 @@ function AlertsWidget() {
           const val = r.metric === 'score'
             ? scoreMap[b.internal_id]
             : r.metric === 'ytm'
-              ? (b.yield_to_maturity != null ? b.yield_to_maturity * 100 : null)
+              ? (b.yield_to_maturity != null ? b.yield_to_maturity : null)
               : b.price;
           if (val == null) continue;
           const hit = r.op === '>' ? val > r.value : val < r.value;
@@ -1097,10 +1097,10 @@ function BondsPage() {
   const filtered = useMemo(() => {
     const f = filters;
     const q = f.search.trim().toLowerCase();
-    const ytmLo = f.ytm[0] != null ? f.ytm[0] / 100 : null;
-    const ytmHi = f.ytm[1] != null ? f.ytm[1] / 100 : null;
-    const couponLo = f.coupon[0] != null ? f.coupon[0] / 100 : null;
-    const couponHi = f.coupon[1] != null ? f.coupon[1] / 100 : null;
+    const ytmLo = f.ytm[0] != null ? f.ytm[0] : null;
+    const ytmHi = f.ytm[1] != null ? f.ytm[1] : null;
+    const couponLo = f.coupon[0] != null ? f.coupon[0] : null;
+    const couponHi = f.coupon[1] != null ? f.coupon[1] : null;
 
     let rows = allBonds.filter((b) => {
       if (q && !(b.name.toLowerCase().includes(q) || b.internal_id.toLowerCase().includes(q))) return false;
@@ -1217,8 +1217,8 @@ function BondsPage() {
       b.internal_id,
       b.currency,
       b.price != null ? b.price.toFixed(2) : '',
-      b.yield_to_maturity != null ? (b.yield_to_maturity * 100).toFixed(2) : '',
-      b.coupon_rate != null ? (b.coupon_rate * 100).toFixed(2) : '',
+      b.yield_to_maturity != null ? b.yield_to_maturity.toFixed(2) : '',
+      b.coupon_rate != null ? b.coupon_rate.toFixed(2) : '',
       b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '',
       b.status,
       scoreMap[b.internal_id] != null ? scoreMap[b.internal_id].toFixed(2) : '',
@@ -1317,8 +1317,8 @@ function BondsPage() {
                   <td className="p-3 text-gray-400 font-mono text-xs hidden sm:table-cell">{b.internal_id}</td>
                   <td className="p-3"><CurrencyBadge currency={b.currency} /></td>
                   <td className="p-3 text-right font-mono">{b.price?.toFixed(2) ?? '-'}</td>
-                  <td className="p-3 text-right font-mono hidden md:table-cell">{b.yield_to_maturity != null ? `${(b.yield_to_maturity * 100).toFixed(2)}%` : '-'}</td>
-                  <td className="p-3 text-right font-mono hidden lg:table-cell">{b.coupon_rate != null ? `${(b.coupon_rate * 100).toFixed(2)}%` : '-'}</td>
+                  <td className="p-3 text-right font-mono hidden md:table-cell">{b.yield_to_maturity != null ? `${(b.yield_to_maturity).toFixed(2)}%` : '-'}</td>
+                  <td className="p-3 text-right font-mono hidden lg:table-cell">{b.coupon_rate != null ? `${(b.coupon_rate).toFixed(2)}%` : '-'}</td>
                   <td className="p-3 text-right font-mono text-emerald-400">{scoreMap[b.internal_id] != null ? scoreMap[b.internal_id].toFixed(1) : '-'}</td>
                   <td className="p-3 text-gray-400 text-xs hidden lg:table-cell">{b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '-'}</td>
                   <td className="p-3">{b.status === 'active' ? <span className="px-2 py-0.5 rounded text-xs bg-green-900 text-green-300">active</span> : <span className="px-2 py-0.5 rounded text-xs bg-gray-800 text-gray-400">{b.status}</span>}</td>
@@ -1377,8 +1377,8 @@ function ComparisonModal({ bonds, scoreMap, onClose }: { bonds: Bond[]; scoreMap
   const metrics: { label: string; get: (b: Bond) => string }[] = [
     { label: t('common.currency'), get: (b) => b.currency },
     { label: t('common.price'), get: (b) => (b.price != null ? b.price.toFixed(2) : '-') },
-    { label: t('common.ytm'), get: (b) => (b.yield_to_maturity != null ? `${(b.yield_to_maturity * 100).toFixed(2)}%` : '-') },
-    { label: t('common.coupon'), get: (b) => (b.coupon_rate != null ? `${(b.coupon_rate * 100).toFixed(2)}%` : '-') },
+    { label: t('common.ytm'), get: (b) => (b.yield_to_maturity != null ? `${(b.yield_to_maturity).toFixed(2)}%` : '-') },
+    { label: t('common.coupon'), get: (b) => (b.coupon_rate != null ? `${(b.coupon_rate).toFixed(2)}%` : '-') },
     { label: t('common.frequency'), get: (b) => (b.coupon_frequency != null ? `${b.coupon_frequency}x/${t('calc.freqYear')}` : '-') },
     { label: t('common.maturity'), get: (b) => (b.maturity_date ? new Date(b.maturity_date).toLocaleDateString() : '-') },
     { label: t('common.status'), get: (b) => b.status },
@@ -1449,8 +1449,8 @@ function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond
           <DetailRow label={t('common.currency')} value={bond.currency} />
           <DetailRow label={t('common.issuer')} value={bond.issuer || '-'} />
           <DetailRow label={t('common.price')} value={bond.price != null ? bond.price.toFixed(2) : '-'} />
-          <DetailRow label={t('common.ytm')} value={bond.yield_to_maturity != null ? `${(bond.yield_to_maturity * 100).toFixed(2)}%` : '-'} />
-          <DetailRow label={t('detail.couponRate')} value={bond.coupon_rate != null ? `${(bond.coupon_rate * 100).toFixed(2)}%` : '-'} />
+          <DetailRow label={t('common.ytm')} value={bond.yield_to_maturity != null ? `${(bond.yield_to_maturity).toFixed(2)}%` : '-'} />
+          <DetailRow label={t('detail.couponRate')} value={bond.coupon_rate != null ? `${(bond.coupon_rate).toFixed(2)}%` : '-'} />
           <DetailRow label={t('common.frequency')} value={bond.coupon_frequency != null ? `${bond.coupon_frequency}x/year` : '-'} />
           <DetailRow label={t('common.maturity')} value={bond.maturity_date ? new Date(bond.maturity_date).toLocaleDateString() : '-'} />
           <DetailRow label={t('common.status')} value={bond.status} />
