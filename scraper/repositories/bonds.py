@@ -75,6 +75,7 @@ def _bond_to_orm(bond: Bond) -> dict:
         "isin": bond.isin,
         "name": enriched_name,
         "issuer": bond.issuer,
+        "issuer_logo": bond.issuer_logo,
         "currency": bond.currency,
         "nominal": bond.nominal,
         "coupon_rate": bond.coupon_rate,

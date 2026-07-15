@@ -94,6 +94,7 @@ def parse_bond_payload(
         internal_id=str(internal_id),
         name=str(name),
         issuer=payload.get("issuer"),
+        issuer_logo=payload.get("issuer_logo"),
         currency=str(payload.get("currency", "USD")).upper(),
         nominal=payload.get("nominal"),
         coupon_rate=_first_not_none(payload.get("coupon_rate"), payload.get("coupon")),

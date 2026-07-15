@@ -39,6 +39,18 @@ from scraper.logging import get_logger
 logger = get_logger("scraper.client")
 
 API_BASE = "https://invest.aigenis.by/api"
+SITE_BASE = "https://invest.aigenis.by"
+
+
+def _abs_url(url: str | None) -> str | None:
+    """Make a relative issuer logo URL absolute against the aigenis.by site."""
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/"):
+        return SITE_BASE + url
+    return SITE_BASE + "/" + url
 
 
 class _CircuitBreaker:
@@ -462,6 +474,13 @@ class AigenisClient:
             iid = iid.rsplit("/", 1)[-1]
         if not iid:
             return None
+        issuer_obj = defn.get("issuer") or {}
+        issuer_logo = None
+        for key in ("logo", "image", "image_url", "photo", "avatar"):
+            val = issuer_obj.get(key)
+            if val:
+                issuer_logo = _abs_url(val)
+                break
         return {
             "internal_id": str(iid),
             "name": str(defn.get("parent_symbol") or item.get("name_of_security") or iid),
@@ -482,6 +501,7 @@ class AigenisClient:
             "coupon_description": defn.get("coupon_description"),
             "coupon_schedule": defn.get("coupon_schedule"),
             "issuer": (defn.get("issuer") or {}).get("full_name"),
+            "issuer_logo": issuer_logo,
             "end_date": defn.get("maturity_date"),
             "maturity_date": defn.get("maturity_date"),
             "price": defn.get("price"),
@@ -527,11 +547,19 @@ class AigenisClient:
         sym = data.get("symbol", "")
         if not defn.get("state_security_id") and "/" in sym:
             iid = sym.rsplit("/", 1)[-1]
+        issuer_obj = defn.get("issuer") or {}
+        issuer_logo = None
+        for key in ("logo", "image", "image_url", "photo", "avatar"):
+            val = issuer_obj.get(key)
+            if val:
+                issuer_logo = _abs_url(val)
+                break
         return {
             "id": iid,
             "internal_id": iid,
             "name": str(defn.get("parent_symbol") or data.get("name_of_security") or iid),
             "issuer": (defn.get("issuer") or {}).get("full_name"),
+            "issuer_logo": issuer_logo,
             "currency": str(defn.get("currency") or data.get("settl_currency", "USD")).upper(),
             "nominal": defn.get("nominal"),
             "coupon_rate": defn.get("coupon_rate"),

@@ -80,7 +80,14 @@ function AppInner() {
   const trialExpiring = trialDaysLeft != null && trialDaysLeft <= 3;
 
   if (showOnboarding) {
-    return <OnboardingTour onDone={() => setShowOnboarding(false)} />;
+    return <OnboardingTour
+      onDone={() => setShowOnboarding(false)}
+      onNavigate={(p) => {
+        if (p === 'profile') setPage('settings');
+        else setPage(p as Page);
+        setShowOnboarding(false);
+      }}
+    />;
   }
 
   if (legalPage) {
@@ -308,9 +315,12 @@ function GlobalSearch() {
               onClick={() => openBond(b.internal_id)}
               className="w-full text-left px-4 py-2.5 hover:bg-gray-800 flex items-center justify-between gap-3 border-b border-gray-800 last:border-0"
             >
-              <span className="min-w-0">
-                <span className="block text-sm text-white truncate">{b.name}</span>
-                <span className="block text-xs text-gray-500 font-mono">{b.internal_id}</span>
+              <span className="min-w-0 flex items-center gap-2">
+                <BondIcon issuer={b.issuer} logo={b.issuer_logo} />
+                <span>
+                  <span className="block text-sm text-white truncate">{b.name}</span>
+                  <span className="block text-xs text-gray-500 font-mono">{b.internal_id}</span>
+                </span>
               </span>
               <span className="shrink-0"><CurrencyBadge currency={b.currency} /></span>
             </button>
@@ -1300,7 +1310,10 @@ function BondsPage() {
                       <Star size={15} className={favorites.has(b.internal_id) ? 'fill-amber-400 text-amber-400' : ''} />
                     </button>
                   </td>
-                  <td className="p-3 text-white font-medium max-w-[200px] truncate">{b.name}</td>
+                  <td className="p-3 text-white font-medium max-w-[200px] truncate flex items-center gap-2">
+                    <BondIcon issuer={b.issuer} logo={b.issuer_logo} />
+                    <span className="truncate">{b.name}</span>
+                  </td>
                   <td className="p-3 text-gray-400 font-mono text-xs hidden sm:table-cell">{b.internal_id}</td>
                   <td className="p-3"><CurrencyBadge currency={b.currency} /></td>
                   <td className="p-3 text-right font-mono">{b.price?.toFixed(2) ?? '-'}</td>
@@ -1385,8 +1398,13 @@ function ComparisonModal({ bonds, scoreMap, onClose }: { bonds: Bond[]; scoreMap
               <th className="text-left p-3 sticky left-0 bg-gray-900">{t('bonds.metric')}</th>
               {bonds.map((b) => (
                 <th key={b.internal_id} className="text-left p-3 min-w-[150px]">
-                  <div className="font-semibold text-white">{b.name}</div>
-                  <div className="text-xs text-gray-500 font-mono">{b.internal_id}</div>
+                  <div className="flex items-center gap-2">
+                    <BondIcon issuer={b.issuer} logo={b.issuer_logo} size={24} />
+                    <div>
+                      <div className="font-semibold text-white">{b.name}</div>
+                      <div className="text-xs text-gray-500 font-mono">{b.internal_id}</div>
+                    </div>
+                  </div>
                 </th>
               ))}
             </tr>
@@ -1413,7 +1431,10 @@ function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond
     <Modal onClose={onClose} className="max-w-lg w-full max-h-[80vh] overflow-y-auto">
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold" id="detail-title">{bond.internal_id}</h3>
+          <div className="flex items-center gap-3">
+            <BondIcon issuer={bond.issuer} logo={bond.issuer_logo} size={32} />
+            <h3 className="text-lg font-bold" id="detail-title">{bond.internal_id}</h3>
+          </div>
           <div className="flex items-center gap-2">
             {onToggleFavorite && (
               <button onClick={onToggleFavorite} className="text-gray-400 hover:text-amber-400 p-1" title={t('common.addToFavorites')} aria-label={t('common.addToFavorites')}>
@@ -2335,9 +2356,12 @@ function StatCard({ icon: Icon, label, value, color }: { icon: any; label: strin
 function BondRow({ bond }: { bond: Bond }) {
   return (
     <div className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm text-white truncate">{bond.name}</p>
-        <p className="text-xs text-gray-500">{bond.internal_id} · {bond.currency}</p>
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <BondIcon issuer={bond.issuer} logo={bond.issuer_logo} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-white truncate">{bond.name}</p>
+          <p className="text-xs text-gray-500">{bond.internal_id} · {bond.currency}</p>
+        </div>
       </div>
       <div className="text-right ml-4">
         <p className="text-sm font-mono">{bond.price != null ? bond.price.toFixed(2) : '-'}</p>
@@ -2348,8 +2372,36 @@ function BondRow({ bond }: { bond: Bond }) {
 }
 
 function CurrencyBadge({ currency }: { currency: string }) {
-  const colors: Record<string, string> = { USD: 'bg-blue-900 text-blue-300', BYN: 'bg-green-900 text-green-300', EUR: 'bg-purple-900 text-purple-300', XAU: 'bg-amber-900 text-amber-300', XAG: 'bg-gray-700 text-gray-300', XPT: 'bg-slate-700 text-slate-300' };
+  const colors: Record<string, string> = { USD: 'bg-blue-900 text-blue-300', BYN: 'bg-green-900 text-green-300', EUR: 'bg-purple-900 text-green-300', XAU: 'bg-amber-900 text-amber-300', XAG: 'bg-gray-700 text-gray-300', XPT: 'bg-slate-700 text-slate-300' };
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[currency] || 'bg-gray-800 text-gray-400'}`}>{currency}</span>;
+}
+
+function BondIcon({ issuer, logo, size = 20 }: { issuer?: string | null; logo?: string | null; size?: number }) {
+  const [errored, setErrored] = useState(false);
+  const initial = (issuer || '?').trim().charAt(0).toUpperCase() || '?';
+  const dim = { width: size, height: size };
+  if (logo && !errored) {
+    return (
+      <img
+        src={logo}
+        alt={issuer || ''}
+        width={size}
+        height={size}
+        style={dim}
+        className="rounded-full object-cover bg-gray-800 ring-1 ring-gray-700 shrink-0"
+        onError={() => setErrored(true)}
+        loading="lazy"
+      />
+    );
+  }
+  return (
+    <span
+      style={dim}
+      className="rounded-full bg-gradient-to-br from-emerald-700 to-emerald-900 text-emerald-200 flex items-center justify-center text-[10px] font-bold shrink-0 ring-1 ring-gray-700"
+    >
+      {initial}
+    </span>
+  );
 }
 
 function TierBadge({ tier }: { tier: string | null }) {

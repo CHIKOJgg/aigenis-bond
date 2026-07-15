@@ -38,6 +38,7 @@ class Bond(BaseModel):
     internal_id: str = Field(..., description="Внутренний id Aigenis (PK)")
     name: str
     issuer: str | None = None
+    issuer_logo: str | None = None
     currency: Currency
     nominal: Decimal | None = None
 

@@ -32,6 +32,7 @@ class BondORM(Base):
     isin: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    issuer_logo: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     currency: Mapped[str] = mapped_column(String(8), nullable=False)
     nominal: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)

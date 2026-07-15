@@ -75,6 +75,7 @@ export interface Bond {
   maturity_date: string | null;
   status: string;
   issuer: string | null;
+  issuer_logo: string | null;
   fetched_at: string | null;
 }
 

@@ -154,6 +154,7 @@ class BondResponse(BaseModel):
     maturity_date: str | None = None
     status: str
     issuer: str | None = None
+    issuer_logo: str | None = None
     fetched_at: str | None = None
 
 
@@ -356,6 +357,7 @@ def _bond_to_response(b: BondORM) -> BondResponse:
         maturity_date=b.maturity_date.isoformat() if b.maturity_date else None,
         status=b.status,
         issuer=b.issuer,
+        issuer_logo=b.issuer_logo,
         fetched_at=b.fetched_at.isoformat() if b.fetched_at else None,
     )
 
