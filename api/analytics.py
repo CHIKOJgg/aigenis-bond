@@ -158,7 +158,7 @@ async def api_top(limit: int = Query(20, ge=1, le=200), offset: int = Query(0, g
     ]
 
 
-@router.get("/bonds/{currency}")
+@router.get("/bonds/currency/{currency}")
 async def api_bonds_by_currency(currency: str):
     bonds = await _all_bonds()
     out = [b for b in bonds if str(b.currency).upper() == currency.upper()]
@@ -167,8 +167,8 @@ async def api_bonds_by_currency(currency: str):
             "internal_id": b.internal_id,
             "name": b.name,
             "currency": b.currency,
-            "yield_to_maturity": float(b.yield_to_maturity) if b.yield_to_maturity else None,
-            "price": float(b.price) if b.price else None,
+            "yield_to_maturity": float(b.yield_to_maturity) if b.yield_to_maturity is not None else None,
+            "price": float(b.price) if b.price is not None else None,
             "issuer": b.issuer,
             "maturity_date": b.maturity_date.isoformat() if b.maturity_date else None,
             "status": b.status,

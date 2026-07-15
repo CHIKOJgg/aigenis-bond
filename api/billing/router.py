@@ -5,6 +5,9 @@ aggregator. Telegram Stars remain available inside the bot.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +20,7 @@ from api.billing.schemas import (
     SubscriptionResponse,
 )
 from api.billing.service import PLANS, is_yookassa_configured
+from scraper.config import get_settings
 from scraper.logging import get_logger
 
 logger = get_logger("api.billing")
@@ -131,6 +135,19 @@ async def yookassa_webhook(request: Request):
     https://yookassa.ru/merchant/notifications
     """
     body = await request.body()
+
+    # Verify webhook signature (YooKassa signs with SHA-256 HMAC)
+    settings = get_settings()
+    secret = getattr(settings, "yookassa_secret_key", "") or ""
+    if secret:
+        auth_header = request.headers.get("Authorization", "")
+        expected = hmac.new(
+            secret.encode(), body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(auth_header, expected):
+            logger.warning("webhook_signature_invalid")
+            raise HTTPException(status_code=403, detail="Invalid signature")
+
     event_type = await billing_service.handle_webhook(body)
     if not event_type:
         raise HTTPException(status_code=400, detail="Invalid webhook")

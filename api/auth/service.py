@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from scraper.logging import get_logger
 from scraper.orm import UserORM
 
-logger = get_logger("auth.service")
-
 logger = get_logger("api.auth")
 
 _DEV_DEFAULT_SECRET = "dev-insecure-secret-do-not-use-in-production"

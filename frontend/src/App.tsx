@@ -58,8 +58,18 @@ function AppInner() {
     if (params.get('success') === '1') {
       setToast(t('toast.paymentSuccess'));
       window.history.replaceState({}, '', window.location.pathname);
-      refreshUser().catch(() => {});
-      setTimeout(() => setToast(null), 6000);
+      // Poll for tier update — webhook may take a few seconds
+      let attempts = 0;
+      const poll = () => {
+        refreshUser().catch(() => {}).finally(() => {
+          attempts++;
+          if (attempts < 6 && user?.subscription_tier === 'free') {
+            setTimeout(poll, 2000);
+          }
+        });
+      };
+      poll();
+      setTimeout(() => setToast(null), 15000);
     }
   }, [refreshUser]);
 
@@ -693,7 +703,16 @@ function WatchlistCard() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return null;
+  if (loading) return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold flex items-center gap-2">
+        <Star size={16} className="text-amber-400" /> {t('watchlist.title')}
+      </h3>
+      <div className="mt-3 space-y-2">
+        {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-gray-800 rounded animate-pulse" />)}
+      </div>
+    </div>
+  );
   if (items.length === 0) return null;
 
   const exportNow = () => {
@@ -734,6 +753,7 @@ function WatchlistCard() {
 function MarketsOverview({ onPick }: { onPick?: (cur: string) => void }) {
   const { t } = useI18n();
   const [tiles, setTiles] = useState<{ currency: string; count: number; avg: number | null }[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -759,9 +779,10 @@ function MarketsOverview({ onPick }: { onPick?: (cur: string) => void }) {
         })).sort((a, b) => b.count - a.count);
         setTiles(rows);
       })
-      .catch(() => {});
+      .finally(() => setLoaded(true));
   }, []);
 
+  if (!loaded) return null;
   if (tiles.length === 0) return null;
 
   return (
@@ -1432,18 +1453,26 @@ function ScoresPage() {
   const { t } = useI18n();
   const [scores, setScores] = useState<BondScore[]>([]);
   const [minScore, setMinScore] = useState('');
+  const [debouncedMinScore, setDebouncedMinScore] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<Bond | null>(null);
 
   useEffect(() => {
+    const timer = setTimeout(() => setDebouncedMinScore(minScore), 300);
+    return () => clearTimeout(timer);
+  }, [minScore]);
+
+  useEffect(() => {
+    let alive = true;
     setLoading(true);
     setError(null);
-    api.scores({ min_score: minScore ? Number(minScore) : undefined, limit: 100 })
-      .then(setScores)
-      .catch(() => setError('Failed to load scores'))
-      .finally(() => setLoading(false));
-  }, [minScore]);
+    api.scores({ min_score: debouncedMinScore ? Number(debouncedMinScore) : undefined, limit: 100 })
+      .then((s) => { if (alive) setScores(s); })
+      .catch(() => { if (alive) setError('Failed to load scores'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [debouncedMinScore]);
 
   const openDetail = async (id: string) => {
     try {
@@ -1751,9 +1780,15 @@ function DeskRepo({ onSubscribe }: { onSubscribe?: () => void }) {
 
   const calculate = async () => {
     if (!bondId) return;
+    const n = parseFloat(notional);
+    const tenorVal = parseInt(tenor);
+    if (isNaN(n) || isNaN(tenorVal) || n <= 0 || tenorVal <= 0) {
+      setError('desk.repoInvalidInput');
+      return;
+    }
     setBusy(true); setError(null); setLocked(false);
     try {
-      const r = await api.analytics.repo({ bond_id: bondId, notional: parseFloat(notional), tenor_days: parseInt(tenor) });
+      const r = await api.analytics.repo({ bond_id: bondId, notional: n, tenor_days: tenorVal });
       setResult(r);
     } catch (e: unknown) {
       setResult(null);
@@ -1764,7 +1799,14 @@ function DeskRepo({ onSubscribe }: { onSubscribe?: () => void }) {
     }
   };
 
-  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
+  if (locked) return (
+    <div className="space-y-4">
+      <UpgradePrompt onSubscribe={onSubscribe} />
+      <button onClick={() => setLocked(false)} className="text-sm text-gray-400 hover:text-white transition-colors">
+        {t('action.back')}
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -2071,6 +2113,8 @@ function SubscribePage() {
   const { t, lang } = useI18n();
   const [info, setInfo] = useState<SubscribeInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [payError, setPayError] = useState<string | null>(null);
+  const [paying, setPaying] = useState(false);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -2083,16 +2127,16 @@ function SubscribePage() {
   const isOnTrial = user?.trial_end && new Date(user.trial_end) > new Date();
   const trialDaysLeft = isOnTrial && user?.trial_end ? Math.ceil((new Date(user.trial_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 0;
 
-  const [payError, setPayError] = useState<string | null>(null);
-
   const handleYooKassaPayment = async (plan: string) => {
     try {
       setPayError(null);
+      setPaying(true);
       const base = window.location.origin;
       const result = await api.billing.createPayment(plan, `${base}/subscribe?success=1`, `${base}/subscribe`);
       if (result.confirmation_url) window.location.href = result.confirmation_url;
     } catch (e: unknown) {
       setPayError(e instanceof Error ? e.message : t('payment.error'));
+      setPaying(false);
     }
   };
 
@@ -2137,8 +2181,9 @@ function SubscribePage() {
                   {p.tier === 'pro' ? t('subscribe.proDesc') : t('subscribe.entDesc')}
                 </p>
                 <button onClick={() => handleYooKassaPayment(p.tier)}
-                  className="mt-4 w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm font-medium transition-colors">
-                  {t('subscribe.payCard')}
+                  disabled={paying}
+                  className="mt-4 w-full bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:cursor-wait text-white py-2 rounded-lg text-sm font-medium transition-colors">
+                  {paying ? t('subscribe.processing') : t('subscribe.payCard')}
                 </button>
               </div>
             ))}
@@ -2151,18 +2196,22 @@ function SubscribePage() {
         <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
           <Star size={18} className="text-amber-400" /> Telegram Stars
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {(info?.plans ?? []).map(p => (
-            <div key={p.tier} className="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-bold">{p.name}</h3>
-                <span className="flex items-center gap-1 text-amber-400 font-semibold"><Star size={15} />{p.stars}</span>
+        {(info?.plans ?? []).length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {(info?.plans ?? []).map(p => (
+              <div key={p.tier} className="bg-gray-900 rounded-xl border border-gray-800 p-5 flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-lg font-bold">{p.name}</h3>
+                  <span className="flex items-center gap-1 text-amber-400 font-semibold"><Star size={15} />{p.stars}</span>
+                </div>
+                <p className="text-sm text-gray-400 flex-1">{p.blurb}</p>
+                <p className="text-xs text-gray-500 mt-3">{t('subscribe.duration', { days: p.duration_days })}</p>
               </div>
-              <p className="text-sm text-gray-400 flex-1">{p.blurb}</p>
-              <p className="text-xs text-gray-500 mt-3">{t('subscribe.duration', { days: p.duration_days })}</p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">{t('subscribe.starsUnavailable')}</p>
+        )}
 
         {info?.deep_link ? (
           <a href={info.deep_link} target="_blank" rel="noopener noreferrer"

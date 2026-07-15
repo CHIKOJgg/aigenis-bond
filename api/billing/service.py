@@ -153,6 +153,11 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             sub = SubscriptionORM(user_id=user_id)
             session.add(sub)
 
+        # Idempotency: skip if this payment was already processed
+        if sub.yookassa_payment_id == payment_id and sub.status == "active":
+            await session.commit()
+            return
+
         # Update subscription
         sub.yookassa_payment_id = payment_id
         sub.plan = plan
