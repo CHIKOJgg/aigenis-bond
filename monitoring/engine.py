@@ -226,6 +226,43 @@ def assess_data_quality(bonds, now: datetime | None = None) -> DataQualityReport
     )
 
 
+# Source-health states used by the website/API to degrade gracefully when the
+# upstream data source (Aigenis) is unavailable or returning stale data.
+SOURCE_OK = "ok"
+SOURCE_DEGRADED = "degraded"  # stale but present — show a warning banner
+SOURCE_DOWN = "down"  # no usable data — block analytics, show fallback
+
+
+def classify_source_health(report: DataQualityReport) -> str:
+    """Map a data-quality report to a coarse source-health state."""
+    if report.total == 0 or report.active == 0:
+        return SOURCE_DOWN
+    if not report.issues:
+        return SOURCE_OK
+    # Staleness / empty-YTM are degradation, not a hard outage.
+    return SOURCE_DEGRADED
+
+
+async def data_source_health(session: AsyncSession) -> dict[str, object]:
+    """Snapshot of upstream data-source health for graceful degradation.
+
+    Returns a small dict the API/website can embed in responses to decide
+    whether to show live analytics, a 'data may be stale' banner, or a
+    'service unavailable' fallback.
+    """
+    bonds = list((await session.execute(select(BondORM))).scalars().all())
+    report = assess_data_quality(bonds)
+    return {
+        "status": classify_source_health(report),
+        "total": report.total,
+        "active": report.active,
+        "empty_ytm_pct": round(report.empty_ytm_pct, 1),
+        "latest_fetch": report.latest_fetch.isoformat() if report.latest_fetch else None,
+        "stale_hours": round(report.stale_hours, 1) if report.stale_hours is not None else None,
+        "issues": report.issues,
+    }
+
+
 async def detect_data_quality(session: AsyncSession) -> MonitoringResult:
     """Persist alerts for data-quality issues (empty YTM %, stale data)."""
     bonds = list((await session.execute(select(BondORM))).scalars().all())

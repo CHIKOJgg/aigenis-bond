@@ -140,6 +140,22 @@ async def _start_metrics_server() -> None:
 
 
 async def main(token: str) -> None:
+    from scraper.config import get_settings
+    from scraper.observability import init_sentry
+
+    if init_sentry(get_settings().sentry_dsn, environment=get_settings().environment):
+        try:
+            import sentry_sdk
+
+            logger.add(
+                lambda msg: sentry_sdk.capture_message(msg.record["message"], "error")
+                if msg.record["level"].no >= 40
+                else None,
+                level="ERROR",
+            )
+        except Exception:
+            pass
+
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(router)

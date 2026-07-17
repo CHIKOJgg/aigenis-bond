@@ -28,6 +28,7 @@ from scraper.commands_v4 import (
 from scraper.config import get_settings
 from scraper.health import health as health_cmd
 from scraper.logging import configure_logging, get_logger
+from scraper.observability import init_sentry
 from scraper.pipeline import backfill_history, run_once
 
 logger = get_logger("scraper.cli")
@@ -155,6 +156,7 @@ async def _cmd_fx_metals() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
+    init_sentry(get_settings().sentry_dsn, environment=get_settings().environment)
     parser = _build_parser()
     args = parser.parse_args(argv)
 

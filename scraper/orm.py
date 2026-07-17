@@ -532,6 +532,32 @@ class AlertRuleORM(Base):
     )
 
 
+class CompanyORM(Base):
+    """Профиль эмитента (компании): описание, сектор, почему важна.
+
+    Ключ ``issuer`` совпадает со строкой ``bonds.issuer`` и связывает профиль
+    с выпусками облигаций. Заполняется скриптом-сидом + вручную.
+    """
+
+    __tablename__ = "companies"
+
+    issuer: Mapped[str] = mapped_column(String(512), primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    why_important: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    website: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_companies_sector", "sector"),
+        Index("ix_companies_name", "name"),
+    )
+
+
 class AlertEventORM(Base):
     """Срабатывания пользовательских алертов (лента уведомлений)."""
 

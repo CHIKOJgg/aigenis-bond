@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     web_username: str = ""
     web_password: str = ""
     data_api_url: str | None = None
+    # API-mode history endpoint template ({id} = internal security id). Defaults
+    # to the invest.aigenis.by market-data endpoint; override if the API path
+    # differs. Set empty to disable history collection in API mode.
+    api_history_path: str = "/v1/security_history/{id}/"
 
     headless: bool = True
     use_stealth: bool = True

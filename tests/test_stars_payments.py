@@ -115,10 +115,10 @@ class _FakeUser:
 
 
 class _FakeMessage:
-    def __init__(self, payment):
+    def __init__(self, payment, uid: int = 100_004):
         self.successful_payment = payment
         self.refunded_payment = None
-        self.from_user = _FakeUser(100_004)
+        self.from_user = _FakeUser(uid)
         self.answers: list = []
 
     async def answer(self, *args, **kwargs):
@@ -139,5 +139,48 @@ def test_successful_payment_handler_grants_and_dedupes():
         msg2 = _FakeMessage(_FakePayment("stars_sub:pro", "chg-handler"))
         await stars_payments.on_successful_payment(msg2)
         assert len(msg2.answers) == 0
+
+    _run(run)
+
+
+def test_successful_payment_rejects_unknown_tier_payload():
+    """A forged/unknown tier in the payload must not grant any default tier."""
+
+    async def run():
+        async with session_scope() as s:
+            await subs.get_or_create_user_by_telegram(s, 100_005)
+
+        msg = _FakeMessage(_FakePayment("stars_sub:ultra", "chg-forged"), uid=100_005)
+        await stars_payments.on_successful_payment(msg)
+        # No paid tier stored, no charge recorded, no confirmation sent.
+        async with session_scope() as s:
+            user = (
+                await s.execute(
+                    UserORM.__table__.select().where(UserORM.telegram_id == 100_005)
+                )
+            ).mappings().first()
+        assert user["subscription_tier"] == "free"
+        assert user["last_charge_id"] is None
+        assert len(msg.answers) == 0
+
+    _run(run)
+
+
+def test_successful_payment_ignores_non_subscription_payload():
+    async def run():
+        async with session_scope() as s:
+            await subs.get_or_create_user_by_telegram(s, 100_006)
+
+        msg = _FakeMessage(_FakePayment("something_else", "chg-x"), uid=100_006)
+        await stars_payments.on_successful_payment(msg)
+        async with session_scope() as s:
+            user = (
+                await s.execute(
+                    UserORM.__table__.select().where(UserORM.telegram_id == 100_006)
+                )
+            ).mappings().first()
+        assert user["subscription_tier"] == "free"
+        assert user["last_charge_id"] is None
+        assert len(msg.answers) == 0
 
     _run(run)

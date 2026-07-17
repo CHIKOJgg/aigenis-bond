@@ -139,5 +139,9 @@ def test_bond_analysis_endpoint_gated_and_full():
             assert body["analysis"]["summary"]
             assert "relative_value" in body
             assert "ml_prediction" in body
+            # Every advice-like payload must carry the legal disclaimer.
+            assert body["disclaimer"]
+            assert "рекомендацией" in body["disclaimer"]
+            assert body["analysis"]["disclaimer"]
 
     _run(run)

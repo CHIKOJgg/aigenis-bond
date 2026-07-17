@@ -20,6 +20,7 @@ from desk import repo as desk_repo
 from ml.repository import predictions_for_bond
 from notifications.alerts_repository import create_rule, list_rules
 from portfolio.income import annual_income, bond_cashflows
+from scoring.disclaimer import DISCLAIMER_SHORT
 from scoring.engine import score_bond
 from scoring.explain import explain_score
 from scoring.repository import get_score, score_from_orm
@@ -289,6 +290,7 @@ async def _run_bond_action(callback_query, iid: str, action: str) -> None:
                     "\n🔒 Полный разбор «почему покупать или нет» — в подписке Pro.\n"
                     "Нажмите /subscribe, чтобы открыть."
                 )
+            lines.append(f"\n{DISCLAIMER_SHORT}")
             text = "\n".join(lines)
     elif action == "income":
         bonds = await bonds_for_bot()
@@ -339,7 +341,7 @@ async def _run_bond_action(callback_query, iid: str, action: str) -> None:
                 f"{float(p.predicted_ytm) if p.predicted_ytm is not None else '—'}\n"
                 f"Прогноз доходности: "
                 f"{float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
-                f"Объяснение:\n{expl or '—'}"
+                f"Объяснение:\n{expl or '—'}\n\n{DISCLAIMER_SHORT}"
             )
     elif action == "duration":
         bonds = await bonds_for_bot()

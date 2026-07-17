@@ -30,7 +30,6 @@ def test_gated_endpoints_return_402_for_anonymous():
         "/api/v1/desk/curve",
         "/api/v1/portfolio",
         "/api/v1/forecast",
-        "/api/v1/recommendations",
         "/api/v1/alerts",
     ):
         resp = client.get(path)

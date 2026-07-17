@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from ml.models import Decision, Prediction
-from recommendations.engine import _confidence_rank, recommend_bonds
+from recommendations.engine import _confidence_rank, recommend_bonds, recommend_for_issuer
 from scoring.models import UserPreferences
 
 
@@ -85,3 +85,16 @@ def test_recommend_sorts_by_decision_rank(stub_predict):
     assert out[0].decision == "buy"
     # top_k default 10; ranks assigned sequentially.
     assert out[0].rank == 1
+
+
+def test_recommend_for_issuer_aggregates(stub_predict):
+    bonds = [
+        {"internal_id": "B1", "name": "Облигация 1", "issuer": "ОАО Ромашка", "currency": "USD", "yield_to_maturity": 9.0, "status": "active"},
+        {"internal_id": "B2", "name": "Облигация 2", "issuer": "ОАО Ромашка", "currency": "USD", "yield_to_maturity": 9.0, "status": "active"},
+    ]
+    prefs = UserPreferences(user_id=1, watchlist=["B1", "B2"])
+    rec = recommend_for_issuer(bonds, prefs, asof=date(2026, 1, 1))
+    assert rec is not None
+    assert rec.internal_id == "ОАО Ромашка"
+    assert rec.reasons  # есть сводная причина по числу выпусков
+    assert rec.risks is not None

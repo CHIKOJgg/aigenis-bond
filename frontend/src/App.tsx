@@ -3,7 +3,7 @@ import { api, ApiError, exportCsv } from './lib/api';
 import type {
   Bond, BondScore, Stats, SubscribeInfo, WatchlistItem,
   AnalyticsCurve, AnalyticsRV, AnalyticsCarry, AnalyticsStress, AnalyticsRepo,
-  AnalyticsPortfolio, AnalyticsForecast, AnalyticsRecommendation, AnalyticsAlert,
+  AnalyticsPortfolio, AnalyticsForecast, AnalyticsAlert, CompanySummary,
 } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { PaywallProvider, usePaywall } from './lib/PaywallContext';
@@ -13,13 +13,15 @@ import { PaywallModal } from './PaywallModal';
 import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
 import { LegalPages } from './LegalPages';
-import { OnboardingTour, isOnboardingNeeded } from './OnboardingTour';
+import { OnboardingFlow, isOnboardingNeeded } from './OnboardingFlow';
+import { CompanyPage } from './components/CompanyPage';
+import { RecommendationsPage } from './components/RecommendationsPage';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
-import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check } from 'lucide-react';
+import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check, Building2 } from 'lucide-react';
 
-const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'ml', 'alerts']);
+const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'alerts']);
 
-type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe';
+type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe' | 'company' | 'recommendations';
 
 function trialDaysWord(n: number, lang: Lang): string {
   if (lang === 'en') return n === 1 ? 'day' : 'days';
@@ -50,6 +52,8 @@ function AppInner() {
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
   const [legalPage, setLegalPage] = useState<'terms' | 'privacy' | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(isOnboardingNeeded());
+  const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  const [selectedBond, setSelectedBond] = useState<Bond | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   // Detect successful YooKassa payment redirect (?success=1) and refresh tier.
@@ -80,10 +84,12 @@ function AppInner() {
   const trialExpiring = trialDaysLeft != null && trialDaysLeft <= 3;
 
   if (showOnboarding) {
-    return <OnboardingTour
+    return <OnboardingFlow
       onDone={() => setShowOnboarding(false)}
       onNavigate={(p) => {
         if (p === 'profile') setPage('settings');
+        else if (p === 'companies') { setSelectedCompany(null); setPage('company'); }
+        else if (p === 'recommendations') setPage('recommendations');
         else setPage(p as Page);
         setShowOnboarding(false);
       }}
@@ -112,6 +118,7 @@ function AppInner() {
     { id: 'dashboard', label: t('nav.dashboard'), icon: <BarChart3 size={16} /> },
     { id: 'bonds', label: t('nav.bonds'), icon: <Banknote size={16} /> },
     { id: 'scores', label: t('nav.scores'), icon: <Shield size={16} /> },
+    { id: 'ml', label: t('nav.recommendations') || 'Рекомендации', icon: <Brain size={16} /> },
     { id: 'desk', label: t('nav.desk'), icon: <LineChart size={16} />, premium: true },
     { id: 'portfolio', label: t('nav.portfolio'), icon: <PieChart size={16} />, premium: true },
     { id: 'forecast', label: t('nav.forecast'), icon: <TrendingUp size={16} />, premium: true },
@@ -128,6 +135,20 @@ function AppInner() {
     setPage(id);
   };
 
+  const openBond = async (id: string) => {
+    try {
+      const b = await api.bonds.get(id);
+      setSelectedBond(b);
+    } catch {
+      setSelectedBond(null);
+    }
+  };
+
+  const openCompany = (issuer: string) => {
+    setSelectedCompany(issuer);
+    setPage('company');
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <header className="border-b border-gray-800 bg-gray-900 sticky top-0 z-40">
@@ -136,7 +157,7 @@ function AppInner() {
             <TrendingUp className="text-emerald-400" size={22} />
             <span className="hidden sm:inline">Aigenis Bonds</span>
           </h1>
-          <GlobalSearch />
+          <GlobalSearch onOpenBond={openBond} onOpenCompany={openCompany} />
           <nav className="hidden md:flex gap-1 overflow-x-auto">
             {navItems.map(({ id, label, icon, premium }) => {
               const locked = premium && user?.subscription_tier === 'free';
@@ -191,18 +212,28 @@ function AppInner() {
             </button>
           </div>
         )}
-        {page === 'dashboard' && <Dashboard onPickCurrency={(cur) => { sessionStorage.setItem('bonds_currency', cur); setPage('bonds'); }} />}
+        {page === 'dashboard' && <Dashboard onPickCurrency={(cur) => { sessionStorage.setItem('bonds_currency', cur); setPage('bonds'); }} onOpenCompany={openCompany} />}
         {page === 'bonds' && <BondsPage />}
         {page === 'scores' && <ScoresPage />}
         {page === 'desk' && <DeskPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'portfolio' && <PortfolioPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'forecast' && <ForecastPage onSubscribe={() => setPage('subscribe')} />}
-        {page === 'ml' && <MLPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'ml' && <RecommendationsPage onSubscribe={() => setPage('subscribe')} onOpenBond={openBond} />}
+        {page === 'recommendations' && <RecommendationsPage onSubscribe={() => setPage('subscribe')} onOpenBond={openBond} />}
+        {page === 'company' && selectedCompany && <CompanyPage issuer={selectedCompany} onBack={() => setPage('dashboard')} onOpenBond={openBond} />}
         {page === 'alerts' && <AlertsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'calculator' && <BondCalculator />}
         {page === 'settings' && <SettingsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'subscribe' && <SubscribePage />}
       </main>
+      {selectedBond && (
+        <BondDetailModal
+          bond={selectedBond}
+          onClose={() => {
+            setSelectedBond(null);
+          }}
+        />
+      )}
       <PaywallModal onSubscribe={() => setPage('subscribe')} />
       <footer className="border-t border-gray-800 bg-gray-900 mt-8">
         <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
@@ -226,27 +257,36 @@ function AppInner() {
   );
 }
 
-function GlobalSearch() {
+function GlobalSearch({ onOpenBond, onOpenCompany }: { onOpenBond?: (id: string) => void; onOpenCompany?: (issuer: string) => void }) {
   const { t } = useI18n();
   const { user } = useAuth();
   const [all, setAll] = useState<Bond[] | null>(null);
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<Bond | null>(null);
   const [loadingBond, setLoadingBond] = useState(false);
+  const [searchResults, setSearchResults] = useState<{ bonds: { internal_id: string; name: string; currency: string; issuer: string | null }[]; companies: { issuer: string; name: string; sector: string | null }[] } | null>(null);
+  const [searching, setSearching] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const loadAll = () => {
     if (!user || all) return;
     let alive = true;
     const timer = setTimeout(() => {
       api.bonds
         .list({ limit: 1000 })
-        .then((b) => { if (alive) setAll(b); })
-        .catch(() => { if (alive) setAll(null); });
+        .then((b) => {
+          if (alive) setAll(b);
+        })
+        .catch(() => {
+          if (alive) setAll(null);
+        });
     }, 1000);
-    return () => { alive = false; clearTimeout(timer); };
-  }, [user, all]);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  };
+  useEffect(loadAll, [user, all]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -256,21 +296,28 @@ function GlobalSearch() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  const results = useMemo(() => {
-    if (!all || q.trim().length < 1) return [];
-    const n = q.trim().toLowerCase();
-    return all
-      .filter((b) => b.name.toLowerCase().includes(n) || b.internal_id.toLowerCase().includes(n))
-      .slice(0, 8);
-  }, [all, q]);
+  useEffect(() => {
+    if (q.trim().length < 1) {
+      setSearchResults(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSearching(true);
+      api.analytics
+        .search(q.trim())
+        .then((res) => setSearchResults({ bonds: res.bonds, companies: res.companies }))
+        .catch(() => setSearchResults({ bonds: [], companies: [] }))
+        .finally(() => setSearching(false));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [q]);
 
   const openBond = async (id: string) => {
     setLoadingBond(true);
     try {
-      const b = await api.bonds.get(id);
-      setSelected(b);
+      onOpenBond?.(id);
     } catch {
-      setSelected(null);
+      /* ignore */
     } finally {
       setLoadingBond(false);
       setOpen(false);
@@ -278,10 +325,17 @@ function GlobalSearch() {
     }
   };
 
+  const openCompany = (issuer: string) => {
+    setOpen(false);
+    setQ('');
+    onOpenCompany?.(issuer);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && results.length > 0) {
+    const firstBond = searchResults?.bonds?.[0];
+    if (e.key === 'Enter' && firstBond) {
       e.preventDefault();
-      openBond(results[0].internal_id);
+      openBond(firstBond.internal_id);
     } else if (e.key === 'Escape') {
       setOpen(false);
     }
@@ -289,17 +343,23 @@ function GlobalSearch() {
 
   if (!user) return null;
 
+  const bondHits = searchResults?.bonds ?? [];
+  const companyHits = searchResults?.companies ?? [];
+
   return (
     <div className="relative" ref={boxRef}>
       <div className="flex items-center gap-2 bg-gray-800 rounded-lg pl-3 pr-2 py-2 w-full">
-        {loadingBond ? (
+        {loadingBond || searching ? (
           <span className="w-4 h-4 border-2 border-gray-600 border-t-emerald-400 rounded-full animate-spin shrink-0" />
         ) : (
           <Search size={16} className="text-gray-500 shrink-0" />
         )}
         <input
           value={q}
-          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
           placeholder={t('search.placeholder')}
@@ -307,27 +367,45 @@ function GlobalSearch() {
           aria-label={t('search.aria')}
         />
       </div>
-      {open && results.length > 0 && (
+      {open && (bondHits.length > 0 || companyHits.length > 0) && (
         <div className="absolute z-50 mt-1 w-72 md:w-96 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto">
-          {results.map((b) => (
+          {companyHits.length > 0 && (
+            <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-800/50">Компании</div>
+          )}
+          {companyHits.map((c) => (
+            <button
+              key={`c-${c.issuer}`}
+              onClick={() => openCompany(c.issuer)}
+              className="w-full text-left px-4 py-2.5 hover:bg-gray-800 flex items-center gap-3 border-b border-gray-800"
+            >
+              <Building2 size={16} className="text-emerald-400 shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm text-white truncate">{c.name}</span>
+                {c.sector && <span className="block text-xs text-gray-500">{c.sector}</span>}
+              </span>
+            </button>
+          ))}
+          {bondHits.length > 0 && <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-800/50">Облигации</div>}
+          {bondHits.map((b) => (
             <button
               key={b.internal_id}
               onClick={() => openBond(b.internal_id)}
               className="w-full text-left px-4 py-2.5 hover:bg-gray-800 flex items-center justify-between gap-3 border-b border-gray-800 last:border-0"
             >
               <span className="min-w-0 flex items-center gap-2">
-                <BondIcon issuer={b.issuer} logo={b.issuer_logo} />
+                <BondIcon issuer={b.issuer} logo={null} />
                 <span>
                   <span className="block text-sm text-white truncate">{b.name}</span>
                   <span className="block text-xs text-gray-500 font-mono">{b.internal_id}</span>
                 </span>
               </span>
-              <span className="shrink-0"><CurrencyBadge currency={b.currency} /></span>
+              <span className="shrink-0">
+                <CurrencyBadge currency={b.currency} />
+              </span>
             </button>
           ))}
         </div>
       )}
-      {selected && <BondDetailModal bond={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
@@ -507,11 +585,12 @@ function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   );
 }
 
-function Dashboard({ onPickCurrency }: { onPickCurrency?: (cur: string) => void }) {
+function Dashboard({ onPickCurrency, onOpenCompany }: { onPickCurrency?: (cur: string) => void; onOpenCompany?: (issuer: string) => void }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<Stats | null>(null);
   const [bonds, setBonds] = useState<Bond[]>([]);
   const [scores, setScores] = useState<BondScore[]>([]);
+  const [companies, setCompanies] = useState<CompanySummary[]>([]);
   const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -524,11 +603,13 @@ function Dashboard({ onPickCurrency }: { onPickCurrency?: (cur: string) => void 
       api.bonds.list({ limit: 5 }).catch(() => []),
       api.scores({ limit: 5 }).catch(() => []),
       api.health().catch(() => null),
-    ]).then(([s, b, sc, h]) => {
+      api.analytics.companies({ limit: 6 }).catch(() => []),
+    ]).then(([s, b, sc, h, c]) => {
       setStats(s);
       setBonds(b);
       setScores(sc);
       setHealth(h);
+      setCompanies(c as CompanySummary[]);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -565,6 +646,37 @@ function Dashboard({ onPickCurrency }: { onPickCurrency?: (cur: string) => void 
       <CurrencyTracker />
 
       <MarketsOverview onPick={onPickCurrency} />
+
+      {companies.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <Building2 size={16} className="text-emerald-400" /> Топ компаний-эмитентов
+            </h3>
+            <button onClick={() => onOpenCompany?.(companies[0].issuer)} className="text-xs text-emerald-400 hover:underline">
+              Смотреть всё
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {companies.map((c) => (
+              <button
+                key={c.issuer}
+                onClick={() => onOpenCompany?.(c.issuer)}
+                className="text-left bg-gray-800/40 hover:bg-gray-800 border border-gray-800 hover:border-emerald-700 rounded-lg p-3 transition-colors"
+              >
+                <div className="font-medium text-white truncate">{c.name}</div>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  {c.sector && <span className="px-2 py-0.5 rounded text-xs bg-gray-900 text-gray-300">{c.sector}</span>}
+                  <span className="text-xs text-gray-500">{c.bond_count} выпусков</span>
+                  {c.avg_yield_to_maturity != null && (
+                    <span className="text-xs text-emerald-400">YTM {c.avg_yield_to_maturity}%</span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <AlertsWidget />
 
@@ -1993,60 +2105,6 @@ function ForecastPage({ onSubscribe }: { onSubscribe?: () => void }) {
           </tbody>
         </table>
         {rows.length === 0 && <EmptyState message={t('forecast.empty')} />}
-      </div>
-    </div>
-  );
-}
-
-function MLPage({ onSubscribe }: { onSubscribe?: () => void }) {
-  const { t } = useI18n();
-  const { data, loading, error, locked } = useGated<AnalyticsRecommendation[]>(() => api.analytics.recommendations(20));
-
-  const decisionColor = (d: string) => {
-    switch (d) {
-      case 'buy': return 'bg-emerald-900 text-emerald-300';
-      case 'hold': return 'bg-blue-900 text-blue-300';
-      case 'wait': return 'bg-amber-900 text-amber-300';
-      case 'avoid': return 'bg-red-900 text-red-300';
-      default: return 'bg-gray-800 text-gray-400';
-    }
-  };
-
-  if (loading) return <LoadingSkeleton />;
-  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
-  if (error) return <ErrorBanner message={error} />;
-
-  const predictions = data ?? [];
-  return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold">{t('ml.title')}</h2>
-      <p className="text-sm text-gray-400">{t('ml.subtitle')}</p>
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-800 text-gray-400">
-              <th className="text-left p-3">#</th>
-              <th className="text-left p-3">{t('common.bond')}</th>
-              <th className="text-left p-3">{t('ml.decision')}</th>
-              <th className="text-right p-3">{t('common.score')}</th>
-              <th className="text-right p-3">{t('ml.predReturn')}</th>
-              <th className="text-right p-3">{t('ml.confidence')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {predictions.map((p) => (
-              <tr key={p.rank} className="border-b border-gray-800 hover:bg-gray-800/50">
-                <td className="p-3 text-gray-500 text-xs">{p.rank}</td>
-                <td className="p-3"><span className="text-white text-sm">{p.name}</span><span className="block text-xs text-gray-500 font-mono">{p.internal_id}</span></td>
-                <td className="p-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${decisionColor(p.decision)}`}>{p.decision.toUpperCase()}</span></td>
-                <td className="p-3 text-right font-mono text-emerald-400">{p.score != null ? p.score.toFixed(1) : '-'}</td>
-                <td className="p-3 text-right font-mono">{p.predicted_return_pct != null ? `${p.predicted_return_pct.toFixed(2)}%` : '-'}</td>
-                <td className="p-3 text-right font-mono">{(p.confidence * 100).toFixed(0)}%</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {predictions.length === 0 && <EmptyState message={t('ml.empty')} />}
       </div>
     </div>
   );

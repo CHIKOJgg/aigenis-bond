@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import date
 from typing import Any
 
+import httpx
 from playwright.async_api import (
     Browser,
     BrowserContext,
@@ -114,6 +115,7 @@ class AigenisClient:
         self._token_expires: float = 0.0
         self._auth_lock = asyncio.Lock()
         self._id_by_internal: dict[str, int] = {}
+        self._http: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> AigenisClient:
         await self.start()
@@ -147,6 +149,11 @@ class AigenisClient:
             except Exception:
                 logger.warning("stealth_apply_failed")
         self._started = True
+        self._http = httpx.AsyncClient(
+            timeout=httpx.Timeout(self.settings.timeout),
+            headers={"User-Agent": self.settings.user_agent},
+            verify=not self.settings.ignore_https_errors,
+        )
         logger.info(
             "client_started", headless=self.settings.headless, stealth=self.settings.use_stealth
         )
@@ -161,6 +168,9 @@ class AigenisClient:
         if self._playwright is not None:
             await self._playwright.stop()
             self._playwright = None
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
         self._started = False
         self._html_cache.clear()
 
@@ -224,32 +234,28 @@ class AigenisClient:
         self._html_cache.clear()
 
     async def _login(self) -> str:
-        if self._context is None:
+        if self._http is None:
             raise RuntimeError("Client not started")
         username = self.settings.web_username
         password = self.settings.web_password
         if not username or not password:
             raise FatalError("AIGENIS_WEB_USERNAME/PASSWORD not set")
-        page = await self._new_page()
-        try:
-            resp = await page.request.post(
-                f"{API_BASE}/v4/user/sign-in/",
-                data={"identifier": username, "password": password},
+        resp = await self._http.post(
+            f"{API_BASE}/v4/user/sign-in/",
+            data={"identifier": username, "password": password},
+        )
+        if resp.status_code != 200:
+            raise FatalError(
+                f"API login failed: {resp.status_code} {resp.text[:200]}"
             )
-            if resp.status != 200:
-                raise FatalError(
-                    f"API login failed: {resp.status} {await resp.text()[:200]}"
-                )
-            data = await resp.json()
-            token = data.get("access")
-            if not token:
-                raise FatalError("No access token in login response")
-            self._token = token
-            self._token_expires = time.monotonic() + 43200  # 12 hours
-            logger.info("api_login_success")
-            return token
-        finally:
-            await page.close()
+        data = resp.json()
+        token = data.get("access")
+        if not token:
+            raise FatalError("No access token in login response")
+        self._token = token
+        self._token_expires = time.monotonic() + 43200  # 12 hours
+        logger.info("api_login_success")
+        return token
 
     async def _ensure_authenticated(self, force: bool = False) -> None:
         async with self._auth_lock:
@@ -262,39 +268,34 @@ class AigenisClient:
         path: str,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any] | list[Any]:
-        await self._ensure_browser()
-        await self._ensure_authenticated()
-        if self._context is None:
+        if self._http is None:
             raise RuntimeError("Client not started")
-        page = await self._new_page()
+        await self._ensure_authenticated()
         url = f"{API_BASE}{path}"
+        headers = {"Authorization": f"JWT {self._token}"}
         try:
-            opts: dict[str, Any] = {
-                "headers": {"Authorization": f"JWT {self._token}"},
-            }
-            if params:
-                opts["params"] = params
             if method.upper() == "GET":
-                resp = await page.request.get(url, **opts)
+                resp = await self._http.get(url, params=params, headers=headers)
             elif method.upper() == "POST":
-                resp = await page.request.post(url, **opts)
+                resp = await self._http.post(url, params=params, headers=headers)
             else:
                 raise ValueError(f"unsupported method {method}")
-            if resp.status == 404:
-                raise NotFoundError(f"{url} returned 404")
-            if resp.status == 401:
-                logger.warning("api_token_expired_renewing")
-                await self._login()
-                opts["headers"] = {"Authorization": f"JWT {self._token}"}
-                if method.upper() == "POST":
-                    resp = await page.request.post(url, **opts)
-                else:
-                    resp = await page.request.get(url, **opts)
-            if resp.status >= 400:
-                raise FatalError(f"API returned {resp.status}: {await resp.text()[:200]}")
-            return await resp.json()
-        finally:
-            await page.close()
+        except httpx.TransportError as e:
+            raise TransientError(f"transport error calling {url}: {e}") from e
+
+        if resp.status_code == 404:
+            raise NotFoundError(f"{url} returned 404")
+        if resp.status_code == 401:
+            logger.warning("api_token_expired_renewing")
+            await self._login()
+            headers = {"Authorization": f"JWT {self._token}"}
+            if method.upper() == "POST":
+                resp = await self._http.post(url, params=params, headers=headers)
+            else:
+                resp = await self._http.get(url, params=params, headers=headers)
+        if resp.status_code >= 400:
+            raise FatalError(f"API returned {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
 
     async def _retrying(self, func, *args, **kwargs):
         async for attempt in AsyncRetrying(
@@ -617,9 +618,103 @@ class AigenisClient:
                 raise
             except Exception as e:
                 logger.warning("api_history_failed", internal_id=internal_id, error=str(e))
+            from scraper.errors import HistoryUnavailable
+
+            raise HistoryUnavailable(f"history not available for {internal_id}")
+
+        # API mode (invest.aigenis.by). Fetch historical quotes and normalise
+        # them into the shape ``parse_history_payload`` expects.
+        return await self._api_fetch_history(internal_id, since, until)
+
+    async def _api_fetch_history(
+        self,
+        internal_id: str,
+        since: date,
+        until: date | None,
+    ) -> list[dict[str, Any]]:
         from scraper.errors import HistoryUnavailable
 
-        raise HistoryUnavailable(f"history not available for {internal_id}")
+        template = (self.settings.api_history_path or "").strip()
+        if not template:
+            raise HistoryUnavailable("history disabled (AIGENIS_API_HISTORY_PATH empty)")
+
+        bond_id = self._id_by_internal.get(internal_id)
+        if not bond_id:
+            raise NotFoundError(
+                f"internal_id {internal_id} not found in listing; ensure fetch_listing ran first"
+            )
+
+        path = template.format(id=bond_id)
+        params: dict[str, Any] = {
+            "date_from": since.isoformat(),
+            "date_to": (until or date.today()).isoformat(),
+            "page_size": 500,
+        }
+        try:
+            rows: list[dict[str, Any]] = []
+            page_num = 1
+            while True:
+                params["page"] = page_num
+                data = await self._api_request("GET", path, params=params)
+                items = data.get("results") if isinstance(data, dict) else data
+                if not items or not isinstance(items, list):
+                    break
+                for it in items:
+                    if isinstance(it, dict):
+                        normalized = self._normalize_history_item(it)
+                        if normalized:
+                            rows.append(normalized)
+                if len(items) < 500:
+                    break
+                page_num += 1
+            logger.info("api_history_fetched", internal_id=internal_id, count=len(rows))
+            return rows
+        except NotFoundError:
+            # No history for this instrument — treat as "unavailable" so the
+            # pipeline skips it instead of aborting the whole backfill.
+            raise HistoryUnavailable(f"history endpoint 404 for {internal_id}") from None
+        except HistoryUnavailable:
+            raise
+        except Exception as e:
+            logger.warning("api_history_failed", internal_id=internal_id, error=str(e))
+            raise HistoryUnavailable(f"history fetch failed for {internal_id}") from e
+
+    @staticmethod
+    def _normalize_history_item(it: dict[str, Any]) -> dict[str, Any] | None:
+        """Map an API quote/candle row to the parser's ``{date, price, yield,
+        coupon, status}`` schema, tolerating several common field names."""
+        d = (
+            it.get("date")
+            or it.get("timestamp")
+            or it.get("trade_date")
+            or it.get("dt")
+            or it.get("day")
+        )
+        if not d:
+            return None
+        price = (
+            it.get("price")
+            if it.get("price") is not None
+            else it.get("close")
+            if it.get("close") is not None
+            else it.get("last")
+            if it.get("last") is not None
+            else it.get("market_price")
+        )
+        yield_val = (
+            it.get("yield")
+            if it.get("yield") is not None
+            else it.get("instr_yield")
+            if it.get("instr_yield") is not None
+            else it.get("yield_to_maturity")
+        )
+        return {
+            "date": d,
+            "price": price,
+            "yield": yield_val,
+            "coupon": it.get("coupon") if it.get("coupon") is not None else it.get("coupon_rate"),
+            "status": it.get("status", "unknown"),
+        }
 
 
 @asynccontextmanager

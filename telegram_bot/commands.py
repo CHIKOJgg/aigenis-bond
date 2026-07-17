@@ -39,12 +39,14 @@ from portfolio.positions_repository import list_positions, total_value
 from portfolio.rebalance import build_plan
 from portfolio.scenarios import run_all_scenarios
 from recommendations.engine import recommend_bonds
+from scoring.disclaimer import DISCLAIMER_SHORT
 from scoring.engine import score_bond
 from scoring.repository import get_score, top_scores
 from scraper import repositories
 from scraper.db import session_scope
 from scraper.models import Bond
 from scraper.orm import BondORM
+from telegram_bot import _cmd_helpers as _ch
 from telegram_bot.handler_state import PAGE_SIZE, parse_lock
 from telegram_bot.helpers import (
     alert_direction_sign,
@@ -60,7 +62,6 @@ from telegram_bot.helpers import (
     user_id_from_message,
 )
 from telegram_bot.menus import _DESK_MENU, _OVERVIEW_MENU, _home_kb, _show_main_menu
-from telegram_bot.middleware import db_has_bonds, locked_message_text
 from visualization.charts import (
     plot_capital_forecast,
     plot_portfolio_pie,
@@ -78,46 +79,13 @@ _STRATEGY_RU = {
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (see telegram_bot._cmd_helpers)
 # ---------------------------------------------------------------------------
-
-
-def _user_id(message: Message) -> int:
-    return message.from_user.id if message.from_user else 0
-
-
-async def _is_unlocked(message: Message) -> bool:  # noqa: ARG001 - mirrors original signature
-    return await db_has_bonds()
-
-
-def _locked_message() -> str:
-    return locked_message_text()
-
-
-# ---------------------------------------------------------------------------
-# Start / Help / Menu
-# ---------------------------------------------------------------------------
-
-
-def _account_banner(status) -> str | None:
-    """Short line about the user's current access, shown on /start."""
-    if status.is_trial and status.days_left:
-        return (
-            f"🎁 <b>Пробный Pro активен</b> — осталось {status.days_left} дн.\n"
-            "Все функции открыты: аналитика, прогнозы, доход по купонам и алерты."
-        )
-    if status.tier in ("pro", "enterprise") and status.days_left:
-        name = "Enterprise" if status.tier == "enterprise" else "Pro"
-        return f"⭐ <b>Тариф {name}</b> — активен ещё {status.days_left} дн."
-    return (
-        "🔓 <b>Тариф Free.</b> Оформите Pro (/subscribe), чтобы открыть аналитику, "
-        "ML-прогнозы, доход по купонам и персональные алерты."
-    )
 
 
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
-    if not await _is_unlocked(message):
+    if not await _ch.is_unlocked(message):
         await message.answer(
             "👋 <b>Bond Fixed Income Assistant</b>\n\n"
             "⏳ Котировки ещё загружаются. Нажмите кнопку ниже, чтобы обновить "
@@ -141,7 +109,7 @@ async def _show_main_menu_for(message: Message) -> None:
     from telegram_bot.subscriptions import get_account_status
 
     status = await get_account_status(user_id_from_message(message))
-    banner = _account_banner(status)
+    banner = _ch.account_banner(status)
     if banner:
         await message.answer(banner, parse_mode=ParseMode.HTML)
     await _show_main_menu(message)
@@ -249,8 +217,8 @@ async def cmd_parse(message: Message) -> None:
 
 @router.message(Command("rates"))
 async def cmd_rates(message: Message) -> None:
-    if not await _is_unlocked(message):
-        await message.answer(_locked_message())
+    if not await _ch.is_unlocked(message):
+        await message.answer(_ch.locked_message())
         return
     async with session_scope() as session:
         lines = ["<b>💱 Курсы валют (НБ РБ)</b>\n"]
@@ -647,6 +615,7 @@ async def cmd_buy(message: Message) -> None:
             f"#{r.rank} <code>{r.internal_id}</code> {r.name} — "
             f"<b>{r.decision.upper()}</b> (уверенность {float(r.confidence):.0%}, score {r.score:.0f}{ret})"
         )
+    lines.append(f"\n{DISCLAIMER_SHORT}")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 
 
@@ -704,7 +673,7 @@ async def cmd_predict(message: Message) -> None:
         f"Решение: <b>{p.decision}</b> (уверенность {float(p.confidence):.0%})\n"
         f"Прогноз доходности (YTM): {float(p.predicted_ytm) if p.predicted_ytm is not None else '—'}\n"
         f"Прогноз доходности: {float(p.predicted_return_pct) if p.predicted_return_pct is not None else '—'}\n"
-        f"Объяснение:\n{expl or '—'}"
+        f"Объяснение:\n{expl or '—'}\n\n{DISCLAIMER_SHORT}"
     )
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
 

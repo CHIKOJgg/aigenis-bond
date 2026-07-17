@@ -120,15 +120,19 @@ async def on_successful_payment(message) -> None:
     tier = payload.split(":", 1)[1]
     tg_id = message.from_user.id if message.from_user else 0
     plan = STAR_PLANS.get(tier)
+    if plan is None:
+        # Unknown/forged tier in the payload — never grant an implicit default.
+        logger.warning("stars_unknown_tier_payload", payload=payload, tg_id=tg_id)
+        return
     charge_id = getattr(payment, "telegram_payment_charge_id", None)
-    duration = plan.duration_days if plan else 30
+    duration = plan.duration_days
     applied = await set_tier_by_telegram(
         tg_id, tier, duration_days=duration, charge_id=charge_id
     )
     if not applied:
         # Duplicate delivery of the same payment — acknowledge without double-granting.
         return
-    name = plan.name if plan else tier
+    name = plan.name
     await message.answer(
         f"✅ Спасибо! Подписка <b>{name}</b> активна на {duration} дней.\n"
         "Все Pro/Enterprise функции теперь доступны. Откройте меню: /menu\n"

@@ -12,7 +12,7 @@ from ml.engine import (
     train_buy_classifier,
     train_ytm_regressor,
 )
-from ml.features import build_dataset
+from ml.features import build_dataset, build_training_samples
 from ml.repository import (
     insert_training_run,
     latest_model_version,
@@ -59,33 +59,50 @@ async def _fetch_bonds_dicts() -> tuple[list[dict], dict[str, list[dict]]]:
 
 async def cmd_ml_train() -> int:
     bond_dicts, history = await _fetch_bonds_dicts()
-    features = build_dataset(bond_dicts, history)
-    if len(features) < 30:
-        print(f"Недостаточно данных для обучения: {len(features)} фичей")
+
+    # Leakage-free supervised samples: features observed in the past paired with
+    # the YTM realized a horizon later (see ml.features.build_training_samples).
+    samples = build_training_samples(bond_dicts, history)
+    if len(samples) < 30:
+        print(
+            f"Недостаточно исторических данных для честного обучения: {len(samples)} примеров. "
+            "Нужна история котировок за несколько месяцев по достаточному числу облигаций."
+        )
         return 1
 
-    mv_reg, tr_reg = train_ytm_regressor(features)
-    mv_clf, tr_clf = train_buy_classifier(features)
+    mv_reg, tr_reg = train_ytm_regressor(samples)
+    try:
+        mv_clf, tr_clf = train_buy_classifier(samples)
+    except ValueError as exc:
+        # Not enough class diversity yet — train the regressor only.
+        print(f"Классификатор пропущен: {exc}")
+        mv_clf = tr_clf = None
 
     async with session_scope() as session:
         await upsert_model_version(session, mv_reg)
-        await upsert_model_version(session, mv_clf)
         await insert_training_run(session, tr_reg)
-        await insert_training_run(session, tr_clf)
+        if mv_clf is not None:
+            await upsert_model_version(session, mv_clf)
+            await insert_training_run(session, tr_clf)
 
     print(
         json.dumps(
             {
+                "samples": len(samples),
                 "ytm_regression": {
                     "version": mv_reg.version,
                     "metrics": mv_reg.metrics,
                     "artifact": mv_reg.artifact_path,
                 },
-                "buy_classifier": {
-                    "version": mv_clf.version,
-                    "metrics": mv_clf.metrics,
-                    "artifact": mv_clf.artifact_path,
-                },
+                "buy_classifier": (
+                    {
+                        "version": mv_clf.version,
+                        "metrics": mv_clf.metrics,
+                        "artifact": mv_clf.artifact_path,
+                    }
+                    if mv_clf is not None
+                    else None
+                ),
             },
             ensure_ascii=False,
             indent=2,

@@ -31,6 +31,9 @@ logger = get_logger("api")
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
     _validate_production_config()
+    from scraper.observability import init_sentry
+
+    init_sentry(get_settings().sentry_dsn, environment=get_settings().environment)
     yield
     await dispose()
 
@@ -74,11 +77,20 @@ add_feature_access_headers(app)
 # In-memory limiter works for a single instance. For horizontal scaling set
 # RATE_LIMIT_BACKEND=redis (uses REDIS_URL) so the counter is shared across
 # every API replica.
+#
+# Identity resolution:
+#   * authenticated requests are keyed and limited per user id (and per tier),
+#     so one user behind a shared NAT/proxy cannot exhaust everyone's quota and
+#     paying tiers get their higher limits;
+#   * anonymous requests fall back to the client IP, read from the last
+#     X-Forwarded-For hop ONLY when TRUSTED_PROXY is set (otherwise the socket
+#     peer), so the limiter is not trivially bypassed by spoofing the header.
 
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
 _RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "60"))
 _RATE_WINDOW = int(os.environ.get("API_RATE_WINDOW", "60"))
 _RATE_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "memory").strip().lower()
+_TRUSTED_PROXY = os.environ.get("TRUSTED_PROXY", "").strip() in ("1", "true", "yes")
 _redis_client: Any = None
 
 
@@ -95,7 +107,32 @@ def _get_redis():
     return _redis_client
 
 
-async def _redis_allow(client: str) -> bool:
+def _client_ip(request: Request) -> str:
+    if _TRUSTED_PROXY:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            # Right-most entry is the address observed by our own proxy.
+            return xff.split(",")[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_identity_and_limit(request: Request) -> tuple[str, int]:
+    """Return the limiter key and the request budget for this caller.
+
+    Authenticated callers are limited per user id so that many users sharing a
+    NAT/proxy IP do not exhaust one another's quota. Anonymous callers are
+    limited per (trusted) client IP. Per-tier feature access is enforced
+    separately by the RequireFeature dependency on each endpoint.
+    """
+    from api.access_control import _get_current_user_from_request
+
+    user_id = _get_current_user_from_request(request)
+    if user_id:
+        return f"user:{user_id}", _RATE_LIMIT
+    return f"ip:{_client_ip(request)}", _RATE_LIMIT
+
+
+async def _redis_allow(client: str, limit: int) -> bool:
     """Fixed-window counter shared across instances via Redis."""
     try:
         redis = _get_redis()
@@ -103,18 +140,18 @@ async def _redis_allow(client: str) -> bool:
         count = await redis.incr(key)
         if count == 1:
             await redis.expire(key, _RATE_WINDOW)
-        return count <= _RATE_LIMIT
+        return count <= limit
     except Exception as exc:  # pragma: no cover - fail open, log and fall back
         logger.warning("rate_limit_redis_unavailable", error=str(exc))
         return True
 
 
-def _memory_allow(client: str) -> bool:
+def _memory_allow(client: str, limit: int) -> bool:
     now = time.monotonic()
     timestamps = _rate_limit_store[client]
     cutoff = now - _RATE_WINDOW
     timestamps[:] = [t for t in timestamps if t > cutoff]
-    if len(timestamps) >= _RATE_LIMIT:
+    if len(timestamps) >= limit:
         return False
     timestamps.append(now)
     return True
@@ -124,10 +161,17 @@ def _memory_allow(client: str) -> bool:
 async def rate_limit(request: Request, call_next):
     if request.url.path in ("/health", "/ready", "/openapi.json", "/docs", "/redoc"):
         return await call_next(request)
-    client = request.client.host if request.client else "unknown"
-    allowed = await _redis_allow(client) if _RATE_BACKEND == "redis" else _memory_allow(client)
+    client, limit = _rate_identity_and_limit(request)
+    allowed = (
+        await _redis_allow(client, limit)
+        if _RATE_BACKEND == "redis"
+        else _memory_allow(client, limit)
+    )
     if not allowed:
-        return JSONResponse(status_code=429, content={"error": "Too many requests", "retry_after": _RATE_WINDOW})
+        return JSONResponse(
+            status_code=429,
+            content={"error": "Too many requests", "retry_after": _RATE_WINDOW},
+        )
     return await call_next(request)
 
 

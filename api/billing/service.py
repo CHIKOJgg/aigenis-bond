@@ -44,6 +44,58 @@ def _auth() -> tuple[str, str]:
     return YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
 
 
+async def fetch_payment(payment_id: str) -> dict | None:
+    """Fetch the authoritative payment object from YooKassa by id.
+
+    YooKassa does NOT sign webhooks with an HMAC secret. The documented way to
+    trust a notification is to (a) restrict the caller to YooKassa IPs and
+    (b) re-fetch the object from the API and act only on that server-confirmed
+    state — never on the raw webhook body, which an attacker could forge.
+    """
+    if not is_yookassa_configured() or not payment_id:
+        return None
+    try:
+        async with httpx.AsyncClient(auth=_auth()) as client:
+            resp = await client.get(
+                f"{YOOKASSA_BASE_URL}/payments/{payment_id}",
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                logger.error(
+                    "yookassa_fetch_payment_error",
+                    payment_id=payment_id,
+                    status=resp.status_code,
+                )
+                return None
+            return resp.json()
+    except Exception as exc:
+        logger.error("yookassa_fetch_payment_failed", payment_id=payment_id, error=str(exc))
+        return None
+
+
+async def fetch_refund(refund_id: str) -> dict | None:
+    """Fetch the authoritative refund object from YooKassa by id."""
+    if not is_yookassa_configured() or not refund_id:
+        return None
+    try:
+        async with httpx.AsyncClient(auth=_auth()) as client:
+            resp = await client.get(
+                f"{YOOKASSA_BASE_URL}/refunds/{refund_id}",
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                logger.error(
+                    "yookassa_fetch_refund_error",
+                    refund_id=refund_id,
+                    status=resp.status_code,
+                )
+                return None
+            return resp.json()
+    except Exception as exc:
+        logger.error("yookassa_fetch_refund_failed", refund_id=refund_id, error=str(exc))
+        return None
+
+
 def _idempotency_key() -> str:
     return str(uuid.uuid4())
 
@@ -108,7 +160,14 @@ async def create_payment(
 
 
 async def handle_webhook(body: bytes) -> str | None:
-    """Process incoming YooKassa webhook notification."""
+    """Process an incoming YooKassa webhook notification.
+
+    Security model: the webhook body is treated as an *untrusted* trigger. We
+    only read the object id and event type from it, then re-fetch the object
+    from the YooKassa API and act exclusively on the server-confirmed state.
+    A forged body cannot activate a subscription because the object id either
+    does not exist or its real ``status``/``metadata`` won't match.
+    """
     try:
         event = json.loads(body)
     except json.JSONDecodeError:
@@ -117,16 +176,34 @@ async def handle_webhook(body: bytes) -> str | None:
 
     event_type = event.get("event")
     obj = event.get("object", {})
-    metadata = obj.get("metadata", {})
+    object_id = obj.get("id")
+
+    if not event_type or not object_id:
+        logger.warning("webhook_missing_fields")
+        return None
 
     if event_type == "payment.succeeded":
-        await _handle_payment_succeeded(obj, metadata)
+        verified = await fetch_payment(object_id)
+        # Trust only what YooKassa reports for this payment.
+        if not verified or verified.get("status") != "succeeded":
+            logger.warning("webhook_payment_not_verified", payment_id=object_id)
+            return None
+        await _handle_payment_succeeded(verified, verified.get("metadata", {}))
     elif event_type == "payment.canceled":
-        await _handle_payment_canceled(obj, metadata)
+        verified = await fetch_payment(object_id)
+        if not verified or verified.get("status") != "canceled":
+            logger.warning("webhook_cancel_not_verified", payment_id=object_id)
+            return None
+        await _handle_payment_canceled(verified, verified.get("metadata", {}))
     elif event_type == "refund.succeeded":
-        await _handle_refund_succeeded(obj, metadata)
+        verified = await fetch_refund(object_id)
+        if not verified or verified.get("status") != "succeeded":
+            logger.warning("webhook_refund_not_verified", refund_id=object_id)
+            return None
+        await _handle_refund_succeeded(verified, verified.get("metadata", {}))
     else:
         logger.info("unhandled_webhook_event", event=event_type)
+        return event_type
 
     return event_type
 
@@ -140,8 +217,32 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     if not user_id or not payment_id:
         return
 
-    plan_config = PLANS.get(plan, PLANS["pro"])
+    if plan not in PLANS:
+        logger.warning("payment_unknown_plan", plan=plan, payment_id=payment_id)
+        return
+    plan_config = PLANS[plan]
     duration = plan_config["duration_days"]
+
+    # Verify the amount actually paid matches the plan price. This closes the
+    # gap where a crafted payment carries metadata for a more expensive plan
+    # than was actually paid for.
+    try:
+        paid = float(obj.get("amount", {}).get("value", 0))
+        expected = float(plan_config["price"])
+        paid_currency = obj.get("amount", {}).get("currency", CURRENCY)
+    except (TypeError, ValueError):
+        logger.warning("payment_amount_unparseable", payment_id=payment_id)
+        return
+    if paid + 1e-9 < expected or paid_currency != CURRENCY:
+        logger.warning(
+            "payment_amount_mismatch",
+            payment_id=payment_id,
+            plan=plan,
+            paid=paid,
+            expected=expected,
+            currency=paid_currency,
+        )
+        return
 
     async with session_scope() as session:
         # Find or create subscription record
@@ -158,15 +259,20 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             await session.commit()
             return
 
-        # Update subscription
+        # Update subscription. A repeat purchase extends from the later of the
+        # current expiry or now, so paying again never shortens access.
         sub.yookassa_payment_id = payment_id
         sub.plan = plan
         sub.status = "active"
         now = datetime.now(UTC)
+        base = sub.current_period_end
+        if base is not None and base.tzinfo is None:
+            base = base.replace(tzinfo=UTC)
+        start = max(base, now) if base and base > now else now
         sub.current_period_start = now
-        sub.current_period_end = now + timedelta(days=duration)
+        sub.current_period_end = start + timedelta(days=duration)
 
-        # Sync to user
+        # Sync to user (single source of truth for gating)
         user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
         user = user_result.scalar_one_or_none()
         if user:

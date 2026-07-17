@@ -477,6 +477,7 @@ const ru: Dict = {
   'onboarding.desk': 'Fixed Income Desk',
   'paywall.title.desk': 'Fixed Income Desk',
   'payment.error': 'Ошибка оплаты',
+  'nav.recommendations': 'Рекомендации',
 };
 
 const en: Dict = {
@@ -949,6 +950,7 @@ const en: Dict = {
   'paywall.title.alerts': 'Alerts',
   'paywall.desc.alerts': 'Market event notifications are available on the Pro / Enterprise plan.',
   'payment.error': 'Payment error',
+  'nav.recommendations': 'Recommendations',
 };
 
 const dictionaries: Record<Lang, Dict> = { ru, en };

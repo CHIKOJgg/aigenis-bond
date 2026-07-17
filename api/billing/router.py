@@ -5,8 +5,8 @@ aggregator. Telegram Stars remain available inside the bot.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
+import ipaddress
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,12 +20,73 @@ from api.billing.schemas import (
     SubscriptionResponse,
 )
 from api.billing.service import PLANS, is_yookassa_configured
-from scraper.config import get_settings
 from scraper.logging import get_logger
 
 logger = get_logger("api.billing")
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+# Official YooKassa notification source networks.
+# https://yookassa.ru/developers/using-api/webhooks#ip
+_YOOKASSA_NETWORKS: tuple[str, ...] = (
+    "185.71.76.0/27",
+    "185.71.77.0/27",
+    "77.75.153.0/25",
+    "77.75.156.11/32",
+    "77.75.156.35/32",
+    "77.75.154.128/25",
+    "2a02:5180::/32",
+)
+
+
+def _allowed_networks() -> list[ipaddress._BaseNetwork]:
+    """Return the set of networks allowed to POST webhooks.
+
+    Defaults to YooKassa's published ranges; override with
+    ``YOOKASSA_WEBHOOK_IPS`` (comma-separated CIDRs) for staging/self-hosted
+    proxies. Set it to ``*`` to disable IP filtering (NOT recommended).
+    """
+    override = os.getenv("YOOKASSA_WEBHOOK_IPS", "").strip()
+    raw = [c.strip() for c in override.split(",") if c.strip()] if override else list(
+        _YOOKASSA_NETWORKS
+    )
+    nets: list[ipaddress._BaseNetwork] = []
+    for cidr in raw:
+        try:
+            nets.append(ipaddress.ip_network(cidr, strict=False))
+        except ValueError:
+            logger.warning("invalid_webhook_cidr", cidr=cidr)
+    return nets
+
+
+def _client_ip(request: Request) -> str | None:
+    """Resolve the caller IP, honouring a single trusted proxy hop.
+
+    When TRUSTED_PROXY=1 we take the last entry of X-Forwarded-For (added by
+    our own reverse proxy). Otherwise we use the raw socket peer.
+    """
+    if os.getenv("TRUSTED_PROXY", "").strip() in ("1", "true", "yes"):
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            # Right-most IP is the one our proxy observed.
+            return xff.split(",")[-1].strip()
+    return request.client.host if request.client else None
+
+
+def _ip_allowed(ip: str | None) -> bool:
+    if ip is None:
+        return False
+    nets = _allowed_networks()
+    if any(str(n) == "*/0" for n in nets):  # never true, kept for clarity
+        return True
+    if os.getenv("YOOKASSA_WEBHOOK_IPS", "").strip() == "*":
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in nets)
+
 
 
 @router.get("/plans")
@@ -133,21 +194,18 @@ async def yookassa_webhook(request: Request):
 
     Configure this URL in your YooKassa merchant dashboard:
     https://yookassa.ru/merchant/notifications
+
+    Security: YooKassa does not sign webhooks. We (1) restrict the caller to
+    YooKassa's published IP ranges and (2) re-verify every event against the
+    YooKassa API (see ``billing_service.handle_webhook``) so a forged body is
+    inert even if it reaches this endpoint.
     """
+    ip = _client_ip(request)
+    if not _ip_allowed(ip):
+        logger.warning("webhook_ip_rejected", ip=ip)
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     body = await request.body()
-
-    # Verify webhook signature (YooKassa signs with SHA-256 HMAC)
-    settings = get_settings()
-    secret = getattr(settings, "yookassa_secret_key", "") or ""
-    if secret:
-        auth_header = request.headers.get("Authorization", "")
-        expected = hmac.new(
-            secret.encode(), body, hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(auth_header, expected):
-            logger.warning("webhook_signature_invalid")
-            raise HTTPException(status_code=403, detail="Invalid signature")
-
     event_type = await billing_service.handle_webhook(body)
     if not event_type:
         raise HTTPException(status_code=400, detail="Invalid webhook")

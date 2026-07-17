@@ -58,6 +58,8 @@ class ExplainedScore:
         self.weaknesses = weaknesses
 
     def as_dict(self) -> dict:
+        from scoring.disclaimer import DISCLAIMER_FULL
+
         return {
             "score": self.score,
             "tier": self.tier,
@@ -66,6 +68,7 @@ class ExplainedScore:
             "factors": [f.as_dict() for f in self.factors],
             "strengths": self.strengths,
             "weaknesses": self.weaknesses,
+            "disclaimer": DISCLAIMER_FULL,
         }
 
 

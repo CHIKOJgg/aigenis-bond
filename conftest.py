@@ -21,8 +21,25 @@ os.environ.setdefault("RATE_LIMIT_BACKEND", "memory")
 # BIGINT in production.)
 from sqlalchemy import BigInteger
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.sql.functions import Function
 
 
 @compiles(BigInteger, "sqlite")
 def _compile_bigint_as_integer(type_, compiler, **kw):  # noqa: ARG001
     return "INTEGER"
+
+
+# The ORM uses ``func.true()`` / ``func.false()`` as server defaults, which
+# Postgres understands natively but SQLite does not (it has no ``true()`` /
+# ``false()`` functions). Render them as ``1`` / ``0`` on the sqlite dialect so
+# the hermetic test suite can insert rows. Production DDL on Postgres is
+# unaffected.
+@compiles(Function, "sqlite")
+def _compile_bool_functions_sqlite(element, compiler, **kw):
+    name = (getattr(element, "name", "") or "").lower()
+    if name == "true":
+        return "1"
+    if name == "false":
+        return "0"
+    return compiler.visit_function(element, **kw)
+

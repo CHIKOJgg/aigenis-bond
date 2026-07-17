@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import pickle
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from ml.features import features_to_matrix
@@ -22,8 +19,12 @@ from ml.models import (
     Prediction,
     TrainingRun,
 )
+from ml.registry import (
+    ARTIFACTS_DIR,
+    load_artifact_cached,
+    save_artifact,
+)
 
-ARTIFACTS_DIR = Path("ml/artifacts")
 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -58,23 +59,49 @@ def _explanation(features: BondFeatures, predicted_ytm: float) -> list[str]:
     return notes
 
 
+def _time_split(
+    samples: list[Any], test_fraction: float = 0.25
+) -> tuple[list[Any], list[Any]]:
+    """Walk-forward split: train on the earlier samples, validate on the latest.
+
+    Financial series must never be shuffled — a random split leaks future
+    information into training. We sort by ``asof`` and hold out the most recent
+    ``test_fraction`` as an out-of-time validation set.
+    """
+    ordered = sorted(samples, key=lambda s: s.asof)
+    cut = int(len(ordered) * (1 - test_fraction))
+    cut = max(1, min(cut, len(ordered) - 1))
+    return ordered[:cut], ordered[cut:]
+
+
 def train_ytm_regressor(
-    features: list[BondFeatures],
+    samples: list[Any] | None = None,
     *,
     target_horizon_days: int = 90,
     version: str | None = None,
+    features: list[BondFeatures] | None = None,  # noqa: ARG001  # deprecated, kept for callers
 ) -> tuple[ModelVersion, TrainingRun]:
-    """Обучить регрессию предсказания доходности через target_horizon_days."""
-    if len(features) < 30:
-        raise ValueError(f"too few samples for training: {len(features)}")
+    """Train a YTM forecaster on leakage-free future targets.
 
-    X, names = features_to_matrix(features)
-    y = np.array(
-        [f.yield_to_maturity + f.spread_to_avg * 0.3 + f.score * 0.02 for f in features],
-        dtype=float,
-    )
+    ``samples`` are :class:`ml.features.TrainingSample` objects pairing features
+    observed at ``asof`` with the YTM actually realized ``horizon_days`` later.
+    The split is walk-forward (out-of-time), so the reported metrics reflect
+    genuine predictive skill rather than memorised identities.
+    """
+    if not samples:
+        raise ValueError(
+            "train_ytm_regressor requires leakage-free TrainingSample list; "
+            "build them via ml.features.build_training_samples()"
+        )
+    if len(samples) < 30:
+        raise ValueError(f"too few samples for training: {len(samples)}")
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+    train_s, test_s = _time_split(samples)
+
+    X_train, names = features_to_matrix([s.features for s in train_s])
+    X_test, _ = features_to_matrix([s.features for s in test_s])
+    y_train = np.array([s.future_ytm for s in train_s], dtype=float)
+    y_test = np.array([s.future_ytm for s in test_s], dtype=float)
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
@@ -86,21 +113,32 @@ def train_ytm_regressor(
     model.fit(X_train_s, y_train)
     preds = model.predict(X_test_s)
     mae = float(mean_absolute_error(y_test, preds))
-    r2 = float(r2_score(y_test, preds))
+    r2 = float(r2_score(y_test, preds)) if len(set(y_test.tolist())) > 1 else 0.0
+
+    # Naive baseline: "future YTM == current YTM" (random walk). A useful model
+    # must beat this; we record the comparison so degradation is visible.
+    current_ytm_test = np.array([s.features.yield_to_maturity for s in test_s], dtype=float)
+    baseline_mae = float(mean_absolute_error(y_test, current_ytm_test))
 
     version = version or datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    artifact_path = ARTIFACTS_DIR / f"ytm_regressor_{version}.pkl"
-    with open(artifact_path, "wb") as fh:
-        pickle.dump({"model": model, "scaler": scaler, "features": names}, fh)
+    artifact_path = ARTIFACTS_DIR / f"ytm_regressor_{version}.joblib"
+    save_artifact(artifact_path, {"model": model, "scaler": scaler, "features": names})
 
     mv = ModelVersion(
         version=version,
         kind="ytm_regression",
-        metrics={"mae": mae, "r2": r2, "train_size": len(X_train), "test_size": len(X_test)},
+        metrics={
+            "mae": mae,
+            "r2": r2,
+            "baseline_mae": baseline_mae,
+            "beats_baseline": 1.0 if mae < baseline_mae else 0.0,
+            "train_size": len(train_s),
+            "test_size": len(test_s),
+        },
         trained_at=datetime.now(UTC),
-        train_rows=len(features),
+        train_rows=len(samples),
         artifact_path=str(artifact_path),
-        notes=f"horizon_days={target_horizon_days}",
+        notes=f"horizon_days={target_horizon_days}; walk-forward split",
     )
     run = TrainingRun(
         version=version,
@@ -115,24 +153,41 @@ def train_ytm_regressor(
 
 
 def train_buy_classifier(
-    features: list[BondFeatures],
+    samples: list[Any] | None = None,
     *,
     version: str | None = None,
+    buy_threshold_pct: float = -0.25,
+    avoid_threshold_pct: float = 0.5,
+    features: list[BondFeatures] | None = None,  # noqa: ARG001  # deprecated, kept for callers
 ) -> tuple[ModelVersion, TrainingRun]:
-    """Классификатор buy/hold/wait/avoid на базе Score и признаков."""
-    if len(features) < 30:
-        raise ValueError(f"too few samples for training: {len(features)}")
+    """Train a buy/hold/avoid classifier on *realized* future outcomes.
 
-    X, names = features_to_matrix(features)
-    y = np.array(
-        [
-            0 if f.score < 40 else (1 if f.score < 60 else (2 if f.score < 80 else 3))
-            for f in features
-        ],
-        dtype=int,
-    )
+    The label is derived from the future YTM move, not from the current Score
+    (which is itself an input feature — using it as the label was circular).
+    A falling future YTM means the price rose ⇒ "buy"; a sharp rise ⇒ "avoid".
+    """
+    if not samples:
+        raise ValueError(
+            "train_buy_classifier requires leakage-free TrainingSample list; "
+            "build them via ml.features.build_training_samples()"
+        )
+    if len(samples) < 30:
+        raise ValueError(f"too few samples for training: {len(samples)}")
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42)
+    def _label(move: float) -> int:
+        # move = future_ytm - current_ytm (percentage points)
+        if move <= buy_threshold_pct:
+            return 2  # yield fell -> price rose -> buy
+        if move >= avoid_threshold_pct:
+            return 0  # yield rose -> price fell -> avoid
+        return 1  # roughly flat -> hold
+
+    train_s, test_s = _time_split(samples)
+
+    X_train, names = features_to_matrix([s.features for s in train_s])
+    X_test, _ = features_to_matrix([s.features for s in test_s])
+    y_train = np.array([_label(s.future_return_pct) for s in train_s], dtype=int)
+    y_test = np.array([_label(s.future_return_pct) for s in test_s], dtype=int)
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
@@ -141,21 +196,36 @@ def train_buy_classifier(
     model = GradientBoostingClassifier(
         n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42
     )
+    # Guard against a degenerate single-class training slice.
+    if len(set(y_train.tolist())) < 2:
+        raise ValueError("training slice has a single outcome class; need more history")
     model.fit(X_train_s, y_train)
-    acc = float(model.score(X_test_s, y_test))
+    acc = float(model.score(X_test_s, y_test)) if len(test_s) else 0.0
+    # Majority-class baseline for context.
+    if len(y_test):
+        _vals, counts = np.unique(y_test, return_counts=True)
+        baseline_acc = float(counts.max() / counts.sum())
+    else:
+        baseline_acc = 0.0
 
     version = version or datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    artifact_path = ARTIFACTS_DIR / f"buy_classifier_{version}.pkl"
-    with open(artifact_path, "wb") as fh:
-        pickle.dump({"model": model, "scaler": scaler, "features": names}, fh)
+    artifact_path = ARTIFACTS_DIR / f"buy_classifier_{version}.joblib"
+    save_artifact(artifact_path, {"model": model, "scaler": scaler, "features": names})
 
     mv = ModelVersion(
         version=version,
         kind="buy_classifier",
-        metrics={"accuracy": acc, "train_size": len(X_train), "test_size": len(X_test)},
+        metrics={
+            "accuracy": acc,
+            "baseline_accuracy": baseline_acc,
+            "beats_baseline": 1.0 if acc > baseline_acc else 0.0,
+            "train_size": len(train_s),
+            "test_size": len(test_s),
+        },
         trained_at=datetime.now(UTC),
-        train_rows=len(features),
+        train_rows=len(samples),
         artifact_path=str(artifact_path),
+        notes="label=realized future YTM move; walk-forward split",
     )
     run = TrainingRun(
         version=version,
@@ -164,16 +234,18 @@ def train_buy_classifier(
         finished_at=mv.trained_at,
         metrics=mv.metrics,
         status="ok",
+        notes=mv.notes,
     )
     return mv, run
 
 
-_DECISION_FROM_CLASS = {0: "avoid", 1: "wait", 2: "hold", 3: "buy"}
+# Class labels produced by ``train_buy_classifier`` (realized future YTM move).
+_DECISION_FROM_CLASS = {0: "avoid", 1: "hold", 2: "buy"}
 
 
 def load_artifact(path: str) -> dict[str, Any]:
-    with open(path, "rb") as fh:
-        return pickle.load(fh)
+    """Backward-compatible alias for the cached artifact loader."""
+    return load_artifact_cached(path)
 
 
 def predict_one(
@@ -251,11 +323,6 @@ def predict_batch(
 
 
 def latest_artifact(kind: ModelKind) -> str | None:
-    pattern = {
-        "ytm_regression": "ytm_regressor_*.pkl",
-        "buy_classifier": "buy_classifier_*.pkl",
-    }[kind]
-    files = sorted(ARTIFACTS_DIR.glob(pattern))
-    if not files:
-        return None
-    return str(files[-1])
+    from ml.registry import latest_artifact as _latest
+
+    return _latest(kind)

@@ -291,10 +291,76 @@ export interface AnalyticsRecommendation {
   rank: number;
   internal_id: string;
   name: string;
+  issuer: string | null;
   decision: string;
   confidence: number;
   score: number | null;
   predicted_return_pct: number | null;
+  reasons: string[];
+  risks: string[];
+}
+
+export interface CompanySummary {
+  issuer: string;
+  name: string;
+  sector: string | null;
+  description: string | null;
+  why_important: string | null;
+  logo_url: string | null;
+  bond_count: number;
+  avg_yield_to_maturity: number | null;
+  top_tier: string | null;
+  currencies: string[];
+}
+
+export interface CompanyBond {
+  internal_id: string;
+  name: string;
+  currency: string;
+  yield_to_maturity: number | null;
+  maturity_date: string | null;
+  price: number | null;
+  issuer: string | null;
+  score: number | null;
+  tier: string | null;
+}
+
+export interface CompanyRecommendation {
+  decision: string;
+  confidence: number;
+  score: number | null;
+  predicted_return_pct: number | null;
+  reasons: string[];
+  risks: string[];
+}
+
+export interface CompanyDetail {
+  issuer: string;
+  name: string;
+  sector: string | null;
+  description: string | null;
+  why_important: string | null;
+  website: string | null;
+  logo_url: string | null;
+  bond_count: number;
+  bonds: CompanyBond[];
+  recommendation: CompanyRecommendation | null;
+}
+
+export interface SearchResult {
+  query: string;
+  bonds: {
+    internal_id: string;
+    name: string;
+    currency: string;
+    yield_to_maturity: number | null;
+    issuer: string | null;
+  }[];
+  companies: {
+    issuer: string;
+    name: string;
+    sector: string | null;
+  }[];
 }
 
 export interface AnalyticsAlert {
@@ -351,6 +417,14 @@ export const api = {
     portfolio: () => get<AnalyticsPortfolio>('/api/v1/portfolio'),
     forecast: () => get<AnalyticsForecast[]>('/api/v1/forecast'),
     recommendations: (topK = 5) => get<AnalyticsRecommendation[]>(`/api/v1/recommendations?top_k=${topK}`),
+    companies: (params?: { sector?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.sector) q.set('sector', params.sector);
+      if (params?.limit) q.set('limit', String(params.limit));
+      return get<CompanySummary[]>(`/api/v1/companies?${q}`);
+    },
+    company: (issuer: string) => get<CompanyDetail>(`/api/v1/companies/${encodeURIComponent(issuer)}`),
+    search: (q: string) => get<SearchResult>(`/api/v1/search?q=${encodeURIComponent(q)}`),
     alerts: (limit = 10) => get<AnalyticsAlert[]>(`/api/v1/alerts?limit=${limit}`),
   },
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 from statistics import fmean, pstdev
@@ -177,3 +178,119 @@ def features_to_matrix(features: Iterable[BondFeatures]) -> tuple[list[list[floa
     for f in features:
         matrix.append([getattr(f, name) for name in feature_names])
     return matrix, feature_names
+
+
+# --------------------------------------------------------------------------- #
+# Leakage-free supervised training samples
+# --------------------------------------------------------------------------- #
+# The old training target was a linear function of the input features
+# (``y = ytm + spread*0.3 + score*0.02``), which the model could trivially learn
+# — R² looked great but the forecast was meaningless. Instead we build genuine
+# (features_as_of_t, realized_ytm_at_t+horizon) pairs from ``bond_history`` so
+# the target comes from the *future*, not from the current feature vector.
+
+
+@dataclass(frozen=True)
+class TrainingSample:
+    """One supervised example: features observed at ``asof`` and the realized
+    outcome ``horizon_days`` later."""
+
+    features: BondFeatures
+    asof: date
+    future_ytm: float
+    future_return_pct: float  # future_ytm - current_ytm (realized YTM move)
+
+
+def _nearest_future_row(
+    history: list[dict], target_day: date, tolerance_days: int
+) -> dict | None:
+    """Return the history row closest to ``target_day`` (on/after preferred),
+    within ``tolerance_days``; ``None`` if no row is close enough."""
+    best: dict | None = None
+    best_gap = tolerance_days + 1
+    for r in history:
+        d = r.get("date")
+        if d is None:
+            continue
+        gap = abs((d - target_day).days)
+        if gap <= tolerance_days and gap < best_gap:
+            best, best_gap = r, gap
+    return best
+
+
+def build_training_samples(
+    bonds: list[dict],
+    history_by_bond: dict[str, list[dict]],
+    *,
+    horizon_days: int = 90,
+    tolerance_days: int = 20,
+    step_days: int = 30,
+    min_history_span_days: int = 60,
+) -> list[TrainingSample]:
+    """Build leakage-free (features, future_ytm) samples.
+
+    For every bond we slide an ``asof`` cursor across its history and, for each
+    position, compute the feature vector using only data up to ``asof`` and pair
+    it with the actual YTM observed ~``horizon_days`` later. The current YTM is
+    never used as the label; the label is a genuine future observation.
+    """
+    avg_by_currency: dict[str, list[float]] = {}
+    for b in bonds:
+        cur = str(b.get("currency", "USD")).upper()
+        avg_by_currency.setdefault(cur, []).append(_safe_float(b.get("yield_to_maturity")))
+    avg = {k: (fmean(v) if v else 0.0) for k, v in avg_by_currency.items()}
+
+    samples: list[TrainingSample] = []
+    for b in bonds:
+        iid = b.get("internal_id")
+        if iid is None:
+            continue
+        hist = sorted(
+            (h for h in history_by_bond.get(iid, []) if h.get("date") is not None),
+            key=lambda r: r["date"],
+        )
+        if len(hist) < 2:
+            continue
+        span = (hist[-1]["date"] - hist[0]["date"]).days
+        if span < min_history_span_days:
+            continue
+
+        # Slide the as-of cursor; leave room for the horizon at the end.
+        cursor = hist[0]["date"] + timedelta(days=step_days)
+        last_valid_asof = hist[-1]["date"] - timedelta(days=horizon_days)
+        while cursor <= last_valid_asof:
+            # Snapshot of the bond as observed at `cursor`.
+            asof_row = _nearest_future_row(hist, cursor, tolerance_days)
+            future_row = _nearest_future_row(
+                hist, cursor + timedelta(days=horizon_days), tolerance_days
+            )
+            if (
+                asof_row is not None
+                and future_row is not None
+                and asof_row.get("yield") is not None
+                and future_row.get("yield") is not None
+            ):
+                current_ytm = _safe_float(asof_row.get("yield"))
+                future_ytm = _safe_float(future_row.get("yield"))
+                snapshot = dict(b)
+                # Use the historical observation, not today's live values.
+                snapshot["yield_to_maturity"] = current_ytm
+                if asof_row.get("price") is not None:
+                    snapshot["price"] = _safe_float(asof_row.get("price"))
+                feats = build_features(
+                    bond_dict=snapshot,
+                    history=hist,
+                    asof=cursor,
+                    avg_yield_by_currency=avg,
+                )
+                samples.append(
+                    TrainingSample(
+                        features=feats,
+                        asof=cursor,
+                        future_ytm=round(future_ytm, 6),
+                        future_return_pct=round(future_ytm - current_ytm, 6),
+                    )
+                )
+            cursor += timedelta(days=step_days)
+
+    return samples

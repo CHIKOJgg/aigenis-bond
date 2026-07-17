@@ -15,10 +15,8 @@ jobs:
           python-version: "3.13"
       - name: Install ruff
         run: pip install ruff
-      - name: Ruff check (authored modules)
-        # Scope to actively-maintained code; the legacy scaffold (api/admin,
-        # api/billing, telegram_bot/handlers) carries pre-existing lint debt.
-        run: ruff check api/access_control.py api/analytics.py api/main.py tests/
+      - name: Ruff check (whole project)
+        run: ruff check .
 
   test:
     runs-on: ubuntu-latest
@@ -33,3 +31,73 @@ jobs:
         run: pip install pytest
       - name: Run tests
         run: pytest
+
+  typecheck:
+    # Non-blocking for now: the codebase carries pre-existing type debt. This
+    # job surfaces regressions without failing the build. Flip continue-on-error
+    # to false once the debt is paid down.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install project + mypy
+        run: |
+          pip install -e . || true
+          pip install mypy
+      - name: Mypy
+        run: mypy
+
+  migrations:
+    # Verify the Alembic chain applies cleanly on a fresh Postgres from zero to
+    # head (and that a downgrade path exists). Catches broken/merge migrations.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: aigenis
+          POSTGRES_PASSWORD: aigenis
+          POSTGRES_DB: aigenis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aigenis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://aigenis:aigenis@localhost:5432/aigenis
+      DATABASE_URL_SYNC: postgresql://aigenis:aigenis@localhost:5432/aigenis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install project
+        run: pip install -e .
+      - name: Alembic upgrade head
+        run: alembic upgrade head
+      - name: Alembic downgrade to base
+        run: alembic downgrade base
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build

@@ -72,6 +72,8 @@ exclude = ["alembic*"]
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+# Alembic migrations are (partly) auto-generated; don't gate CI on their style.
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM", "ARG", "C4", "RUF"]
