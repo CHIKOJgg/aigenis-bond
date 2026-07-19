@@ -642,7 +642,7 @@ class PartnerReferralORM(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-
+class WebhookORM(Base):
     """Подписки на события партнёра (webhook-доставка).
 
     ``events`` — список типов событий (bond.updated, alert.triggered, …).
