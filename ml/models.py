@@ -23,6 +23,7 @@ class BondFeatures(BaseModel):
     currency_idx: int
     duration_years: float
     days_to_maturity: float
+    modified_duration: float = 0.0
     coupon_rate: float
     price: float
     yield_to_maturity: float

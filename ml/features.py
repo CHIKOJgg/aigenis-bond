@@ -9,8 +9,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 from statistics import fmean, pstdev
 
+from desk.duration import duration_report
 from ml.models import BondFeatures
 from scoring.engine import score_bond
+from scraper.models import Bond
 
 CURRENCY_IDX = {"USD": 0, "EUR": 1, "BYN": 2, "XAU": 3, "XAG": 4, "XPT": 5}
 
@@ -102,12 +104,43 @@ def build_features(
         price=price if price else None,
     )
 
+    # Modified duration (proper day-count) is a strong predictor of rate
+    # sensitivity and a valuable enrichment over the coarse duration_years.
+    modified_dur = 0.0
+    if maturity is not None and ytm > 0:
+        try:
+            price_d = Decimal(str(price)) if price is not None else None
+            nominal_d = (
+                Decimal(str(bond_dict["nominal"]))
+                if bond_dict.get("nominal") is not None
+                else None
+            )
+            b = Bond(
+                internal_id=str(bond_dict["internal_id"]),
+                name=bond_dict.get("name", "") or "",
+                currency=currency,
+                yield_to_maturity=ytm,
+                coupon_rate=coupon,
+                coupon_frequency=int(bond_dict.get("coupon_frequency") or 2),
+                maturity_date=maturity,
+                price=price_d,
+                start_date=bond_dict.get("start_date"),
+                issuer=bond_dict.get("issuer"),
+                status=str(bond_dict.get("status", "active")),
+                nominal=nominal_d,
+                fetched_at=asof,
+            )
+            modified_dur = duration_report(b, asof=asof, ytm_override=ytm).modified_duration
+        except Exception:  # feature is best-effort
+            modified_dur = 0.0
+
     return BondFeatures(
         internal_id=str(bond_dict["internal_id"]),
         asof_date=asof,
         currency_idx=CURRENCY_IDX.get(currency, 99),
         duration_years=round(duration, 4),
         days_to_maturity=round(days_to_maturity, 2),
+        modified_duration=round(modified_dur, 4),
         coupon_rate=coupon,
         price=price,
         yield_to_maturity=ytm,
@@ -159,6 +192,7 @@ def features_to_matrix(features: Iterable[BondFeatures]) -> tuple[list[list[floa
         "currency_idx",
         "duration_years",
         "days_to_maturity",
+        "modified_duration",
         "coupon_rate",
         "price",
         "yield_to_maturity",

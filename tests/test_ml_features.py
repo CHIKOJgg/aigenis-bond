@@ -81,6 +81,7 @@ def test_features_to_matrix_shape_and_names():
     f = build_features(bond_dict=_bond_dict(), asof=date(2026, 1, 1))
     matrix, names = features_to_matrix([f])
     assert len(matrix) == 1
-    assert len(matrix[0]) == len(names) == 18
+    assert len(matrix[0]) == len(names) == 19
     assert "yield_to_maturity" in names
+    assert "modified_duration" in names
     assert "is_gov_issuer" in names

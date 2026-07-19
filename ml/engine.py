@@ -168,8 +168,8 @@ def train_buy_classifier(
     samples: list[Any] | None = None,
     *,
     version: str | None = None,
-    buy_threshold_pct: float = -0.25,
-    avoid_threshold_pct: float = 0.5,
+    buy_threshold_pct: float = -0.25,  # noqa: ARG001  # deprecated, kept for callers
+    avoid_threshold_pct: float = 0.5,  # noqa: ARG001  # deprecated, kept for callers
     features: list[BondFeatures] | None = None,  # noqa: ARG001  # deprecated, kept for callers
 ) -> tuple[ModelVersion, TrainingRun]:
     """Train a buy/hold/avoid classifier on *realized* future outcomes.
@@ -186,20 +186,12 @@ def train_buy_classifier(
     if len(samples) < 30:
         raise ValueError(f"too few samples for training: {len(samples)}")
 
-    def _label(move: float) -> int:
-        # move = future_ytm - current_ytm (percentage points)
-        if move <= buy_threshold_pct:
-            return 2  # yield fell -> price rose -> buy
-        if move >= avoid_threshold_pct:
-            return 0  # yield rose -> price fell -> avoid
-        return 1  # roughly flat -> hold
-
     train_s, test_s = _time_split(samples)
 
     X_train, names = features_to_matrix([s.features for s in train_s])
     X_test, _ = features_to_matrix([s.features for s in test_s])
-    y_train = np.array([_label(s.future_return_pct) for s in train_s], dtype=int)
-    y_test = np.array([_label(s.future_return_pct) for s in test_s], dtype=int)
+    y_train = np.array([_outcome_label(s.future_return_pct) for s in train_s], dtype=int)
+    y_test = np.array([_outcome_label(s.future_return_pct) for s in test_s], dtype=int)
 
     scaler = StandardScaler()
     X_train_s = scaler.fit_transform(X_train)
@@ -253,6 +245,90 @@ def train_buy_classifier(
 
 # Class labels produced by ``train_buy_classifier`` (realized future YTM move).
 _DECISION_FROM_CLASS = {0: "avoid", 1: "hold", 2: "buy"}
+
+
+def _outcome_label(move: float, buy_threshold_pct: float = -0.25, avoid_threshold_pct: float = 0.5) -> int:
+    """Map a realized future YTM move (pp) to a decision class index.
+
+    Mirrors ``train_buy_classifier`` so the backtest report and the trained
+    classifier agree on labels: yield fell -> buy (2), yield rose -> avoid (0),
+    else hold (1).
+    """
+    if move <= buy_threshold_pct:
+        return 2
+    if move >= avoid_threshold_pct:
+        return 0
+    return 1
+
+
+def backtest_report(samples: list[Any], *, target_horizon_days: int = 90, top_n: int = 10) -> dict:
+    """Walk-forward quality report for the ML stack.
+
+    Trains the regressor + classifier on the earlier out-of-time split and
+    evaluates on the held-out most-recent window, reporting MAE/R² (vs the
+    naive random-walk baseline) and classifier accuracy (vs the majority
+    class), plus the top feature importances. Use this to track whether a new
+    training run actually improves predictive skill before promoting it.
+    """
+    if not samples:
+        raise ValueError("backtest_report requires a non-empty TrainingSample list")
+    if len(samples) < 30:
+        raise ValueError(f"too few samples for backtest: {len(samples)}")
+
+    train_s, test_s = _time_split(samples)
+    X_train, names = features_to_matrix([s.features for s in train_s])
+    X_test, _ = features_to_matrix([s.features for s in test_s])
+    y_train = np.array([s.future_ytm for s in train_s], dtype=float)
+    y_test = np.array([s.future_ytm for s in test_s], dtype=float)
+
+    scaler = StandardScaler()
+    Xtr = scaler.fit_transform(X_train)
+    Xte = scaler.transform(X_test)
+
+    reg = GradientBoostingRegressor(n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42)
+    reg.fit(Xtr, y_train)
+    preds = reg.predict(Xte)
+    mae = float(mean_absolute_error(y_test, preds))
+    r2 = float(r2_score(y_test, preds)) if len(set(y_test.tolist())) > 1 else 0.0
+    baseline_mae = float(
+        mean_absolute_error(y_test, np.array([s.features.yield_to_maturity for s in test_s], dtype=float))
+    )
+
+    yc_train = np.array([_outcome_label(s.future_return_pct) for s in train_s], dtype=int)
+    yc_test = np.array([_outcome_label(s.future_return_pct) for s in test_s], dtype=int)
+    clf = GradientBoostingClassifier(n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42)
+    if len(set(yc_train.tolist())) >= 2:
+        clf.fit(Xtr, yc_train)
+        acc = float(clf.score(Xte, yc_test)) if len(yc_test) else 0.0
+    else:
+        acc = 0.0
+    if len(yc_test):
+        _vals, counts = np.unique(yc_test, return_counts=True)
+        baseline_acc = float(counts.max() / counts.sum())
+    else:
+        baseline_acc = 0.0
+
+    importances = dict(zip(names, (float(x) for x in reg.feature_importances_), strict=False))
+    top = sorted(importances.items(), key=lambda kv: -kv[1])[:top_n]
+
+    return {
+        "horizon_days": target_horizon_days,
+        "n_train": len(train_s),
+        "n_test": len(test_s),
+        "regressor": {
+            "mae": round(mae, 4),
+            "r2": round(r2, 4),
+            "baseline_mae": round(baseline_mae, 4),
+            "beats_baseline": bool(mae < baseline_mae),
+        },
+        "classifier": {
+            "accuracy": round(acc, 4),
+            "baseline_accuracy": round(baseline_acc, 4),
+            "beats_baseline": bool(acc > baseline_acc),
+        },
+        "top_features": [{"name": n, "importance": round(v, 4)} for n, v in top],
+    }
+
 
 
 def load_artifact(path: str) -> dict[str, Any]:
