@@ -100,7 +100,15 @@ def run_stress(
             ytm_override=float(bond.yield_to_maturity),
         ).modified_duration
 
-        price_change_pct = -duration * rate_shock_pct - duration * credit_shock_pct
+        # Linear duration term plus a convexity correction for large shocks
+        # (±100bp/±200bp), where the straight-line approximation is materially
+        # off. Convexity is approximated from modified duration (zero-coupon
+        # bound: convexity ≈ duration²), which is conservative for coupon bonds.
+        total_shock = rate_shock_pct + credit_shock_pct
+        convexity = duration * duration
+        price_change_pct = (
+            -duration * total_shock + 0.5 * convexity * total_shock * total_shock
+        )
         new_price = float(bond.price or 100) * (1 + price_change_pct)
 
         fx_impact = 1.0

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import bisect
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -218,6 +219,24 @@ def _nearest_future_row(
     return best
 
 
+def _nearest_yield_asof(
+    hist_sorted: list[tuple[date, float]], cursor: date, tol: int = 30
+) -> float | None:
+    """Nearest historical yield to ``cursor`` within ``tol`` days (None if none)."""
+    if not hist_sorted:
+        return None
+    dates = [d for d, _ in hist_sorted]
+    i = bisect.bisect_left(dates, cursor)
+    best = None
+    best_gap = tol + 1
+    for j in (i - 1, i):
+        if 0 <= j < len(dates):
+            gap = abs((dates[j] - cursor).days)
+            if gap <= tol and gap < best_gap:
+                best, best_gap = j, gap
+    return _safe_float(hist_sorted[best][1]) if best is not None else None
+
+
 def build_training_samples(
     bonds: list[dict],
     history_by_bond: dict[str, list[dict]],
@@ -234,11 +253,36 @@ def build_training_samples(
     it with the actual YTM observed ~``horizon_days`` later. The current YTM is
     never used as the label; the label is a genuine future observation.
     """
+    # Global (today) average is only a fallback for currencies that lack any
+    # historical observation as-of a given cursor.
     avg_by_currency: dict[str, list[float]] = {}
     for b in bonds:
         cur = str(b.get("currency", "USD")).upper()
         avg_by_currency.setdefault(cur, []).append(_safe_float(b.get("yield_to_maturity")))
     avg = {k: (fmean(v) if v else 0.0) for k, v in avg_by_currency.items()}
+
+    # Pre-sort each bond's (date, yield) history once so we can compute the
+    # cross-sectional market average *as-of* any historical cursor instead of
+    # leaking today's average into past training samples.
+    bond_hist_sorted: dict[object, list[tuple[date, float]]] = {}
+    for b in bonds:
+        iid = b.get("internal_id")
+        hist = [
+            (h["date"], _safe_float(h.get("yield")))
+            for h in history_by_bond.get(iid, [])
+            if h.get("date") is not None and h.get("yield") is not None
+        ]
+        hist.sort(key=lambda x: x[0])
+        bond_hist_sorted[iid] = hist
+
+    def avg_asof(cursor: date) -> dict[str, float]:
+        by_cur: dict[str, list[float]] = {}
+        for b in bonds:
+            cur = str(b.get("currency", "USD")).upper()
+            y = _nearest_yield_asof(bond_hist_sorted.get(b.get("internal_id"), []), cursor)
+            if y is not None:
+                by_cur.setdefault(cur, []).append(y)
+        return {k: fmean(v) for k, v in by_cur.items()}
 
     samples: list[TrainingSample] = []
     for b in bonds:
@@ -259,6 +303,9 @@ def build_training_samples(
         cursor = hist[0]["date"] + timedelta(days=step_days)
         last_valid_asof = hist[-1]["date"] - timedelta(days=horizon_days)
         while cursor <= last_valid_asof:
+            # Cross-sectional market average as-of `cursor` (not today), so the
+            # `spread_to_avg` feature stays time-consistent with the snapshot.
+            cur_avg = {**avg, **avg_asof(cursor)}
             # Snapshot of the bond as observed at `cursor`.
             asof_row = _nearest_future_row(hist, cursor, tolerance_days)
             future_row = _nearest_future_row(
@@ -281,7 +328,7 @@ def build_training_samples(
                     bond_dict=snapshot,
                     history=hist,
                     asof=cursor,
-                    avg_yield_by_currency=avg,
+                    avg_yield_by_currency=cur_avg,
                 )
                 samples.append(
                     TrainingSample(

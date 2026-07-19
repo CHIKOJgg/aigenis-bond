@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -26,6 +27,17 @@ from ml.registry import (
 )
 
 ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _version_from_path(path: str | None) -> str | None:
+    """Extract the artifact version from an artifact path, or None."""
+    if not path:
+        return None
+    name = Path(path).stem  # e.g. ytm_regressor_20240101120000
+    for prefix in ("ytm_regressor_", "buy_classifier_", "volatility_"):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return None
 
 
 def _decide(score: float, predicted_return: float | None) -> Decision:
@@ -259,6 +271,8 @@ def predict_one(
 
     predicted_ytm: float | None = None
     feature_importance: dict[str, float] = {}
+    used_reg = False
+    used_cls = False
 
     if regressor_path:
         bundle = load_artifact(regressor_path)
@@ -269,8 +283,13 @@ def predict_one(
         predicted_ytm = float(model.predict(Xs)[0])
         if hasattr(model, "feature_importances_"):
             feature_importance = dict(zip(names, (float(x) for x in model.feature_importances_), strict=False))
+        used_reg = True
 
-    decision: Decision = _decide(feature.score, None)
+    predicted_return: float | None = (
+        predicted_ytm - feature.yield_to_maturity if predicted_ytm is not None else None
+    )
+
+    decision: Decision = _decide(feature.score, predicted_return)
     confidence = min(max(feature.score / 100, 0.0), 1.0)
 
     if classifier_path:
@@ -284,17 +303,28 @@ def predict_one(
         best_class = int(classes[int(np.argmax(proba))])
         decision = _DECISION_FROM_CLASS.get(best_class, decision)
         confidence = float(np.max(proba))
+        used_cls = True
+
+    # Label the prediction by the model(s) that actually produced it instead of
+    # hard-coding a single kind (previously always "ytm_regression" even when the
+    # classifier supplied the decision).
+    if used_reg and used_cls:
+        model_kind: ModelKind = "combined"
+    elif used_cls:
+        model_kind = "buy_classifier"
+    else:
+        model_kind = "ytm_regression"
+
+    model_version = _version_from_path(regressor_path) if used_reg else (
+        _version_from_path(classifier_path) or "combined"
+    )
 
     explanation = _explanation(feature, predicted_ytm or 0.0)
 
-    predicted_return: float | None = None
-    if predicted_ytm is not None:
-        predicted_return = predicted_ytm - feature.yield_to_maturity
-
     return Prediction(
         internal_id=feature.internal_id,
-        model_version="combined",
-        model_kind="ytm_regression",
+        model_version=model_version,
+        model_kind=model_kind,
         asof_date=feature.asof_date,
         predicted_ytm=predicted_ytm,
         predicted_return_pct=predicted_return,
