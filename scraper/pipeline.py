@@ -31,6 +31,10 @@ logger = get_logger("scraper.pipeline")
 
 async def collect_listing(client: AigenisClient, currencies: Iterable[str]) -> list[str]:
     seen: set[str] = set()
+    # Clear the internal_id→api_id map ONCE before launching the concurrent
+    # listing tasks. ``_api_fetch_listing`` must NOT clear it itself (that would
+    # race between currencies and drop each other's entries).
+    client._id_by_internal.clear()
     tasks = [client.fetch_listing(cur) for cur in currencies]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     internal_ids: list[str] = []

@@ -27,6 +27,7 @@ from api.auth.service import (
     register_user,
     reset_password,
 )
+from scraper.config import get_settings
 from scraper.db import session_scope
 from scraper.logging import get_logger
 
@@ -88,6 +89,15 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
         if resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Invalid Google token")
         data = resp.json()
+        google_client_id = get_settings().aigenis.google_client_id
+        if not google_client_id:
+            raise HTTPException(status_code=500, detail="Google login is not configured")
+        aud = data.get("aud")
+        azp = data.get("azp")
+        if aud != google_client_id and azp != google_client_id:
+            raise HTTPException(status_code=401, detail="Invalid Google token audience")
+        if not data.get("email_verified", False):
+            raise HTTPException(status_code=401, detail="Google email is not verified")
         google_id = data["sub"]
         email = data["email"]
         name = req.name or data.get("name", email.split("@")[0])

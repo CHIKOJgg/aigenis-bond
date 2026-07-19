@@ -56,14 +56,16 @@ def relative_value_signals(
             z = (value - fair_avg) / sd
             spread = value - fair_avg
             if z >= z_threshold:
-                side = "sell"
-                rationale = (
-                    f"Z={z:+.2f}: богаче peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
-                )
-            elif z <= -z_threshold:
+                # Higher yield than peers => the bond is CHEAP => buy.
                 side = "buy"
                 rationale = (
                     f"Z={z:+.2f}: дешевле peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                )
+            elif z <= -z_threshold:
+                # Lower yield than peers => the bond is RICH/expensive => sell.
+                side = "sell"
+                rationale = (
+                    f"Z={z:+.2f}: богаче peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
                 )
             else:
                 side = "hold"
@@ -97,7 +99,8 @@ def signals_from_curve(curve: YieldCurve, *, asof: date | None = None) -> list[R
     signals: list[RVSignal] = []
     for p in curve.points:
         z = (p.rate_pct - avg_yield) / sd_yield
-        side = "sell" if z >= 1 else ("buy" if z <= -1 else "hold")
+        # Higher rate than the curve average => cheap => buy; lower => rich => sell.
+        side = "buy" if z >= 1 else ("sell" if z <= -1 else "hold")
         signals.append(
             RVSignal(
                 internal_id=f"{curve.currency}-{p.tenor}",

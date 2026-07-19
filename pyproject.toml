@@ -52,6 +52,9 @@ prod = [
     "sentry-sdk>=2.18.0",
     "gunicorn>=23.0.0",
 ]
+load = [
+    "locust>=2.32.0",
+]
 
 [project.scripts]
 aigenis-parser = "scraper.__main__:main"
@@ -122,4 +125,7 @@ strict = true
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-q"
+markers = [
+    "load: server load / stress tests (require a running API + locust)",
+]
 

@@ -4,6 +4,7 @@ import type {
   Bond, BondScore, Stats, SubscribeInfo, WatchlistItem,
   AnalyticsCurve, AnalyticsRV, AnalyticsCarry, AnalyticsStress, AnalyticsRepo,
   AnalyticsPortfolio, AnalyticsForecast, AnalyticsAlert, CompanySummary,
+  Position, PortfolioIncome, BondAnalysisResult, Cashflow, AlertRule, AlertFeedItem,
 } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { PaywallProvider, usePaywall } from './lib/PaywallContext';
@@ -212,7 +213,7 @@ function AppInner() {
             </button>
           </div>
         )}
-        {page === 'dashboard' && <Dashboard onPickCurrency={(cur) => { sessionStorage.setItem('bonds_currency', cur); setPage('bonds'); }} onOpenCompany={openCompany} />}
+        {page === 'dashboard' && <Dashboard onPickCurrency={(cur) => { sessionStorage.setItem('bonds_currency', cur); setPage('bonds'); }} onOpenCompany={openCompany} onSubscribe={() => setPage('subscribe')} />}
         {page === 'bonds' && <BondsPage />}
         {page === 'scores' && <ScoresPage />}
         {page === 'desk' && <DeskPage onSubscribe={() => setPage('subscribe')} />}
@@ -232,6 +233,7 @@ function AppInner() {
           onClose={() => {
             setSelectedBond(null);
           }}
+          onSubscribe={() => setPage('subscribe')}
         />
       )}
       <PaywallModal onSubscribe={() => setPage('subscribe')} />
@@ -585,7 +587,7 @@ function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   );
 }
 
-function Dashboard({ onPickCurrency, onOpenCompany }: { onPickCurrency?: (cur: string) => void; onOpenCompany?: (issuer: string) => void }) {
+function Dashboard({ onPickCurrency, onOpenCompany, onSubscribe }: { onPickCurrency?: (cur: string) => void; onOpenCompany?: (issuer: string) => void; onSubscribe?: () => void }) {
   const { t } = useI18n();
   const [stats, setStats] = useState<Stats | null>(null);
   const [bonds, setBonds] = useState<Bond[]>([]);
@@ -678,7 +680,7 @@ function Dashboard({ onPickCurrency, onOpenCompany }: { onPickCurrency?: (cur: s
         </div>
       )}
 
-      <AlertsWidget />
+      <AlertsWidget onSubscribe={onSubscribe} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
@@ -939,165 +941,46 @@ function MarketsOverview({ onPick }: { onPick?: (cur: string) => void }) {
   );
 }
 
-function AlertsWidget() {
+function AlertsWidget({ onSubscribe }: { onSubscribe?: () => void }) {
   const { t } = useI18n();
-  const { user } = useAuth();
-  const storageKey = `alerts_${user?.id ?? 'anon'}`;
+  const { rules, feed, loading, error, locked, busy, addRule, removeRule } = useUserAlerts();
 
-  interface AlertRule {
-    id: string;
-    scope: 'bond' | 'currency';
-    target: string;
-    metric: 'ytm' | 'score' | 'price';
-    op: '>' | '<';
-    value: number;
-    enabled: boolean;
-  }
-
-  const [rules, setRules] = useState<AlertRule[]>([]);
-  const [triggered, setTriggered] = useState<{ rule: AlertRule; bond: Bond; value: number }[]>([]);
-  const [form, setForm] = useState<{ scope: 'bond' | 'currency'; target: string; metric: 'ytm' | 'score' | 'price'; op: '>' | '<'; value: string }>({
-    scope: 'currency', target: '', metric: 'ytm', op: '>', value: '',
-  });
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) setRules(JSON.parse(saved));
-    } catch { /* ignore */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey]);
-
-  const persist = (next: AlertRule[]) => {
-    setRules(next);
-    localStorage.setItem(storageKey, JSON.stringify(next));
-  };
-
-  const evaluate = async (rs: AlertRule[]) => {
-    if (rs.length === 0) { setTriggered([]); return; }
-    try {
-      const [bonds, sc] = await Promise.all([
-        api.bonds.list({ limit: 1000 }),
-        api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
-      ]);
-      const scoreMap: Record<string, number> = {};
-      sc.forEach((s) => { scoreMap[s.internal_id] = s.score; });
-      const out: { rule: AlertRule; bond: Bond; value: number }[] = [];
-      for (const r of rs.filter((x) => x.enabled)) {
-        const matched = bonds.filter((b) => (r.scope === 'bond' ? b.internal_id === r.target : b.currency === r.target));
-        for (const b of matched) {
-          const val = r.metric === 'score'
-            ? scoreMap[b.internal_id]
-            : r.metric === 'ytm'
-              ? (b.yield_to_maturity != null ? b.yield_to_maturity : null)
-              : b.price;
-          if (val == null) continue;
-          const hit = r.op === '>' ? val > r.value : val < r.value;
-          if (hit) out.push({ rule: r, bond: b, value: val });
-        }
-      }
-      setTriggered(out);
-    } catch {
-      setTriggered([]);
-    }
-  };
-
-  const addRule = () => {
-    const v = Number(form.value);
-    if (!form.target.trim() || isNaN(v)) return;
-    const rule: AlertRule = {
-      id: Math.random().toString(36).slice(2),
-      scope: form.scope,
-      target: form.target.trim().toUpperCase(),
-      metric: form.metric,
-      op: form.op,
-      value: v,
-      enabled: true,
-    };
-    const next = [...rules, rule];
-    persist(next);
-    setForm((f) => ({ ...f, target: '', value: '' }));
-    evaluate(next);
-  };
-
-  const removeRule = (id: string) => {
-    const next = rules.filter((r) => r.id !== id);
-    persist(next);
-    evaluate(next);
-  };
-
-  useEffect(() => { evaluate(rules); /* eslint-disable-next-line */ }, [rules]);
-
-  const metricLabel: Record<AlertRule['metric'], string> = { ytm: t('alerts.metricYtm'), score: t('alerts.metricScore'), price: t('alerts.metricPrice') };
+  if (loading) return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold flex items-center gap-2">
+        <Bell size={16} className="text-emerald-400" /> {t('alerts.title')}
+      </h3>
+      <div className="mt-3 space-y-2">
+        {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-gray-800 rounded animate-pulse" />)}
+      </div>
+    </div>
+  );
+  if (locked) return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
+        <Bell size={16} className="text-emerald-400" /> {t('alerts.title')}
+      </h3>
+      <UpgradePrompt onSubscribe={onSubscribe} />
+    </div>
+  );
+  if (error) return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
+        <Bell size={16} className="text-emerald-400" /> {t('alerts.title')}
+      </h3>
+      <ErrorBanner message={error} />
+    </div>
+  );
 
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-        <Bell size={16} className="text-emerald-400" /> {t('alerts.title')}
-        {triggered.length > 0 && (
-          <span className="text-xs bg-red-900 text-red-300 px-2 py-0.5 rounded ml-auto">{t('alerts.triggered', { n: triggered.length })}</span>
-        )}
-      </h3>
-
-      {triggered.length > 0 && (
-        <div className="mb-3 space-y-1">
-          {triggered.slice(0, 6).map((tr, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm bg-red-900/20 border border-red-800 rounded-lg px-3 py-1.5">
-              <span className="font-mono text-xs text-gray-300">{tr.bond.internal_id}</span>
-               <span className="text-gray-400">
-                 {metricLabel[tr.rule.metric]} {tr.rule.op === '>' ? t('alerts.above') : t('alerts.below')} {tr.rule.value}
-               </span>
-              <span className="ml-auto font-mono text-red-300">
-                {tr.value != null ? tr.value.toFixed(2) : '—'}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
-        <select value={form.scope} onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value as 'bond' | 'currency' }))}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
-          <option value="currency">{t('alerts.scopeCurrency')}</option>
-          <option value="bond">{t('alerts.scopeBond')}</option>
-        </select>
-        <input value={form.target} onChange={(e) => setForm((f) => ({ ...f, target: e.target.value }))} placeholder={form.scope === 'bond' ? 'ID' : 'USD'}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs" />
-        <select value={form.metric} onChange={(e) => setForm((f) => ({ ...f, metric: e.target.value as 'ytm' | 'score' | 'price' }))}
-          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
-          <option value="ytm">YTM %</option>
-          <option value="score">{t('alerts.metricScore')}</option>
-          <option value="price">{t('alerts.metricPrice')}</option>
-        </select>
-        <div className="flex gap-1">
-          <select value={form.op} onChange={(e) => setForm((f) => ({ ...f, op: e.target.value as '>' | '<' }))}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
-            <option value=">">&gt;</option>
-            <option value="<">&lt;</option>
-          </select>
-          <input value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} type="number" step="0.1" placeholder={t('alerts.value')}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs w-full" />
-        </div>
-          <button onClick={addRule}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2 py-1.5 text-xs transition-colors">{t('alerts.add')}</button>
-      </div>
-
-      {rules.length > 0 && (
-        <div className="space-y-1">
-          {rules.map((r) => (
-            <div key={r.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-800 last:border-0">
-              <span className="text-gray-300">
-                 {r.scope === 'bond' ? t('alerts.scopeBond') : t('alerts.scopeCurrency')} <b className="font-mono">{r.target}</b>: {metricLabel[r.metric]} {r.op === '>' ? '>' : '<'} {r.value}
-               </span>
-               <button onClick={() => removeRule(r.id)} className="text-gray-500 hover:text-red-400" aria-label={t('alerts.remove')}>
-                <X size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {rules.length === 0 && <p className="text-xs text-gray-500">{t('alerts.noRules')}</p>}
-    </div>
+    <UserAlertsPanel
+      rules={rules}
+      feed={feed}
+      busy={busy}
+      onAdd={addRule}
+      onRemove={removeRule}
+      emptyLabel={t('alerts.noRules')}
+    />
   );
 }
 
@@ -1131,6 +1014,7 @@ function defaultForPreset(id: string): Partial<BondFiltersState> {
 
 function BondsPage() {
   const { t } = useI18n();
+  const { openPaywall } = usePaywall();
   const { user } = useAuth();
   const [allBonds, setAllBonds] = useState<Bond[]>([]);
   const [scoreMap, setScoreMap] = useState<Record<string, number>>({});
@@ -1459,6 +1343,7 @@ function BondsPage() {
           isFavorite={favorites.has(selected.internal_id)}
           onToggleFavorite={() => toggleFav(selected.internal_id)}
           onClose={() => setSelected(null)}
+          onSubscribe={() => openPaywall('portfolio')}
         />
       )}
 
@@ -1537,8 +1422,70 @@ function ComparisonModal({ bonds, scoreMap, onClose }: { bonds: Bond[]; scoreMap
   );
 }
 
-function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond: Bond; isFavorite?: boolean; onToggleFavorite?: () => void; onClose: () => void }) {
+function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose, onSubscribe }: { bond: Bond; isFavorite?: boolean; onToggleFavorite?: () => void; onClose: () => void; onSubscribe?: () => void }) {
   const { t } = useI18n();
+  const [analysis, setAnalysis] = useState<BondAnalysisResult | null>(null);
+  const [analysisLocked, setAnalysisLocked] = useState(false);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [cashflow, setCashflow] = useState<Cashflow | null>(null);
+  const [cashflowLocked, setCashflowLocked] = useState(false);
+  const [cashflowLoading, setCashflowLoading] = useState(false);
+  const [cfAmount, setCfAmount] = useState('1000');
+  const [posAmount, setPosAmount] = useState('1000');
+  const [busy, setBusy] = useState(false);
+  const [posMsg, setPosMsg] = useState<string | null>(null);
+  const [posErr, setPosErr] = useState<string | null>(null);
+  const [alertMetric, setAlertMetric] = useState<'price' | 'ytm'>('price');
+  const [alertThreshold, setAlertThreshold] = useState('');
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
+  const [alertErr, setAlertErr] = useState<string | null>(null);
+
+  const showAnalysis = async () => {
+    setAnalysisLoading(true); setAnalysisLocked(false); setAnalysis(null);
+    try {
+      setAnalysis(await api.portfolio.analysis(bond.internal_id));
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) setAnalysisLocked(true);
+    } finally { setAnalysisLoading(false); }
+  };
+
+  const showCashflow = async () => {
+    setCashflowLoading(true); setCashflowLocked(false); setCashflow(null);
+    try {
+      const amt = Number(cfAmount) || 1000;
+      setCashflow(await api.portfolio.cashflow(bond.internal_id, amt));
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) setCashflowLocked(true);
+    } finally { setCashflowLoading(false); }
+  };
+
+  const addToPortfolio = async () => {
+    const amt = Number(posAmount);
+    if (isNaN(amt) || amt <= 0) return;
+    setBusy(true); setPosMsg(null); setPosErr(null);
+    try {
+      await api.portfolio.addPosition(bond.internal_id, amt);
+      setPosMsg('Добавлено в портфель');
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) onSubscribe?.();
+      else setPosErr(e instanceof Error ? e.message : 'Failed');
+    } finally { setBusy(false); }
+  };
+
+  const createAlert = async () => {
+    const th = Number(alertThreshold);
+    if (isNaN(th)) return;
+    setBusy(true); setAlertMsg(null); setAlertErr(null);
+    try {
+      await api.userAlerts.createRule({ internal_id: bond.internal_id, metric: alertMetric, direction: 'below', threshold: th });
+      setAlertMsg('Алерт создан');
+      setAlertThreshold('');
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) onSubscribe?.();
+      else setAlertErr(e instanceof Error ? e.message : 'Failed');
+    } finally { setBusy(false); }
+  };
+
   return (
     <Modal onClose={onClose} className="max-w-lg w-full max-h-[80vh] overflow-y-auto">
       <div className="p-6">
@@ -1568,6 +1515,111 @@ function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose }: { bond
           <DetailRow label={t('common.status')} value={bond.status} />
           <DetailRow label={t('common.lastUpdated')} value={bond.fetched_at ? new Date(bond.fetched_at).toLocaleString() : '-'} />
         </dl>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button onClick={showAnalysis} className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">
+            💡 Стоит купить?
+          </button>
+          <button onClick={showCashflow} className="flex items-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">
+            💰 Доход
+          </button>
+          <button onClick={addToPortfolio} disabled={busy} className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">
+            ➕ В портфель
+          </button>
+          <button onClick={createAlert} disabled={busy} className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">
+            🔔 Следить за ценой
+          </button>
+        </div>
+
+        {posMsg && <p className="text-emerald-400 text-xs mt-2">{posMsg}</p>}
+        {posErr && <p className="text-red-400 text-xs mt-2">{posErr}</p>}
+        {alertMsg && <p className="text-emerald-400 text-xs mt-2">{alertMsg}</p>}
+        {alertErr && <p className="text-red-400 text-xs mt-2">{alertErr}</p>}
+
+        {analysisLoading && <div className="mt-4"><LoadingSkeleton /></div>}
+        {analysisLocked && <div className="mt-4"><UpgradePrompt onSubscribe={onSubscribe} /></div>}
+        {analysis && !analysisLocked && (
+          <div className="mt-4 bg-gray-800/40 rounded-xl p-4 space-y-3">
+            <h4 className="font-semibold">💡 {analysis.analysis.verdict}</h4>
+            {Array.isArray(analysis.analysis.reasons) && analysis.analysis.reasons.length > 0 && (
+              <ul className="list-disc pl-5 text-sm text-gray-300 space-y-1">
+                {analysis.analysis.reasons.map((r, i) => <li key={i}>{String(r)}</li>)}
+              </ul>
+            )}
+            {analysis.relative_value && (
+              <div className="text-sm text-gray-300">
+                Relative value: <b className="capitalize">{analysis.relative_value.side}</b>
+                {analysis.relative_value.z_score != null && <span className="ml-1 font-mono">(z={analysis.relative_value.z_score.toFixed(2)})</span>}
+                {analysis.relative_value.spread_pct != null && <span className="ml-1 font-mono">spread {analysis.relative_value.spread_pct.toFixed(2)}%</span>}
+              </div>
+            )}
+            {analysis.ml_prediction && (
+              <div className="text-sm text-gray-300 space-y-1 border-t border-gray-700 pt-2 mt-2">
+                <div>ML: <b className="capitalize">{analysis.ml_prediction.decision}</b> (conf {analysis.ml_prediction.confidence.toFixed(2)})</div>
+                <div>Прогноз YTM: {analysis.ml_prediction.predicted_ytm != null ? `${analysis.ml_prediction.predicted_ytm.toFixed(2)}%` : '—'}</div>
+                <div>Прогноз доходности: {analysis.ml_prediction.predicted_return_pct != null ? `${analysis.ml_prediction.predicted_return_pct.toFixed(2)}%` : '—'}</div>
+                {analysis.ml_prediction.explanation?.length > 0 && (
+                  <ul className="list-disc pl-5 text-gray-400">
+                    {analysis.ml_prediction.explanation.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+            {analysis.disclaimer && <p className="text-[10px] text-gray-500">{analysis.disclaimer}</p>}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-end gap-2">
+          <div className="flex-1">
+            <label className="text-xs text-gray-400 block mb-1">Сумма вложения</label>
+            <input value={cfAmount} onChange={(e) => setCfAmount(e.target.value)} type="number" step="0.01"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <button onClick={showCashflow} disabled={cashflowLoading} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+            Рассчитать
+          </button>
+        </div>
+        {cashflowLoading && <div className="mt-3"><LoadingSkeleton /></div>}
+        {cashflowLocked && <div className="mt-3"><UpgradePrompt onSubscribe={onSubscribe} /></div>}
+        {cashflow && !cashflowLocked && (
+          <div className="mt-3 bg-gray-800/40 rounded-xl p-4 text-sm space-y-2">
+            <div className="flex justify-between"><span className="text-gray-400">Годовой доход</span><span className="font-mono text-emerald-400">{cashflow.annual_income.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Доходность на вложения</span><span className="font-mono">{cashflow.yield_on_cost.toFixed(2)}%</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">Всего купонов</span><span className="font-mono">{cashflow.total_coupons.toFixed(2)}</span></div>
+            <div className="max-h-48 overflow-y-auto border-t border-gray-700 pt-2 mt-2">
+              {cashflow.cashflows.map((c, i) => (
+                <div key={i} className="flex justify-between py-1 border-b border-gray-800 last:border-0">
+                  <span className="text-gray-300">{new Date(c.date).toLocaleDateString()} · {c.kind}</span>
+                  <span className="font-mono">{c.amount.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex items-end gap-2">
+          <div className="flex-1">
+            <label className="text-xs text-gray-400 block mb-1">Сумма вложения</label>
+            <input value={posAmount} onChange={(e) => setPosAmount(e.target.value)} type="number" step="0.01"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <button onClick={addToPortfolio} disabled={busy} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+            Добавить
+          </button>
+        </div>
+
+        <div className="mt-3 flex items-end gap-2">
+          <select value={alertMetric} onChange={(e) => setAlertMetric(e.target.value as 'price' | 'ytm')}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-white text-sm">
+            <option value="price">{t('alerts.metricPrice')}</option>
+            <option value="ytm">YTM %</option>
+          </select>
+          <input value={alertThreshold} onChange={(e) => setAlertThreshold(e.target.value)} type="number" step="0.1" placeholder="порог"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+          <button onClick={createAlert} disabled={busy} className="bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">
+            Создать
+          </button>
+        </div>
       </div>
     </Modal>
   );
@@ -1584,6 +1636,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 function ScoresPage() {
   const { t } = useI18n();
+  const { openPaywall } = usePaywall();
   const [scores, setScores] = useState<BondScore[]>([]);
   const [minScore, setMinScore] = useState('');
   const [debouncedMinScore, setDebouncedMinScore] = useState('');
@@ -1665,7 +1718,7 @@ function ScoresPage() {
           {scores.length === 0 && <EmptyState message={t('scores.empty')} />}
         </div>
       )}
-      {detail && <BondDetailModal bond={detail} onClose={() => setDetail(null)} />}
+      {detail && <BondDetailModal bond={detail} onClose={() => setDetail(null)} onSubscribe={() => openPaywall('portfolio')} />}
     </div>
   );
 }
@@ -2012,6 +2065,17 @@ function DeskStress({ onSubscribe }: { onSubscribe?: () => void }) {
 
 function PortfolioPage({ onSubscribe }: { onSubscribe?: () => void }) {
   const { t } = useI18n();
+  return (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">{t('nav.portfolio')}</h2>
+      <ModelPortfolioSection onSubscribe={onSubscribe} />
+      <MyPositionsSection onSubscribe={onSubscribe} />
+    </div>
+  );
+}
+
+function ModelPortfolioSection({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { t } = useI18n();
   const { data: alloc, loading, error, locked } = useGated<AnalyticsPortfolio>(() => api.analytics.portfolio());
 
   if (loading) return <LoadingSkeleton />;
@@ -2020,8 +2084,8 @@ function PortfolioPage({ onSubscribe }: { onSubscribe?: () => void }) {
   if (!alloc) return <EmptyState message={t('portfolio.empty')} />;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold">{t('nav.portfolio')}</h2>
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Модельный портфель</h3>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-lg font-semibold mb-3">{t('portfolio.metrics')}</h3>
@@ -2056,6 +2120,167 @@ function PortfolioPage({ onSubscribe }: { onSubscribe?: () => void }) {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
+  const { t } = useI18n();
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [income, setIncome] = useState<PortfolioIncome | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [newId, setNewId] = useState('');
+  const [newAmount, setNewAmount] = useState('');
+
+  const load = async () => {
+    setLoading(true); setError(null); setLocked(false);
+    try {
+      const pos = await api.portfolio.positions();
+      setPositions(pos.positions);
+      try {
+        const inc = await api.portfolio.income();
+        setIncome(inc);
+      } catch (e: unknown) {
+        if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
+        else setIncome(null);
+      }
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
+      else setError(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const addPosition = async () => {
+    const amt = Number(newAmount);
+    if (!newId.trim() || isNaN(amt) || amt <= 0) return;
+    setBusy(true);
+    try {
+      await api.portfolio.addPosition(newId.trim().toUpperCase(), amt);
+      setNewId(''); setNewAmount('');
+      await load();
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
+      else setError(e instanceof Error ? e.message : 'Failed to add');
+    } finally { setBusy(false); }
+  };
+
+  const removePosition = async (id: string) => {
+    setBusy(true);
+    try {
+      await api.portfolio.removePosition(id);
+      await load();
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.upgradeRequired) setLocked(true);
+      else setError(e instanceof Error ? e.message : 'Failed to delete');
+    } finally { setBusy(false); }
+  };
+
+  if (loading) return (
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <LoadingSkeleton />
+    </div>
+  );
+  if (locked) return (
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <UpgradePrompt onSubscribe={onSubscribe} />
+    </div>
+  );
+  if (error) return (
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <ErrorBanner message={error} />
+    </div>
+  );
+
+  return (
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+
+      {income && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
+            <p className="text-xs text-gray-400">Вложено всего</p>
+            <p className="text-lg font-bold font-mono">{income.total_invested.toFixed(2)}</p>
+          </div>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
+            <p className="text-xs text-gray-400">Годовой доход</p>
+            <p className="text-lg font-bold font-mono text-emerald-400">{income.annual_income.toFixed(2)}</p>
+          </div>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
+            <p className="text-xs text-gray-400">Доходность на вложения</p>
+            <p className="text-lg font-bold font-mono">{income.yield_on_cost.toFixed(2)}%</p>
+          </div>
+          <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
+            <p className="text-xs text-gray-400">Следующая выплата</p>
+            <p className="text-lg font-bold font-mono">{income.next_payment ? new Date(income.next_payment).toLocaleDateString() : '—'}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden mb-4">
+        {positions.length > 0 ? (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800 text-gray-400">
+                <th className="text-left p-3">{t('common.name')}</th>
+                <th className="text-left p-3">{t('common.currencyShort')}</th>
+                <th className="text-right p-3">Сумма</th>
+                <th className="text-right p-3">{t('common.ytm')}</th>
+                <th className="text-right p-3">{t('common.price')}</th>
+                <th className="text-right p-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {positions.map((p) => (
+                <tr key={p.internal_id} className="border-b border-gray-800 hover:bg-gray-800/50">
+                  <td className="p-3">
+                    <div className="text-white font-medium truncate max-w-[180px]">{p.name ?? p.internal_id}</div>
+                    <div className="text-xs text-gray-500 font-mono">{p.internal_id}</div>
+                  </td>
+                  <td className="p-3"><CurrencyBadge currency={p.currency || '—'} /></td>
+                  <td className="p-3 text-right font-mono">{p.amount.toFixed(2)}</td>
+                  <td className="p-3 text-right font-mono">{p.yield_to_maturity != null ? `${p.yield_to_maturity.toFixed(2)}%` : '—'}</td>
+                  <td className="p-3 text-right font-mono">{p.price != null ? p.price.toFixed(2) : '—'}</td>
+                  <td className="p-3 text-right">
+                    <button onClick={() => removePosition(p.internal_id)} className="text-gray-500 hover:text-red-400" aria-label={t('alerts.remove')}>
+                      <X size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState message={'Позиций пока нет'} />
+        )}
+      </div>
+
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <h4 className="text-sm font-semibold mb-3">Добавить позицию</h4>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-xs text-gray-400 block mb-1">{t('common.id')}</label>
+            <input value={newId} onChange={(e) => setNewId(e.target.value)} placeholder="OP-51"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <label className="text-xs text-gray-400 block mb-1">Сумма</label>
+            <input value={newAmount} onChange={(e) => setNewAmount(e.target.value)} type="number" step="0.01"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <button onClick={addPosition} disabled={busy}
+            className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">Добавить</button>
         </div>
       </div>
     </div>
@@ -2113,30 +2338,171 @@ function ForecastPage({ onSubscribe }: { onSubscribe?: () => void }) {
 function AlertsPage({ onSubscribe }: { onSubscribe?: () => void }) {
   const { t } = useI18n();
   const { data, loading, error, locked } = useGated<AnalyticsAlert[]>(() => api.analytics.alerts(20));
+  const { rules, feed, busy, addRule, removeRule } = useUserAlerts();
 
-  if (loading) return <LoadingSkeleton />;
-  if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
-  if (error) return <ErrorBanner message={error} />;
-
-  const alerts = data ?? [];
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">{t('nav.alerts')}</h2>
-      {alerts.length > 0 ? (
-        <div className="space-y-3">
-          {alerts.map((a, i) => (
-            <div key={i} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-              <div className="flex items-start gap-3">
-                <Bell size={16} className="text-amber-400 mt-0.5 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-sm">{a.title}</h4>
-                  <p className="text-sm text-gray-400 mt-1">{a.message}</p>
+
+      <section>
+        <h3 className="text-lg font-semibold mb-3">Системные уведомления</h3>
+        {loading ? <LoadingSkeleton /> : locked ? <UpgradePrompt onSubscribe={onSubscribe} /> : error ? <ErrorBanner message={error} /> : (
+          (data ?? []).length > 0 ? (
+            <div className="space-y-3">
+              {(data ?? []).map((a, i) => (
+                <div key={i} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+                  <div className="flex items-start gap-3">
+                    <Bell size={16} className="text-amber-400 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm">{a.title}</h4>
+                      <p className="text-sm text-gray-400 mt-1">{a.message}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
+            </div>
+          ) : <EmptyState message={t('alerts.pageEmpty')} />
+        )}
+      </section>
+
+      <section>
+        <h3 className="text-lg font-semibold mb-3">Мои алерты</h3>
+        <UserAlertsPanel rules={rules} feed={feed} busy={busy} onAdd={addRule} onRemove={removeRule} emptyLabel={t('alerts.noRules')} />
+      </section>
+    </div>
+  );
+}
+
+function useUserAlerts() {
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [feed, setFeed] = useState<AlertFeedItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => {
+    setLoading(true); setError(null); setLocked(false);
+    Promise.all([
+      api.userAlerts.rules().catch((e) => { if (e instanceof ApiError && e.upgradeRequired) setLocked(true); throw e; }),
+      api.userAlerts.feed(50).catch(() => [] as AlertFeedItem[]),
+    ])
+      .then(([r, f]) => { setRules(r); setFeed(f); })
+      .catch((e: unknown) => {
+        if (e instanceof ApiError && e.upgradeRequired) return;
+        setError(e instanceof Error ? e.message : 'Failed to load');
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const addRule = async (input: { internal_id: string; metric: 'price' | 'ytm'; direction: 'above' | 'below'; threshold: number; note?: string }) => {
+    setBusy(true);
+    try {
+      await api.userAlerts.createRule(input);
+      await load();
+    } catch (e: unknown) {
+      if (!(e instanceof ApiError && e.upgradeRequired)) setError(e instanceof Error ? e.message : 'Failed to add');
+      else setLocked(true);
+    } finally { setBusy(false); }
+  };
+
+  const removeRule = async (id: number) => {
+    setBusy(true);
+    try {
+      await api.userAlerts.deleteRule(id);
+      await load();
+    } catch (e: unknown) {
+      if (!(e instanceof ApiError && e.upgradeRequired)) setError(e instanceof Error ? e.message : 'Failed to delete');
+    } finally { setBusy(false); }
+  };
+
+  return { rules, feed, loading, error, locked, busy, addRule, removeRule };
+}
+
+function UserAlertsPanel({
+  rules, feed, busy, onAdd, onRemove, emptyLabel,
+}: {
+  rules: AlertRule[];
+  feed: AlertFeedItem[];
+  busy: boolean;
+  onAdd: (input: { internal_id: string; metric: 'price' | 'ytm'; direction: 'above' | 'below'; threshold: number; note?: string }) => void;
+  onRemove: (id: number) => void;
+  emptyLabel: string;
+}) {
+  const { t } = useI18n();
+  const [internalId, setInternalId] = useState('');
+  const [metric, setMetric] = useState<'price' | 'ytm'>('price');
+  const [direction, setDirection] = useState<'above' | 'below'>('below');
+  const [threshold, setThreshold] = useState('');
+
+  const metricLabel: Record<'price' | 'ytm', string> = { ytm: t('alerts.metricYtm'), price: t('alerts.metricPrice') };
+
+  const submit = () => {
+    const th = Number(threshold);
+    if (!internalId.trim() || isNaN(th)) return;
+    onAdd({ internal_id: internalId.trim().toUpperCase(), metric, direction, threshold: th });
+    setInternalId(''); setThreshold('');
+  };
+
+  return (
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+        <Bell size={16} className="text-emerald-400" /> {t('alerts.title')}
+        {feed.length > 0 && (
+          <span className="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded ml-auto">{t('alerts.triggered', { n: feed.length })}</span>
+        )}
+      </h3>
+
+      {feed.length > 0 && (
+        <div className="mb-3 space-y-1">
+          {feed.slice(0, 6).map((f) => (
+            <div key={f.id} className="flex items-center gap-2 text-sm bg-blue-900/20 border border-blue-800 rounded-lg px-3 py-1.5">
+              <span className="font-mono text-xs text-gray-300">{f.internal_id}</span>
+              <span className="text-gray-400 truncate">{f.message}</span>
+              <span className="ml-auto font-mono text-blue-300 shrink-0">{f.value != null ? f.value.toFixed(2) : '—'}</span>
             </div>
           ))}
         </div>
-      ) : <EmptyState message={t('alerts.pageEmpty')} />}
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
+        <input value={internalId} onChange={(e) => setInternalId(e.target.value)} placeholder="ID"
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs" />
+        <select value={metric} onChange={(e) => setMetric(e.target.value as 'price' | 'ytm')}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
+          <option value="price">{t('alerts.metricPrice')}</option>
+          <option value="ytm">YTM %</option>
+        </select>
+        <select value={direction} onChange={(e) => setDirection(e.target.value as 'above' | 'below')}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs">
+          <option value="below">{t('alerts.below')}</option>
+          <option value="above">{t('alerts.above')}</option>
+        </select>
+        <input value={threshold} onChange={(e) => setThreshold(e.target.value)} type="number" step="0.1" placeholder={t('alerts.value')}
+          className="bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-white text-xs w-full" />
+        <button onClick={submit} disabled={busy}
+          className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white rounded-lg px-2 py-1.5 text-xs transition-colors">{t('alerts.add')}</button>
+      </div>
+
+      {rules.length > 0 && (
+        <div className="space-y-1">
+          {rules.map((r) => (
+            <div key={r.id} className="flex items-center justify-between text-sm py-1 border-b border-gray-800 last:border-0">
+              <span className="text-gray-300">
+                <b className="font-mono">{r.internal_id}</b>: {metricLabel[r.metric]} {r.direction === 'above' ? t('alerts.above') : t('alerts.below')} {r.threshold}
+                {r.last_value != null && <span className="text-gray-500"> (now {r.last_value.toFixed(2)})</span>}
+                {r.triggered_at && <span className="text-amber-400 ml-1">●</span>}
+              </span>
+              <button onClick={() => onRemove(r.id)} className="text-gray-500 hover:text-red-400" aria-label={t('alerts.remove')}>
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {rules.length === 0 && feed.length === 0 && <p className="text-xs text-gray-500">{emptyLabel}</p>}
     </div>
   );
 }

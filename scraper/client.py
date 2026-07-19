@@ -414,7 +414,12 @@ class AigenisClient:
         return parse_listing_html(html, currency=currency)
 
     async def _api_fetch_listing(self, currency: str) -> list[dict[str, Any]]:
-        self._id_by_internal.clear()
+        # NOTE: do NOT clear ``self._id_by_internal`` here. ``collect_listing``
+        # runs ``fetch_listing`` concurrently for every currency, so clearing
+        # from one coroutine would wipe the id maps populated by the others and
+        # cause ``fetch_detail``/``fetch_history`` to raise NotFoundError
+        # (marking bonds as delisted). The map is cleared once, before the
+        # concurrent gather, in ``pipeline.collect_listing``.
         page_num = 1
         all_normalized: list[dict[str, Any]] = []
         while True:

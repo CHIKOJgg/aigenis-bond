@@ -451,7 +451,7 @@ async def api_desk_status():
 # --------------------------------------------------------------------------- #
 # Pro: Recommendations / ML
 # --------------------------------------------------------------------------- #
-@router.get("/recommendations")
+@router.get("/recommendations", dependencies=[Depends(RequireFeature("access_recommendations"))])
 async def api_recommendations(top_k: int = Query(5, ge=1, le=20)):
     bonds = await _all_bonds()
     bond_dicts = [

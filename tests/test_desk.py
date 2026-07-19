@@ -114,14 +114,16 @@ def _rv_bond(
 def test_relative_value_signals_mark_rich_and_cheap():
     bonds = [
         _rv_bond("A", 8.0),
-        _rv_bond("B", 12.0),  # rich
-        _rv_bond("C", 4.0),  # cheap
+        _rv_bond("B", 12.0),  # high yield => CHEAP => buy
+        _rv_bond("C", 4.0),  # low yield => RICH/expensive => sell
         _rv_bond("D", 8.5),
     ]
     signals = relative_value_signals(bonds, asof=date(2026, 1, 1))
     by_id = {s.internal_id: s for s in signals}
-    assert by_id["B"].side == "sell"
-    assert by_id["C"].side == "buy"
+    # Higher yield than peers means the bond is cheap -> buy.
+    assert by_id["B"].side == "buy"
+    # Lower yield than peers means the bond is rich -> sell.
+    assert by_id["C"].side == "sell"
     # Sorted by |z| descending: the extreme bond is first.
     assert signals[0].internal_id in {"B", "C"}
 

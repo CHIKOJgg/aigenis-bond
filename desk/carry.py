@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from desk.duration import duration_report
 from desk.models import CarryTrade, NelsonSiegelParams
 from scraper.models import Bond
 
@@ -49,9 +50,19 @@ def carry_for_bond(
         ytm_next = ytm_pct
 
     rolldown = _rolldown_bps(ytm_pct, ytm_next)
-    carry = coupon_pct - funding_rate_pct
-    expected_pnl_pct = carry * (horizon_days / 365.25) - 0.5 * abs(rolldown) / 100
-    breakeven = max(0.0, (funding_rate_pct - coupon_pct) * (horizon_days / 365.25) * 100)
+    # Modified duration drives the price sensitivity to the yield roll-down.
+    mod_dur = duration_report(bond, asof=asof, ytm_override=ytm_pct).modified_duration
+    # Carry = coupon income minus funding cost, annualised, over the horizon.
+    carry_pnl_pct = (coupon_pct - funding_rate_pct) * (horizon_days / 365.25)
+    # Rolldown P&L: as the bond ages it yields drop to the shorter tenor, so the
+    # price appreciates by ~ modified_duration * (yield drop in decimal). A
+    # positively-sloped curve (ytm_pct > ytm_next) therefore adds to P&L.
+    rolldown_pnl_pct = mod_dur * (ytm_pct - ytm_next) / 100.0
+    expected_pnl_pct = carry_pnl_pct + rolldown_pnl_pct
+    # Breakeven adverse yield move (bps) that erases the positive carry: how far
+    # rates can rise before the price loss equals the carry. Signed — a negative
+    # carry yields a negative breakeven (no cushion).
+    breakeven = (carry_pnl_pct / mod_dur * 100.0) if mod_dur > 0 else 0.0
 
     return CarryTrade(
         internal_id=bond.internal_id,

@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     sentry_dsn: str | None = None
     environment: str = "production"
 
+    # Google OAuth client id used to verify the `aud`/`azp` claim of Google
+    # id_tokens during the /auth/google login flow. If unset, Google login is
+    # disabled.
+    google_client_id: str | None = Field(default=None, validation_alias="GOOGLE_CLIENT_ID")
+
     @field_validator("delay_between_requests")
     @classmethod
     def _validate_delay(cls, v: float) -> float:
@@ -173,6 +178,8 @@ class AppSettings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
+
+    debug: bool = False
 
     def validate_all(self) -> list[str]:
         warnings: list[str] = []

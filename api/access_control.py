@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,18 +69,6 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
     },
 }
 
-# Pro features in terms of API endpoints
-PRO_FEATURES_ROUTES: list[dict[str, Any]] = [
-    {"method": "GET", "path": "/api/v1/desk"},
-    {"method": "GET", "path": "/api/v1/portfolio"},
-    {"method": "GET", "path": "/api/v1/forecast"},
-    {"method": "GET", "path": "/api/v1/ml"},
-    {"method": "POST", "path": "/api/v1/rebalance"},
-    {"method": "POST", "path": "/api/v1/build_plan"},
-    {"method": "POST", "path": "/api/v1/allocate"},
-]
-
-
 def _get_current_user_from_request(request: Request) -> int | None:
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     if not token:
@@ -108,14 +94,6 @@ async def _get_user_tier(session: AsyncSession, user_id: int) -> str | None:
         return None
     tier, expires_at, trial_end = row
     return effective_tier(tier, expires_at, trial_end)
-
-
-class FeatureAccessMiddleware:
-    """Kept for reference; gating is implemented via the `RequireFeature`
-    dependency on each pro endpoint (see below)."""
-
-    def __init__(self, app: FastAPI):
-        self.app = app
 
 
 def add_feature_access_headers(app: FastAPI) -> FastAPI:

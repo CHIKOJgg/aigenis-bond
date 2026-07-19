@@ -85,6 +85,16 @@ _STRATEGY_RU = {
 
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
+    # Deep links: ``/start subscribe`` arrives when a user clicks the website's
+    # "Подписаться" button (t.me/<bot>?start=subscribe). Route it straight to the
+    # subscription flow — it does not depend on parsed market data, so it must
+    # work even while the parse lock is still held.
+    payload = (message.text or "").replace("/start", "", 1).strip().lower()
+    if payload == "subscribe":
+        from telegram_bot.stars_payments import cmd_subscribe
+
+        await cmd_subscribe(message)
+        return
     if not await _ch.is_unlocked(message):
         await message.answer(
             "👋 <b>Bond Fixed Income Assistant</b>\n\n"

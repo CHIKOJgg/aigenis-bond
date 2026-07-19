@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from notifications.fx_repository import latest_fx, latest_metal, previous_fx, previous_metal
 from notifications.repository import add_alert
-from scraper.orm import BondORM, BondScoreORM
+from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
 
 THRESHOLDS = {
     "yield_drop_pct": 0.5,
@@ -36,6 +36,49 @@ def _pct_change(old: float, new: float) -> float:
     if old == 0:
         return float("inf") if new != 0 else 0.0
     return (new - old) / abs(old) * 100
+
+
+async def _latest_history(
+    session: AsyncSession, internal_id: str
+) -> BondHistoryORM | None:
+    """Most recent historical snapshot for a bond (used for change detection)."""
+    result = await session.execute(
+        select(BondHistoryORM)
+        .where(BondHistoryORM.internal_id == internal_id)
+        .order_by(BondHistoryORM.date.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _emit_change_alert(
+    session: AsyncSession,
+    counts: dict[str, int],
+    *,
+    kind: str,
+    title: str,
+    message: str,
+    internal_id: str,
+    dedup_key: str,
+) -> bool:
+    """Persist a change alert, updating ``counts`` on success. Returns True if added."""
+    try:
+        alert_id = await add_alert(
+            session,
+            {
+                "kind": kind,
+                "title": title,
+                "message": message,
+                "internal_id": internal_id,
+                "dedup_key": dedup_key,
+            },
+        )
+    except Exception:
+        alert_id = None
+    if alert_id:
+        counts[kind] = counts.get(kind, 0) + 1
+        return True
+    return False
 
 
 async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
@@ -85,6 +128,73 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
             if alert_id:
                 counts["offer"] = counts.get("offer", 0) + 1
                 total_new += 1
+
+        # Change detection vs the previous historical snapshot. This is the core
+        # of ``detect_bond_changes`` — without it yield/coupon/price moves are
+        # never surfaced (the THRESHOLDS below were previously dead).
+        if b.status == "active":
+            prev = await _latest_history(session, b.internal_id)
+            if prev is not None:
+                if b.yield_to_maturity is not None and prev.yield_ is not None:
+                    dy = float(b.yield_to_maturity) - float(prev.yield_)
+                    # Pick the alert spec (kind/title/dir) for the direction of
+                    # the move; emit exactly one yield alert per bond per run.
+                    if dy <= -THRESHOLDS["yield_drop_pct"]:
+                        yspec = (
+                            "yield_drop",
+                            f"{b.name}: доходность упала",
+                            f"YTM {b.internal_id} изменился с {prev.yield_} "
+                            f"на {b.yield_to_maturity} ({dy:+.2f} п.п.)",
+                        )
+                    elif dy >= THRESHOLDS["yield_rise_pct"]:
+                        yspec = (
+                            "yield_rise",
+                            f"{b.name}: доходность выросла",
+                            f"YTM {b.internal_id} изменился с {prev.yield_} "
+                            f"на {b.yield_to_maturity} ({dy:+.2f} п.п.)",
+                        )
+                    else:
+                        yspec = None
+                    if yspec is not None and await _emit_change_alert(
+                        session,
+                        counts,
+                        kind=yspec[0],
+                        title=yspec[1],
+                        message=yspec[2],
+                        internal_id=b.internal_id,
+                        dedup_key=f"{yspec[0]}:{b.internal_id}:{date.today().isoformat()}",
+                    ):
+                        total_new += 1
+                if b.coupon_rate is not None and prev.coupon is not None:
+                    dc = float(b.coupon_rate) - float(prev.coupon)
+                    if abs(dc) >= THRESHOLDS["coupon_change_pct"] and await _emit_change_alert(
+                        session,
+                        counts,
+                        kind="coupon_change",
+                        title=f"{b.name}: изменение купона",
+                        message=(
+                            f"Купон {b.internal_id} изменился с {prev.coupon} "
+                            f"на {b.coupon_rate} ({dc:+.2f} п.п.)"
+                        ),
+                        internal_id=b.internal_id,
+                        dedup_key=f"coupon:{b.internal_id}:{date.today().isoformat()}",
+                    ):
+                        total_new += 1
+                if b.price is not None and prev.price is not None:
+                    dp = _pct_change(float(prev.price), float(b.price))
+                    if abs(dp) >= THRESHOLDS["price_change_pct"] and await _emit_change_alert(
+                        session,
+                        counts,
+                        kind="price_change",
+                        title=f"{b.name}: изменение цены",
+                        message=(
+                            f"Цена {b.internal_id} изменилась с {prev.price} "
+                            f"на {b.price} ({dp:+.2f}%)"
+                        ),
+                        internal_id=b.internal_id,
+                        dedup_key=f"price:{b.internal_id}:{date.today().isoformat()}",
+                    ):
+                        total_new += 1
 
     score_res = await session.execute(
         select(BondScoreORM).where(BondScoreORM.score >= THRESHOLDS["high_score"])

@@ -137,7 +137,11 @@ def dv01(
         return 0.0
     p_up = _price_shift(flows, ytm_pct, 1, freq=coupon_frequency)
     p_now = _price_from_yield(flows, ytm_pct, freq=coupon_frequency)
-    return float(nominal) * (p_now - p_up) / 100
+    # Cashflows are already scaled by ``nominal`` (see ``_cashflows``), so both
+    # ``p_now`` and ``p_up`` are full position values. ``p_now - p_up`` is thus
+    # the dollar change in value for a 1bp yield move — i.e. DV01. Multiplying
+    # by ``nominal / 100`` would overstate it by a factor of ``nominal / 100``.
+    return float(p_now - p_up)
 
 
 def key_rate_durations(

@@ -33,7 +33,8 @@ async def lifespan(_app: FastAPI):
     _validate_production_config()
     from scraper.observability import init_sentry
 
-    init_sentry(get_settings().sentry_dsn, environment=get_settings().environment)
+    _settings = get_settings()
+    init_sentry(_settings.aigenis.sentry_dsn, environment=_settings.aigenis.environment)
     yield
     await dispose()
 
@@ -69,6 +70,27 @@ app.include_router(analytics_router)
 # (ЮKassa) for card / SBP / Apple Pay / Google Pay on the website.
 app.include_router(billing_router)
 logger.info("yookassa_billing_enabled")
+
+# --- Security headers ---
+# Applied to every response (except the docs/OpenAPI endpoints) to harden the
+# app against clickjacking, MIME sniffing, and a baseline of XSS vectors.
+_SECURITY_HEADERS_SKIP_PATHS = {"/docs", "/openapi.json", "/redoc"}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path in _SECURITY_HEADERS_SKIP_PATHS:
+        return response
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; object-src 'none'; frame-ancestors 'none'; "
+        "base-uri 'self'; script-src 'self'",
+    )
+    return response
+
 
 # Expose the caller's subscription tier / feature flags on every response.
 add_feature_access_headers(app)

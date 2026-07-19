@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any
 
 from scraper.errors import ParseError
-from scraper.models import Bond, BondHistory
+from scraper.models import Bond, BondHistory, is_government_issuer
 
 
 def _coerce_date(value: Any) -> date | None:
@@ -112,6 +112,7 @@ def parse_bond_payload(
         end_date=_coerce_date(payload.get("end_date")),
         isin=payload.get("isin"),
         status=payload.get("status", "unknown"),
+        is_government=is_government_issuer(payload.get("issuer")),
         registration_number=payload.get("registration_number") or payload.get("reg_number"),
         issue_volume=payload.get("issue_volume"),
         issue_number=payload.get("issue_number") or payload.get("issue"),

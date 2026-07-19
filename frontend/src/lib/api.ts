@@ -31,7 +31,7 @@ async function request<T>(path: string, options: RequestInit = {}, _isRetry = fa
     const refreshToken = localStorage.getItem('refresh_token');
     if (refreshToken) {
       try {
-        const refreshRes = await fetch(`${BASE}/api/v1/auth/refresh`, {
+        const refreshRes = await fetch(`${BASE}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh_token: refreshToken }),
@@ -374,6 +374,72 @@ export interface WatchlistItem {
   score: number | null;
 }
 
+export interface Position {
+  internal_id: string;
+  amount: number;
+  name: string | null;
+  currency: string | null;
+  yield_to_maturity: number | null;
+  price: number | null;
+}
+
+export interface PortfolioIncome {
+  mode: string;
+  total_invested: number;
+  annual_income: number;
+  yield_on_cost: number;
+  next_payment: string | null;
+  monthly_calendar: unknown[];
+  per_bond: unknown[];
+}
+
+export interface MLPredictionResult {
+  decision: string;
+  confidence: number;
+  predicted_ytm: number | null;
+  predicted_return_pct: number | null;
+  explanation: string[];
+}
+
+export interface BondAnalysisResult {
+  bond: Bond;
+  analysis: { verdict: string; score: number; breakdown: unknown[]; reasons: unknown[] };
+  relative_value: { side: string; z_score: number | null; spread_pct: number | null } | null;
+  ml_prediction: MLPredictionResult | null;
+  disclaimer: string;
+}
+
+export interface Cashflow {
+  bond: Bond;
+  amount_invested: number;
+  annual_income: number;
+  yield_on_cost: number;
+  total_coupons: number;
+  cashflows: { date: string; amount: number; kind: string }[];
+}
+
+export interface AlertRule {
+  id: number;
+  internal_id: string;
+  metric: 'price' | 'ytm';
+  direction: 'above' | 'below';
+  threshold: number;
+  note?: string | null;
+  active: boolean;
+  last_value: number | null;
+  triggered_at: string | null;
+}
+
+export interface AlertFeedItem {
+  id: number;
+  internal_id: string;
+  metric: string;
+  message: string;
+  value: number | null;
+  delivered: boolean;
+  created_at: string | null;
+}
+
 export const api = {
   health: () => get<Health>('/health'),
 
@@ -433,6 +499,37 @@ export const api = {
     createPayment: (plan: string, success_url: string, cancel_url: string) =>
       post<{ payment_id: string; confirmation_url: string | null }>('/billing/create-payment', { plan, success_url, cancel_url }),
     subscription: () => get<{ plan: string; status: string; current_period_end: string | null; cancel_at_period_end: boolean }>('/billing/subscription'),
+  },
+
+  // Real user positions / portfolio income / bond deep-dive (Pro endpoints,
+  // return 402 ApiError.upgradeRequired for free users).
+  portfolio: {
+    positions: () =>
+      get<{ positions: Position[]; total_invested: number }>('/api/v1/positions'),
+    addPosition: (internal_id: string, amount: number) =>
+      post<{ status: string; internal_id: string; amount: number }>('/api/v1/positions', { internal_id, amount }),
+    removePosition: (internal_id: string) =>
+      request<{ status: string; internal_id: string }>(`/api/v1/positions/${encodeURIComponent(internal_id)}`, { method: 'DELETE' }),
+    income: () =>
+      get<PortfolioIncome>('/api/v1/portfolio/income'),
+    analysis: (internal_id: string) =>
+      get<BondAnalysisResult>(`/api/v1/bond/${encodeURIComponent(internal_id)}/analysis`),
+    cashflow: (internal_id: string, amount: number) =>
+      get<Cashflow>(`/api/v1/bond/${encodeURIComponent(internal_id)}/cashflow?amount=${amount}`),
+    mlPredict: (internal_id: string) =>
+      get<MLPredictionResult>(`/api/v1/ml/predict/${encodeURIComponent(internal_id)}`),
+  },
+
+  // Real user alert rules + feed (Pro endpoints, 402 for free users).
+  userAlerts: {
+    rules: () =>
+      get<AlertRule[]>('/api/v1/alerts/rules'),
+    createRule: (body: { internal_id: string; metric: 'price' | 'ytm'; direction: 'above' | 'below'; threshold: number; note?: string }) =>
+      post<AlertRule>('/api/v1/alerts/rules', body),
+    deleteRule: (id: number) =>
+      request<{ status: string; id: number }>(`/api/v1/alerts/rules/${id}`, { method: 'DELETE' }),
+    feed: (limit = 50) =>
+      get<AlertFeedItem[]>(`/api/v1/alerts/feed?limit=${limit}`),
   },
 
   auth: {

@@ -66,6 +66,9 @@ class BondORM(Base):
     term_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="unknown")
+    is_government: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=func.false()
+    )
     raw: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
 
     fetched_at: Mapped[datetime] = mapped_column(

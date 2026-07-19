@@ -17,6 +17,7 @@ with ``joblib`` and served through an in-memory LRU cache.
 from __future__ import annotations
 
 import functools
+import math
 import pickle
 from itertools import chain
 from pathlib import Path
@@ -171,5 +172,6 @@ def population_stability_index(expected: list[float], actual: list[float], bins:
             e = 1e-6
         if a <= 0:
             a = 1e-6
-        psi += (a - e) * (a - e)  # simplified PSI contribution
+        # True Population Stability Index: sum of (actual - expected) * ln(actual/expected).
+        psi += (a - e) * math.log(a / e)
     return psi

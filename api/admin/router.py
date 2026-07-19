@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.service import get_user_by_id
+from scraper.config import get_settings
 from scraper.db import session_scope
 from scraper.logging import get_logger
 from scraper.orm import UserORM
@@ -63,7 +64,15 @@ async def admin_login(request: Request, session: AsyncSession = Depends(_get_ses
         return _templates.TemplateResponse("login.html", {"request": request, "error": "Access denied"}, status_code=403)
     token = create_access_token(user.id)
     resp = RedirectResponse(url="/admin", status_code=302)
-    resp.set_cookie(key="admin_token", value=token, httponly=True, max_age=3600)
+    settings = get_settings()
+    resp.set_cookie(
+        key="admin_token",
+        value=token,
+        httponly=True,
+        max_age=3600,
+        secure=not settings.debug,
+        samesite="lax",
+    )
     return resp
 
 

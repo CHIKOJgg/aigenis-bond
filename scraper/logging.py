@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import sys
 import uuid
@@ -9,6 +10,42 @@ from loguru import logger as _logger
 from scraper.config import get_settings
 
 _configured = False
+
+
+class _Utf8Stream(io.TextIOBase):
+    """Wrap a binary stdout/stderr so loguru always emits UTF-8.
+
+    On platforms whose console codec is not UTF-8 (e.g. Windows cp1251), writing
+    Cyrillic log messages to ``sys.stdout`` raises ``UnicodeEncodeError`` inside
+    loguru's background writer thread and can crash the process. Routing through
+    the underlying binary buffer with an explicit UTF-8 encoding avoids that.
+    """
+
+    def __init__(self, binary_stream: io.RawIOBase | io.BufferedIOBase) -> None:
+        self._buffer = binary_stream
+
+    def write(self, message: str) -> int:
+        import contextlib
+
+        with contextlib.suppress(ValueError, OSError):
+            # Underlying stream already closed (e.g. subprocess stderr pipe) —
+            # never let logging crash the application.
+            self._buffer.write(message.encode("utf-8", errors="replace"))
+            self._buffer.flush()
+        return len(message)
+
+    def flush(self) -> None:
+        import contextlib
+
+        with contextlib.suppress(ValueError, OSError):
+            self._buffer.flush()
+
+
+def _stdout_sink():
+    stream = getattr(sys.stdout, "buffer", None)
+    if stream is not None:
+        return _Utf8Stream(stream)
+    return sys.stdout
 
 
 def _serialize_record(record):
@@ -43,7 +80,7 @@ def configure_logging() -> None:
 
     if use_json:
         _logger.add(
-            sys.stdout,
+            _stdout_sink(),
             level=settings.aigenis.log_level,
             serialize=True,
             backtrace=True,
@@ -52,7 +89,7 @@ def configure_logging() -> None:
         )
     else:
         _logger.add(
-            sys.stdout,
+            _stdout_sink(),
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level:8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <level>{message}</level>",
             level=settings.aigenis.log_level,
             backtrace=True,

@@ -88,7 +88,11 @@ def run_stress(
         tenor = _bucket_tenor(years)
 
         rate_shock_pct = float(scenario.rate_shocks.get(tenor, 0.0)) / 100.0
-        credit_shock_pct = scenario.credit_spread_shock_bps / 10000.0
+        # Credit-spread shocks apply only to credit-risky issuers. Sovereign /
+        # central-bank / government bonds are risk-free and must not absorb a
+        # credit spread shock.
+        is_gov = bool(getattr(bond, "is_government", False))
+        credit_shock_pct = 0.0 if is_gov else scenario.credit_spread_shock_bps / 10000.0
 
         duration = duration_report(
             bond,
@@ -104,7 +108,10 @@ def run_stress(
             fx_impact = 1 + scenario.fx_shock_pct / 100
 
         cur_value = amount * Decimal(str(new_price / 100)) * Decimal(str(fx_impact))
-        baseline_value = amount
+        # Baseline must reflect the bond's actual market price (not par), so an
+        # unshocked position shows ~zero P&L regardless of price != 100.
+        base_price = float(bond.price or 100)
+        baseline_value = amount * Decimal(str(base_price / 100))
 
         by_position[bond.internal_id] = cur_value - baseline_value
         by_tenor[tenor] = by_tenor.get(tenor, Decimal("0")) + (cur_value - baseline_value)

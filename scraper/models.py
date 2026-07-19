@@ -56,6 +56,7 @@ class Bond(BaseModel):
 
     isin: str | None = None
     status: BondStatus = "unknown"
+    is_government: bool = False
 
     registration_number: str | None = Field(None, description="Номер государственной регистрации")
     issue_volume: Decimal | None = Field(None, description="Объём эмиссии")
@@ -254,3 +255,35 @@ class BondDailyAccrual(BaseModel):
             return v
         s = str(v).strip()
         return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+
+
+_GOVERNMENT_ISSUER_KEYWORDS = (
+    "министерство",
+    "минфин",
+    "национальн",
+    "народный банк",
+    "central bank",
+    "national bank",
+    "treasury",
+    "казначей",
+    "government",
+    "правительств",
+    "республик",
+    "государствен",
+    "municipal",
+    "облисполком",
+    "мингори",
+    "финансов",
+)
+
+
+def is_government_issuer(name: str | None) -> bool:
+    """Heuristic: does the issuer name look like a sovereign / central-bank /
+
+    government body? Used to exclude risk-free issuers from credit-spread shocks
+    and repo haircuts. Best-effort, based on well-known keywords.
+    """
+    if not name:
+        return False
+    low = name.lower()
+    return any(k in low for k in _GOVERNMENT_ISSUER_KEYWORDS)

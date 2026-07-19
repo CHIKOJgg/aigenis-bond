@@ -150,8 +150,9 @@ async def create_password_reset_token(session: AsyncSession, email: str) -> str 
     if not user:
         return None
     token = create_access_token(user.id)
-    # Store a hash of the token so it can only be used once
-    user.password_reset_token = hash_password(token)
+    # Store a hash of the token so it can only be used once. bcrypt refuses to
+    # hash inputs longer than 72 bytes; JWTs can exceed that, so truncate.
+    user.password_reset_token = hash_password(token[:72])
     await session.commit()
     return token
 
@@ -167,7 +168,9 @@ async def reset_password(session: AsyncSession, token: str, new_password: str) -
     user = result.scalar_one_or_none()
     if not user or not user.password_reset_token:
         return False
-    if not verify_password(token, user.password_reset_token):
+    # bcrypt hashes at most the first 72 bytes, so compare against the same
+    # truncated token that was stored.
+    if not verify_password(token[:72], user.password_reset_token):
         return False
     user.password_hash = hash_password(new_password)
     user.password_reset_token = None
