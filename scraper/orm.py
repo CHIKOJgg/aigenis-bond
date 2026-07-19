@@ -196,6 +196,7 @@ class UserORM(Base):
     password_reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
+    referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -205,6 +206,7 @@ class UserORM(Base):
         Index("ix_users_telegram_id", "telegram_id"),
         Index("ix_users_role", "role"),
         Index("ix_users_subscription_tier", "subscription_tier"),
+        Index("ix_users_referred_by", "referred_by"),
     )
 
 
@@ -600,6 +602,7 @@ class PartnerKeyORM(Base):
     tier: Mapped[str] = mapped_column(String(16), nullable=False, server_default="partner")
     rate_limit: Mapped[int] = mapped_column(Integer, nullable=False, server_default="120")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
+    referral_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -608,7 +611,38 @@ class PartnerKeyORM(Base):
     __table_args__ = (Index("ix_partner_api_keys_owner", "owner_user_id"),)
 
 
-class WebhookORM(Base):
+class PartnerReferralORM(Base):
+    """Attribution of a converted subscription to a partner/referrer.
+
+    When a user pays via a partner's referral code (or a user's ``referral_code``
+    deep link), we record the conversion here so the partner can be paid out
+    (manually or via Stars). One row per successfully activated subscription.
+    """
+
+    __tablename__ = "partner_referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    partner_key_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    referrer_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, index=True
+    )
+    referred_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    plan: Mapped[str] = mapped_column(String(32), nullable=False)
+    amount: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, server_default="BYN")
+    commission_pct: Mapped[float] = mapped_column(nullable=False, default=0.0)
+    payout_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="pending"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+
     """Подписки на события партнёра (webhook-доставка).
 
     ``events`` — список типов событий (bond.updated, alert.triggered, …).

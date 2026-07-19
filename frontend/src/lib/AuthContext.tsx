@@ -5,7 +5,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  register: (email: string, password: string, name: string, referralCode?: string | null) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
@@ -47,8 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await refreshUser();
   };
 
-  const register = async (email: string, password: string, name: string) => {
-    const res = await api.auth.register(email, password, name);
+  const register = async (email: string, password: string, name: string, referralCode?: string | null) => {
+    const res = await api.auth.register(email, password, name, referralCode);
     localStorage.setItem('access_token', res.access_token);
     localStorage.setItem('refresh_token', res.refresh_token);
     await refreshUser();

@@ -31,7 +31,7 @@ from ml.repository import predictions_for_bond
 from scoring.disclaimer import DISCLAIMER_FULL
 from scoring.explain import explain_score
 from scraper.db import session_scope
-from scraper.orm import BondORM, PartnerKeyORM, WebhookORM
+from scraper.orm import BondORM, PartnerKeyORM, PartnerReferralORM, WebhookORM
 
 router = APIRouter(prefix="/api/v1/partner", tags=["partner"])
 
@@ -87,6 +87,7 @@ async def create_partner_key(
             tier="partner",
             rate_limit=120,
             active=True,
+            referral_code=secrets.token_urlsafe(8)[:10],
         )
         session.add(key)
         await session.commit()
@@ -133,6 +134,47 @@ async def revoke_partner_key(key_id: int, request: Request, user_id: int = Depen
         await session.commit()
     lang = _lang(request)
     return {"ok": True, "message": tr(lang, "key_revoked")}
+
+
+class ReferralStats(BaseModel):
+    referral_code: str | None
+    total_referrals: int
+    conversions: int
+    pending_payouts: int
+    paid_payouts: int
+    total_commission: float
+
+
+@router.get("/referrals", response_model=ReferralStats)
+async def partner_referral_stats(user_id: int = Depends(_require_user)):
+    async with session_scope() as session:
+        key = (
+            await session.execute(
+                select(PartnerKeyORM).where(PartnerKeyORM.owner_user_id == user_id)
+            )
+        ).scalars().first()
+        if key is None:
+            return ReferralStats(
+                referral_code=None, total_referrals=0, conversions=0,
+                pending_payouts=0, paid_payouts=0, total_commission=0.0,
+            )
+        rows = (
+            await session.execute(
+                select(PartnerReferralORM).where(PartnerReferralORM.partner_key_id == key.id)
+            )
+        ).scalars().all()
+        conversions = len(rows)
+        pending = sum(1 for r in rows if r.payout_status == "pending")
+        paid = sum(1 for r in rows if r.payout_status == "paid")
+        total_commission = sum(r.amount * r.commission_pct / 100.0 for r in rows)
+    return ReferralStats(
+        referral_code=key.referral_code,
+        total_referrals=conversions,
+        conversions=conversions,
+        pending_payouts=pending,
+        paid_payouts=paid,
+        total_commission=round(total_commission, 2),
+    )
 
 
 # --------------------------------------------------------------------------- #

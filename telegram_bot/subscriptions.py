@@ -228,6 +228,42 @@ async def set_tier_by_telegram(
     return True
 
 
+async def attach_referrer(telegram_id: int, referrer_user_id: int) -> bool:
+    """Record a referrer (by `users.id`) for a Telegram user from a deep link.
+
+    The referrer gets a bonus trial extension (``REFERRAL_BONUS_DAYS``). Returns
+    ``True`` if a referrer was attached (no-op if self/alredy set/invalid).
+    """
+    if referrer_user_id <= 0:
+        return False
+    async with session_scope() as session:
+        user = (
+            await session.execute(select(UserORM).where(UserORM.telegram_id == telegram_id))
+        ).scalar_one_or_none()
+        if user is None:
+            user = await get_or_create_user_by_telegram(session, telegram_id)
+        if user.referred_by is not None or user.id == referrer_user_id:
+            return False
+        referrer = (
+            await session.execute(select(UserORM).where(UserORM.id == referrer_user_id))
+        ).scalar_one_or_none()
+        if referrer is None:
+            return False
+        user.referred_by = referrer_user_id
+        bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "3"))
+        if bonus_days > 0:
+            now = _now()
+            if referrer.trial_end and referrer.trial_end > now:
+                referrer.trial_end = referrer.trial_end + timedelta(days=bonus_days)
+            elif referrer.subscription_expires_at and referrer.subscription_expires_at > now:
+                referrer.subscription_expires_at = referrer.subscription_expires_at + timedelta(days=bonus_days)
+            else:
+                referrer.trial_end = now + timedelta(days=bonus_days)
+        await session.flush()
+    logger.info("referrer_attached", telegram_id=telegram_id, referrer=referrer_user_id)
+    return True
+
+
 async def clear_subscription_by_telegram(telegram_id: int, charge_id: str | None = None) -> None:
     """Revoke a paid subscription (e.g. after a Stars refund)."""
     async with session_scope() as session:

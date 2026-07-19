@@ -157,6 +157,7 @@ async def main(token: str) -> None:
             pass
 
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    from telegram_bot._bot_instance import set_bot
     dp = Dispatcher()
     dp.include_router(router)
     dp.include_router(stars_router)
@@ -167,6 +168,7 @@ async def main(token: str) -> None:
     dp.message.middleware(RequestIdMiddleware())
 
     await _start_metrics_server()
+    set_bot(bot)
 
     try:
         loop = asyncio.get_running_loop()

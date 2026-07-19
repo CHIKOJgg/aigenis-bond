@@ -160,6 +160,7 @@ async def create_payment(
         plan=req.plan,
         success_url=req.success_url,
         cancel_url=req.cancel_url,
+        referral_code=req.referral_code,
     )
     if not result:
         raise HTTPException(status_code=500, detail="Не удалось создать платёж")

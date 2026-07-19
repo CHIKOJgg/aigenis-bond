@@ -6,6 +6,7 @@ class CreatePaymentRequest(BaseModel):
     plan: str  # "pro" | "enterprise"
     success_url: str = "/?billing=success"
     cancel_url: str = "/subscribe"
+    referral_code: str | None = None
 
 
 class PaymentResponse(BaseModel):

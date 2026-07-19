@@ -239,7 +239,16 @@ class AigenisClient:
         username = self.settings.web_username
         password = self.settings.web_password
         if not username or not password:
-            raise FatalError("AIGENIS_WEB_USERNAME/PASSWORD not set")
+            # Graceful degradation: without paid credentials the scraper runs in
+            # "stale data" mode, serving whatever is already in the DB instead of
+            # crashing the whole pipeline. See FALLBACK_SOURCE for diversification.
+            logger.warning(
+                "aigenis_credentials_missing",
+                detail="AIGENIS_WEB_USERNAME/PASSWORD not set — running without live fetch",
+            )
+            self._token = None
+            self._token_expires = 0.0
+            return ""
         resp = await self._http.post(
             f"{API_BASE}/v4/user/sign-in/",
             data={"identifier": username, "password": password},
@@ -259,6 +268,10 @@ class AigenisClient:
 
     async def _ensure_authenticated(self, force: bool = False) -> None:
         async with self._auth_lock:
+            # No credentials configured -> stay in anonymous/stale mode.
+            if not self.settings.web_username or not self.settings.web_password:
+                self._token = None
+                return
             if force or not self._token or time.monotonic() >= self._token_expires:
                 await self._login()
 
@@ -272,7 +285,7 @@ class AigenisClient:
             raise RuntimeError("Client not started")
         await self._ensure_authenticated()
         url = f"{API_BASE}{path}"
-        headers = {"Authorization": f"JWT {self._token}"}
+        headers = {"Authorization": f"JWT {self._token}"} if self._token else {}
         try:
             if method.upper() == "GET":
                 resp = await self._http.get(url, params=params, headers=headers)
@@ -286,13 +299,17 @@ class AigenisClient:
         if resp.status_code == 404:
             raise NotFoundError(f"{url} returned 404")
         if resp.status_code == 401:
-            logger.warning("api_token_expired_renewing")
-            await self._login()
-            headers = {"Authorization": f"JWT {self._token}"}
-            if method.upper() == "POST":
-                resp = await self._http.post(url, params=params, headers=headers)
+            # Only attempt re-login when credentials are configured.
+            if self.settings.web_username and self.settings.web_password:
+                logger.warning("api_token_expired_renewing")
+                await self._login()
+                headers = {"Authorization": f"JWT {self._token}"} if self._token else {}
+                if method.upper() == "POST":
+                    resp = await self._http.post(url, params=params, headers=headers)
+                else:
+                    resp = await self._http.get(url, params=params, headers=headers)
             else:
-                resp = await self._http.get(url, params=params, headers=headers)
+                raise FatalError(f"API returned 401 (no credentials configured): {url}")
         if resp.status_code >= 400:
             raise FatalError(f"API returned {resp.status_code}: {resp.text[:200]}")
         return resp.json()

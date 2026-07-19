@@ -72,6 +72,13 @@ def build_scheduler() -> AsyncIOScheduler:
         logger.warning("fx_module_not_available")
 
     try:
+        from api.notifications.reminders import notify_expiring_trials
+
+        jobs.append(("reminders_daily", "0 9 * * *", notify_expiring_trials, 1800))
+    except ImportError:
+        logger.warning("reminders_module_not_available")
+
+    try:
         from scraper.scheduler_v4 import (
             scheduled_alerts,
             scheduled_curve,

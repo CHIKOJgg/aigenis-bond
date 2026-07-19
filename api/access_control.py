@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +28,7 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
         "access_bond_analysis": False,
         "access_companies": True,
         "access_search": True,
-        "max_currencies": 1,
+        "max_currencies": 3,
         "api_rate_limit": 10,
     },
     "pro": {
@@ -66,6 +68,29 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
         "access_bond_analysis": True,
         "max_currencies": 99,
         "api_rate_limit": 300,
+    },
+    # Demo tier: a read-only, fully-featured showcase used for the public
+    # (Cloudflare Tunnel) demo. Behaves like `pro` for reads but is flagged so
+    # the frontend can render a "DEMO" watermark and the backend can throttle.
+    "demo": {
+        "access_bond_list": True,
+        "access_bond_detail": True,
+        "access_scores": True,
+        "access_stats": True,
+        "access_desk_curve": True,
+        "access_desk_rv": True,
+        "access_desk_carry": True,
+        "access_desk_repo": True,
+        "access_desk_stress": True,
+        "access_portfolio": True,
+        "access_forecast": True,
+        "access_ml": True,
+        "access_alerts": True,
+        "access_recommendations": True,
+        "access_bond_analysis": True,
+        "is_demo": True,
+        "max_currencies": 99,
+        "api_rate_limit": 10,
     },
 }
 
@@ -111,6 +136,7 @@ def add_feature_access_headers(app: FastAPI) -> FastAPI:
                 headers = {
                     "X-User-Tier": tier,
                     "X-API-Rate-Limit": str(FEATURE_FLAGS[tier]["api_rate_limit"]),
+                    "X-Is-Demo": "true" if FEATURE_FLAGS[tier].get("is_demo") else "false",
                     "X-Features": ",".join([k for k, v in FEATURE_FLAGS[tier].items() if v]),
                 }
 
@@ -126,6 +152,11 @@ def add_feature_access_headers(app: FastAPI) -> FastAPI:
 async def get_current_tier(request: Request) -> str:
     user_id = _get_current_user_from_request(request)
     if not user_id:
+        # Public demo mode (e.g. Cloudflare Tunnel showcase): anonymous callers
+        # get read-only full access, flagged as demo so the frontend can show a
+        # watermark and the backend can throttle.
+        if os.getenv("DEMO_MODE", "").strip() in ("1", "true", "yes"):
+            return "demo"
         return "free"
     async with session_scope() as session:
         tier = await _get_user_tier(session, user_id)

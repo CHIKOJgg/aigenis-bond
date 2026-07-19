@@ -13,6 +13,7 @@ import { Modal } from './lib/Modal';
 import { PaywallModal } from './PaywallModal';
 import { tierLimits } from './lib/tiers';
 import { LandingPage } from './LandingPage';
+import { WidgetPage } from './WidgetPage';
 import { LegalPages } from './LegalPages';
 import { OnboardingFlow, isOnboardingNeeded } from './OnboardingFlow';
 import { CompanyPage } from './components/CompanyPage';
@@ -48,6 +49,9 @@ function AppInner() {
   const { t, lang } = useI18n();
   const { user, loading, refreshUser } = useAuth();
   const { openPaywall } = usePaywall();
+  if (window.location.pathname === '/widget') {
+    return <WidgetPage />;
+  }
   const [page, setPage] = useState<Page>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
@@ -62,7 +66,8 @@ function AppInner() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('success') === '1') {
       setToast(t('toast.paymentSuccess'));
-      window.history.replaceState({}, '', window.location.pathname);
+      const cleanPath = window.location.pathname + window.location.search.replace(/[?&]success=1/, '');
+      window.history.replaceState({}, '', cleanPath || window.location.pathname);
       // Poll for tier update — webhook may take a few seconds
       let attempts = 0;
       const poll = () => {
@@ -83,6 +88,10 @@ function AppInner() {
       ? Math.ceil((new Date(user.trial_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
       : null;
   const trialExpiring = trialDaysLeft != null && trialDaysLeft <= 3;
+
+  const isDemoMode =
+    new URLSearchParams(window.location.search).get('demo') === '1' ||
+    window.location.hostname.startsWith('demo');
 
   if (showOnboarding) {
     return <OnboardingFlow
@@ -111,7 +120,7 @@ function AppInner() {
 
   if (!user) {
     if (authPage === 'login') return <LoginPage onRegister={() => setAuthPage('register')} />;
-    if (authPage === 'register') return <RegisterPage onSwitch={() => setAuthPage('login')} />;
+    if (authPage === 'register') return <RegisterPage onSwitch={() => setAuthPage('login')} defaultRefCode={new URLSearchParams(window.location.search).get('ref')} />;
     return <LandingPage onLogin={() => setAuthPage('login')} onRegister={() => setAuthPage('register')} onTerms={() => setLegalPage('terms')} onPrivacy={() => setLegalPage('privacy')} />;
   }
 
@@ -152,6 +161,12 @@ function AppInner() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
+      {isDemoMode && (
+        <div className="bg-amber-600 text-black text-center text-sm font-semibold py-1.5 px-3">
+          DEMO — ознакомительный режим. Данные могут быть неполными.{' '}
+          <a href="/?ref=demo" className="underline">Открыть полную версию →</a>
+        </div>
+      )}
       <header className="border-b border-gray-800 bg-gray-900 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <h1 className="text-lg font-bold flex items-center gap-2">
@@ -470,12 +485,13 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
   );
 }
 
-function RegisterPage({ onSwitch }: { onSwitch: () => void }) {
+function RegisterPage({ onSwitch, defaultRefCode }: { onSwitch: () => void; defaultRefCode?: string | null }) {
   const { t } = useI18n();
   const { register } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [refCode, setRefCode] = useState(defaultRefCode ?? '');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -485,7 +501,7 @@ function RegisterPage({ onSwitch }: { onSwitch: () => void }) {
     if (password.length < 6) { setError(t('auth.pwMin')); return; }
     setSubmitting(true);
     try {
-      await register(email, password, name);
+      await register(email, password, name, refCode.trim() || null);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -519,6 +535,11 @@ function RegisterPage({ onSwitch }: { onSwitch: () => void }) {
           <div>
             <label className="text-sm text-gray-400 block mb-1">{t('auth.password')}</label>
             <input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={6}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
+          </div>
+          <div>
+            <label className="text-sm text-gray-400 block mb-1">{t('auth.referralCode') || 'Реферальный код (необязательно)'}</label>
+            <input value={refCode} onChange={e => setRefCode(e.target.value)} placeholder="ref_..."
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
           </div>
           <button type="submit" disabled={submitting}
@@ -2578,7 +2599,8 @@ function SubscribePage() {
       setPayError(null);
       setPaying(true);
       const base = window.location.origin;
-      const result = await api.billing.createPayment(plan, `${base}/subscribe?success=1`, `${base}/subscribe`);
+      const refCode = new URLSearchParams(window.location.search).get('ref');
+      const result = await api.billing.createPayment(plan, `${base}/dashboard?success=1`, `${base}/subscribe`, refCode);
       if (result.confirmation_url) window.location.href = result.confirmation_url;
     } catch (e: unknown) {
       setPayError(e instanceof Error ? e.message : t('payment.error'));

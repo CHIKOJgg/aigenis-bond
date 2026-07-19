@@ -45,7 +45,7 @@ async def _get_session() -> AsyncIterator[AsyncSession]:
 async def register(req: RegisterRequest, session: AsyncSession = Depends(_get_session)):
     if len(req.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-    user, error = await register_user(session, req.email.lower().strip(), req.password, req.name.strip())
+    user, error = await register_user(session, req.email.lower().strip(), req.password, req.name.strip(), getattr(req, "referral_code", None))
     if error:
         raise HTTPException(status_code=409, detail=error)
     return TokenResponse(

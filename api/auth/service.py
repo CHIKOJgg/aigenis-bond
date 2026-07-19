@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.logging import get_logger
-from scraper.orm import UserORM
+from scraper.orm import PartnerKeyORM, UserORM
 
 logger = get_logger("api.auth")
 
@@ -75,7 +75,13 @@ def decode_token(token: str) -> dict | None:
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
 
 
-async def register_user(session: AsyncSession, email: str, password: str, name: str) -> tuple[UserORM, str | None]:
+async def register_user(
+    session: AsyncSession,
+    email: str,
+    password: str,
+    name: str,
+    referral_code: str | None = None,
+) -> tuple[UserORM, str | None]:
     result = await session.execute(select(UserORM).where(UserORM.email == email))
     if result.scalar_one_or_none():
         return None, "Email already registered"
@@ -85,17 +91,75 @@ async def register_user(session: AsyncSession, email: str, password: str, name: 
         name=name,
         trial_end=datetime.now(UTC) + timedelta(days=TRIAL_DAYS),
     )
+    if referral_code:
+        referrer = await _resolve_referrer(session, referral_code)
+        if referrer is not None and referrer.id != user.id:
+            user.referred_by = referrer.id
+            # Reward the referrer with bonus trial days (no-op if expired/paid window logic below).
+            await _grant_referral_bonus(session, referrer)
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    # Send welcome email if SMTP is configured (non-blocking)
+    # Send welcome + verification emails if SMTP is configured (non-blocking).
     try:
-        from api.notifications.email import send_welcome_email
+        from api.notifications.email import send_verification_email, send_welcome_email
 
         send_welcome_email(email, name)
+        verify_token = create_access_token(user.id)
+        send_verification_email(email, verify_token)
     except Exception as exc:
         logger.warning("welcome_email_failed", email=email, error=str(exc))
     return user, None
+
+
+async def _resolve_referrer(session: AsyncSession, referral_code: str) -> UserORM | None:
+    """Resolve a referrer from a user id, telegram id, or partner referral code."""
+    code = referral_code.strip()
+    if not code:
+        return None
+    # Try user id / telegram id (numeric) first.
+    if code.isdigit():
+        uid = int(code)
+        user = (
+            await session.execute(select(UserORM).where(UserORM.id == uid))
+        ).scalar_one_or_none()
+        if user:
+            return user
+        user = (
+            await session.execute(select(UserORM).where(UserORM.telegram_id == uid))
+        ).scalar_one_or_none()
+        if user:
+            return user
+    # Try partner referral code.
+    partner = (
+        await session.execute(
+            select(PartnerKeyORM).where(PartnerKeyORM.referral_code == code, PartnerKeyORM.active.is_(True))
+        )
+    ).scalar_one_or_none()
+    if partner and partner.owner_user_id:
+        return (
+            await session.execute(select(UserORM).where(UserORM.id == partner.owner_user_id))
+        ).scalar_one_or_none()
+    return None
+
+
+async def _grant_referral_bonus(session: AsyncSession, referrer: UserORM) -> None:
+    bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "3"))
+    if bonus_days <= 0:
+        return
+    now = datetime.now(UTC)
+    # Extend trial if still in trial; otherwise extend paid window if present.
+    base = referrer.trial_end
+    if base is None or base <= now:
+        base = referrer.subscription_expires_at
+    if base is None or base <= now:
+        base = now
+    if referrer.trial_end and referrer.trial_end > now:
+        referrer.trial_end = referrer.trial_end + timedelta(days=bonus_days)
+    elif referrer.subscription_expires_at and referrer.subscription_expires_at > now:
+        referrer.subscription_expires_at = referrer.subscription_expires_at + timedelta(days=bonus_days)
+    else:
+        referrer.trial_end = now + timedelta(days=bonus_days)
 
 
 async def login_user(session: AsyncSession, email: str, password: str) -> tuple[UserORM | None, str | None]:

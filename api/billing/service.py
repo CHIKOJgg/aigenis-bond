@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.logging import get_logger
-from scraper.orm import SubscriptionORM, UserORM
+from scraper.orm import PartnerKeyORM, PartnerReferralORM, SubscriptionORM, UserORM
 
 logger = get_logger("api.billing")
 
@@ -101,7 +101,7 @@ def _idempotency_key() -> str:
 
 
 async def create_payment(
-    user: UserORM, plan: str, success_url: str, cancel_url: str  # noqa: ARG001  # accepted for API symmetry
+    user: UserORM, plan: str, success_url: str, cancel_url: str, referral_code: str | None = None  # noqa: ARG001  # accepted for API symmetry
 ) -> dict | None:
     """Create a YooKassa payment for subscription and return payment info."""
     plan_config = PLANS.get(plan)
@@ -129,6 +129,7 @@ async def create_payment(
         "metadata": {
             "user_id": str(user.id),
             "plan": plan,
+            "referral_code": referral_code or "",
         },
     }
 
@@ -282,8 +283,70 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
         await session.commit()
         logger.info("subscription_activated", user_id=user_id, plan=plan, payment_id=payment_id)
 
+        # Attribute the conversion to a partner/referrer, if any.
+        ref_code = (metadata.get("referral_code") or "").strip()
+        if ref_code:
+            await _attribute_referral(
+                session, ref_code, user_id, plan,
+                paid, paid_currency,
+            )
 
-async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
+
+async def _attribute_referral(
+    session: AsyncSession,
+    referral_code: str,
+    referred_user_id: int,
+    plan: str,
+    amount: float,
+    currency: str,
+) -> None:
+    """Record a partner/user referral conversion for later payout."""
+    from api.auth.service import _resolve_referrer as _resolve_user_referrer
+
+    partner_key_id: int | None = None
+    referrer_user_id: int | None = None
+
+    # Try partner referral code first.
+    pk = (
+        await session.execute(
+            select(PartnerKeyORM).where(
+                PartnerKeyORM.referral_code == referral_code,
+                PartnerKeyORM.active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if pk is not None:
+        partner_key_id = pk.id
+        referrer_user_id = pk.owner_user_id
+    else:
+        # Fall back to a user referral code (numeric id or telegram id).
+        referrer = await _resolve_user_referrer(session, referral_code)
+        if referrer is not None and referrer.id != referred_user_id:
+            referrer_user_id = referrer.id
+
+    if referrer_user_id is None and partner_key_id is None:
+        return
+
+    commission_pct = float(os.getenv("REFERRAL_COMMISSION_PCT", "0"))
+    session.add(
+        PartnerReferralORM(
+            partner_key_id=partner_key_id,
+            referrer_user_id=referrer_user_id,
+            referred_user_id=referred_user_id,
+            plan=plan,
+            amount=amount,
+            currency=currency,
+            commission_pct=commission_pct,
+            payout_status="pending",
+        )
+    )
+    logger.info(
+        "referral_attributed",
+        partner_key_id=partner_key_id,
+        referrer_user_id=referrer_user_id,
+        referred_user_id=referred_user_id,
+        plan=plan,
+    )
     from scraper.db import session_scope
 
     user_id = int(metadata.get("user_id", 0))

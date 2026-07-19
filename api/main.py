@@ -21,6 +21,7 @@ from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
 from api.partner.router import router as partner_router
+from api.widget import router as widget_router
 from scraper.config import get_settings
 from scraper.db import check_db_health, dispose, session_scope
 from scraper.errors import ScraperError
@@ -76,6 +77,11 @@ logger.info("yookassa_billing_enabled")
 app.include_router(partner_router)
 logger.info("partner_api_enabled")
 
+# Public acquisition widget (SEO / partner iframes). Framing is explicitly
+# permitted for this router via the CSP exception in `security_headers`.
+app.include_router(widget_router)
+logger.info("widget_enabled")
+
 # --- Security headers ---
 # Applied to every response (except the docs/OpenAPI endpoints) to harden the
 # app against clickjacking, MIME sniffing, and a baseline of XSS vectors.
@@ -86,6 +92,18 @@ _SECURITY_HEADERS_SKIP_PATHS = {"/docs", "/openapi.json", "/redoc"}
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     if request.url.path in _SECURITY_HEADERS_SKIP_PATHS:
+        return response
+    # The public widget is designed to be embedded in partner sites / blogs.
+    # Allow framing from any origin for /widget paths only; everything else is
+    # locked down with frame-ancestors 'none'.
+    if request.url.path.startswith("/widget"):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; object-src 'none'; "
+            "base-uri 'self'; script-src 'self'"
+        )
+        # Explicitly drop the DENY that would otherwise block the iframe.
+        response.headers.pop("X-Frame-Options", None)
         return response
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")

@@ -16,7 +16,7 @@ PLANS = {
         "currency": "BYN",
         "interval": None,
         "features": {
-            "max_bonds": 20,
+            "max_bonds": -1,
             "max_api_calls": 10,
             "include_desk": False,
             "include_ml": False,

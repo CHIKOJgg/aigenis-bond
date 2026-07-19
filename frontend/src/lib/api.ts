@@ -497,8 +497,8 @@ export const api = {
 
   billing: {
     plans: () => get<{ id: string; name: string; price: number; currency: string; features: string[] }[]>('/billing/plans'),
-    createPayment: (plan: string, success_url: string, cancel_url: string) =>
-      post<{ payment_id: string; confirmation_url: string | null }>('/billing/create-payment', { plan, success_url, cancel_url }),
+    createPayment: (plan: string, success_url: string, cancel_url: string, referralCode?: string | null) =>
+      post<{ payment_id: string; confirmation_url: string | null }>('/billing/create-payment', { plan, success_url, cancel_url, referral_code: referralCode ?? null }),
     subscription: () => get<{ plan: string; status: string; current_period_end: string | null; cancel_at_period_end: boolean }>('/billing/subscription'),
   },
 
@@ -534,8 +534,8 @@ export const api = {
   },
 
   auth: {
-    register: (email: string, password: string, name: string) =>
-      post<TokenResponse>('/auth/register', { email, password, name }),
+    register: (email: string, password: string, name: string, referralCode?: string | null) =>
+      post<TokenResponse>('/auth/register', { email, password, name, referral_code: referralCode ?? null }),
     login: (email: string, password: string) =>
       post<TokenResponse>('/auth/login', { email, password }),
     refresh: (refresh_token: string) =>

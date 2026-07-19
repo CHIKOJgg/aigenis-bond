@@ -95,6 +95,17 @@ async def cmd_start(message: Message) -> None:
 
         await cmd_subscribe(message)
         return
+    if payload.startswith("ref_"):
+        # Referral deep link: record the referrer id for later attribution.
+        ref_id_raw = payload[len("ref_"):].strip()
+        if ref_id_raw.isdigit():
+            from telegram_bot.subscriptions import attach_referrer
+
+            try:
+                await attach_referrer(user_id_from_message(message), int(ref_id_raw))
+            except Exception as exc:
+                logger.warning("referrer_attach_failed", error=str(exc))
+        # fall through to normal start flow below
     if not await _ch.is_unlocked(message):
         await message.answer(
             "👋 <b>Bond Fixed Income Assistant</b>\n\n"
@@ -158,6 +169,36 @@ async def _status_text(telegram_id: int) -> str:
 async def cmd_status(message: Message) -> None:
     text = await _status_text(user_id_from_message(message))
     await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+
+
+@router.message(Command("renew"))
+async def cmd_renew(message: Message) -> None:
+    from telegram_bot.stars_payments import cmd_subscribe
+
+    await cmd_subscribe(message)
+
+
+@router.message(Command("refer"))
+async def cmd_refer(message: Message) -> None:
+    telegram_id = user_id_from_message(message)
+    async with session_scope() as session:
+        user = await get_or_create_user_by_telegram(session, telegram_id)
+        user_id = user.id
+    try:
+        bot = message.bot
+        me = await bot.me()
+        username = me.username
+    except Exception:
+        username = None
+    link = f"https://t.me/{username}?start=ref_{user_id}" if username else f"ref_{user_id}"
+    await message.answer(
+        "🔗 <b>Пригласите друзей — получите +3 дня Pro</b>\n\n"
+        "Отправьте им ссылку. Когда друг зарегистрируется, вам обоим продлевается "
+        "пробный период на 3 дня.\n\n"
+        f"<code>{link}</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=_home_kb(),
+    )
 
 
 @router.callback_query(lambda c: c.data == "cmd_status")
@@ -259,7 +300,7 @@ _CMD_HANDLER_NAMES = {
     "cmd_rates", "cmd_parse", "cmd_overview", "cmd_usd", "cmd_byn", "cmd_metals",
     "cmd_new", "cmd_rv", "cmd_duration", "cmd_carry", "cmd_stress", "cmd_desk_status",
     "cmd_ml", "cmd_rebalance_auto", "cmd_scenario", "cmd_watchlist", "cmd_alerts",
-    "cmd_stats", "cmd_settings",
+    "cmd_stats", "cmd_settings", "cmd_refer", "cmd_status", "cmd_renew",
 }
 
 

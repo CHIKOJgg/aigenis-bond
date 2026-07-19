@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useI18n, LanguageToggle } from './i18n';
 import { api, type Bond, type BondScore } from './lib/api';
+import { useEffect, useState } from 'react';
 
 interface LandingPageProps {
   onLogin: () => void;
@@ -16,6 +17,17 @@ interface LandingPageProps {
 export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: LandingPageProps) {
   const { t } = useI18n();
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [plans, setPlans] = useState<Record<string, { id: string; name: string; price: number; currency: string; features: string[] }>>({});
+
+  useEffect(() => {
+    api.billing.plans()
+      .then((data) => {
+        const byId: Record<string, { id: string; name: string; price: number; currency: string; features: string[] }> = {};
+        for (const p of data) byId[p.id] = p;
+        setPlans(byId);
+      })
+      .catch(() => { /* keep defaults */ });
+  }, []);
 
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
@@ -214,7 +226,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
             </div>
             <h3 className="text-lg font-bold mb-1">Pro</h3>
             <p className="text-sm text-gray-400 mb-4">{t('landing.planProDesc')}</p>
-            <p className="text-3xl font-bold mb-2">29 <span className="text-base text-gray-500 font-normal">{t('landing.planPerMonth')}</span></p>
+            <p className="text-3xl font-bold mb-2">{plans.pro?.price ?? 2900} <span className="text-base text-gray-500 font-normal">{t('landing.planPerMonth')}</span></p>
             <p className="text-sm text-gray-500 mb-6">{t('landing.or')} 150 Stars</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatFree')}</li>
@@ -234,7 +246,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
           <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 flex flex-col">
             <h3 className="text-lg font-bold mb-1">Enterprise</h3>
             <p className="text-sm text-gray-400 mb-4">{t('landing.planEntDesc')}</p>
-            <p className="text-3xl font-bold mb-2">99 <span className="text-base text-gray-500 font-normal">{t('landing.planPerMonth')}</span></p>
+            <p className="text-3xl font-bold mb-2">{plans.enterprise?.price ?? 9900} <span className="text-base text-gray-500 font-normal">{t('landing.planPerMonth')}</span></p>
             <p className="text-sm text-gray-500 mb-6">{t('landing.or')} 500 Stars</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatFree')}</li>

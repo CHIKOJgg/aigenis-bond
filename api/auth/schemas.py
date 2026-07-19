@@ -7,6 +7,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     name: str
+    referral_code: str | None = None
 
 
 class LoginRequest(BaseModel):

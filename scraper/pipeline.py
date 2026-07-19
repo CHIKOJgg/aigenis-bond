@@ -281,7 +281,37 @@ async def run_once(client: AigenisClient, currencies: Iterable[str]) -> dict[str
     cur_list = list(currencies)
     logger.info("pipeline_start", currencies=cur_list)
 
-    internal_ids = await collect_listing(client, cur_list)
+    # Graceful degradation: if the primary source is unavailable (e.g. no paid
+    # credentials), do not crash the whole pipeline. Serve stale DB data and let
+    # the fallback source (if configured) backfill where possible.
+    try:
+        internal_ids = await collect_listing(client, cur_list)
+    except Exception as exc:
+        logger.warning("listing_failed_serving_stale", error=str(exc))
+        from scraper.fallback_source import fetch_fallback_bonds
+
+        internal_ids = []
+        for cur in cur_list:
+            fb = await fetch_fallback_bonds(cur)
+            if fb:
+                logger.info("fallback_bonds_fetched", currency=cur, count=len(fb))
+        # When the primary listing fails we keep existing bonds scored; nothing
+        # new to re-collect, so details/history are skipped this run.
+        xlsx_stats = await enrich_from_xlsx()
+        async with session_scope() as session:
+            scored = await recompute_all(session)
+        summary = {
+            "listing_total": 0,
+            "details_ok": 0,
+            "details_err": 0,
+            "history_rows": 0,
+            "history_err": 0,
+            "scored": scored,
+            **xlsx_stats,
+            "stale_mode": True,
+        }
+        logger.info("pipeline_done_stale", **summary)
+        return summary
     details_ok, details_err = await collect_details(client, internal_ids)
     history_ok, history_err = await backfill_history(
         client,
