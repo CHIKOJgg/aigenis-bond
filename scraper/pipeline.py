@@ -13,6 +13,7 @@ from scraper.api.history import parse_history_payload
 from scraper.api.listing import parse_listing_payload
 from scraper.client import AigenisClient
 from scraper.db import session_scope
+from sqlalchemy import select
 from scraper.errors import (
     HistoryUnavailable,
     NotFoundError,
@@ -27,6 +28,18 @@ from scraper.parsers.xlsx import XlsxParseResult, parse_all
 from scraper.validation import validate_detail, validate_listing
 
 logger = get_logger("scraper.pipeline")
+
+
+def _d(value: object) -> "Decimal | None":
+    """Coerce a fallback quote value to Decimal, tolerating strings/None."""
+    from decimal import Decimal, InvalidOperation
+
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 async def collect_listing(client: AigenisClient, currencies: Iterable[str]) -> list[str]:
@@ -291,12 +304,49 @@ async def run_once(client: AigenisClient, currencies: Iterable[str]) -> dict[str
         from scraper.fallback_source import fetch_fallback_bonds
 
         internal_ids = []
-        for cur in cur_list:
-            fb = await fetch_fallback_bonds(cur)
-            if fb:
+        saved_fb = 0
+        async with session_scope() as session:
+            for cur in cur_list:
+                fb = await fetch_fallback_bonds(cur)
+                if not fb:
+                    continue
                 logger.info("fallback_bonds_fetched", currency=cur, count=len(fb))
-        # When the primary listing fails we keep existing bonds scored; nothing
-        # new to re-collect, so details/history are skipped this run.
+                for b in fb:
+                    iid = b.get("internal_id")
+                    if not iid:
+                        continue
+                    existing = (
+                        await session.execute(
+                            select(BondORM).where(BondORM.internal_id == iid)
+                        )
+                    ).scalar_one_or_none()
+                    maturity = None
+                    if b.get("maturity_date"):
+                        try:
+                            maturity = datetime.fromisoformat(b["maturity_date"]).date()
+                        except (ValueError, TypeError):
+                            maturity = None
+                    if existing is None:
+                        session.add(
+                            BondORM(
+                                internal_id=iid,
+                                name=b.get("name") or iid,
+                                issuer=b.get("issuer"),
+                                currency=b.get("currency", "RUB"),
+                                price=_d(b.get("price")),
+                                yield_to_maturity=_d(b.get("yield_to_maturity")),
+                                maturity_date=maturity,
+                                status=b.get("status", "active"),
+                                fetched_at=datetime.now(UTC),
+                            )
+                        )
+                    else:
+                        existing.price = _d(b.get("price"))
+                        existing.yield_to_maturity = _d(b.get("yield_to_maturity"))
+                        existing.fetched_at = datetime.now(UTC)
+                    saved_fb += 1
+                await session.commit()
+        # Keep existing bonds scored; details/history skipped in stale mode.
         xlsx_stats = await enrich_from_xlsx()
         async with session_scope() as session:
             scored = await recompute_all(session)
