@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
+from desk.cashflow import pricing_cashflows
 from desk.models import DurationReport
 from scraper.models import Bond
 
@@ -17,21 +18,17 @@ def _cashflows(
     coupon_frequency: int,
     maturity: date,
     ref: date,
+    issue_date: date | None = None,
 ) -> list[tuple[float, float]]:
-    """Дисконтированные/недисконтированные денежные потоки (год, CF)."""
-    if maturity <= ref:
-        return []
-    cf_per_period = float(nominal) * coupon_rate_pct / 100 / coupon_frequency
-    years_total = (maturity - ref).days / 365.25
-    n_periods = max(round(years_total * coupon_frequency), 1)
-    period_years = years_total / n_periods
-    flows: list[tuple[float, float]] = []
-    for k in range(1, n_periods + 1):
-        cf = cf_per_period
-        if k == n_periods:
-            cf += float(nominal)
-        flows.append((period_years * k, cf))
-    return flows
+    """Future cashflows as ``(years_from_ref, amount)`` using real day-count."""
+    return pricing_cashflows(
+        nominal=float(nominal),
+        coupon_rate_pct=coupon_rate_pct,
+        coupon_frequency=coupon_frequency,
+        maturity=maturity,
+        asof=ref,
+        issue_date=issue_date,
+    )
 
 
 def _price_from_yield(flows: list[tuple[float, float]], ytm_pct: float, freq: int = 2) -> float:
@@ -53,6 +50,7 @@ def macaulay_duration(
     ytm_pct: float,
     maturity: date,
     ref: date,
+    issue_date: date | None = None,
 ) -> float:
     flows = _cashflows(
         nominal=nominal,
@@ -60,6 +58,7 @@ def macaulay_duration(
         coupon_frequency=coupon_frequency,
         maturity=maturity,
         ref=ref,
+        issue_date=issue_date,
     )
     if not flows:
         return 0.0
@@ -79,6 +78,7 @@ def modified_duration(
     ytm_pct: float,
     maturity: date,
     ref: date,
+    issue_date: date | None = None,
 ) -> float:
     mac = macaulay_duration(
         nominal=nominal,
@@ -87,6 +87,7 @@ def modified_duration(
         ytm_pct=ytm_pct,
         maturity=maturity,
         ref=ref,
+        issue_date=issue_date,
     )
     return mac / (1 + ytm_pct / 100 / coupon_frequency)
 
@@ -99,6 +100,7 @@ def convexity(
     ytm_pct: float,
     maturity: date,
     ref: date,
+    issue_date: date | None = None,
 ) -> float:
     flows = _cashflows(
         nominal=nominal,
@@ -106,6 +108,7 @@ def convexity(
         coupon_frequency=coupon_frequency,
         maturity=maturity,
         ref=ref,
+        issue_date=issue_date,
     )
     if not flows:
         return 0.0
@@ -124,6 +127,7 @@ def dv01(
     ytm_pct: float,
     maturity: date,
     ref: date,
+    issue_date: date | None = None,
 ) -> float:
     """Dollar Value of 1bp: убыток стоимости при росте YTM на 1bp."""
     flows = _cashflows(
@@ -132,6 +136,7 @@ def dv01(
         coupon_frequency=coupon_frequency,
         maturity=maturity,
         ref=ref,
+        issue_date=issue_date,
     )
     if not flows:
         return 0.0
@@ -152,6 +157,7 @@ def key_rate_durations(
     ytm_pct: float,
     maturity: date,
     ref: date,
+    issue_date: date | None = None,
     tenors: Iterable[float] = (0.25, 1, 2, 3, 5, 7, 10, 20, 30),
 ) -> dict[str, float]:
     flows = _cashflows(
@@ -160,6 +166,7 @@ def key_rate_durations(
         coupon_frequency=coupon_frequency,
         maturity=maturity,
         ref=ref,
+        issue_date=issue_date,
     )
     if not flows:
         return {f"{int(t)}Y": 0.0 for t in tenors}
@@ -199,6 +206,7 @@ def duration_report(
     ytm = float(ytm_override if ytm_override is not None else (bond.yield_to_maturity or 0.0))
     coupon_pct = float(bond.coupon_rate or 0.0)
     freq = int(bond.coupon_frequency or 2)
+    issue = bond.start_date
 
     mac = macaulay_duration(
         nominal=nominal,
@@ -207,6 +215,7 @@ def duration_report(
         ytm_pct=ytm,
         maturity=bond.maturity_date,
         ref=ref,
+        issue_date=issue,
     )
     mod = mac / (1 + ytm / 100 / freq)
     cvx = convexity(
@@ -216,6 +225,7 @@ def duration_report(
         ytm_pct=ytm,
         maturity=bond.maturity_date,
         ref=ref,
+        issue_date=issue,
     )
     dv = dv01(
         nominal=nominal,
@@ -224,6 +234,7 @@ def duration_report(
         ytm_pct=ytm,
         maturity=bond.maturity_date,
         ref=ref,
+        issue_date=issue,
     )
     krd = key_rate_durations(
         nominal=nominal,
@@ -232,6 +243,17 @@ def duration_report(
         ytm_pct=ytm,
         maturity=bond.maturity_date,
         ref=ref,
+        issue_date=issue,
+    )
+
+    from desk.cashflow import accrued_interest
+
+    accrued = accrued_interest(
+        coupon_rate_pct=coupon_pct,
+        coupon_frequency=freq,
+        issue_date=issue,
+        maturity_date=bond.maturity_date,
+        asof=ref,
     )
 
     return DurationReport(
@@ -240,6 +262,7 @@ def duration_report(
         macaulay_duration=round(mac, 4),
         convexity=round(cvx, 4),
         dv01=round(dv, 4),
+        accrued_interest=round(accrued, 6),
         key_rate_durations=krd,
         asof_date=ref,
     )

@@ -113,6 +113,7 @@ class DurationReport(BaseModel):
     macaulay_duration: float
     convexity: float
     dv01: float
+    accrued_interest: float = 0.0
     key_rate_durations: dict[str, float] = Field(default_factory=dict)
     asof_date: date
 

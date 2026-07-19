@@ -23,6 +23,7 @@ def orm_to_bond(b: BondORM) -> Bond:
         coupon_frequency=b.coupon_frequency,
         maturity_date=b.maturity_date,
         price=b.price,
+        start_date=b.start_date,
         issuer=b.issuer,
         status=b.status,
         nominal=b.nominal,
