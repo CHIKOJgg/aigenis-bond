@@ -582,3 +582,57 @@ class AlertEventORM(Base):
         Index("ix_alert_events_user", "user_id"),
         Index("ix_alert_events_created", "created_at"),
     )
+
+
+class PartnerKeyORM(Base):
+    """API-ключи для партнёрской интеграции (B2B / вебхуки).
+
+    В БД хранится только хэш ключа (SHA-256). Сам секрет возвращается
+    единожды при создании и больше нигде не логируется.
+    """
+
+    __tablename__ = "partner_api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    tier: Mapped[str] = mapped_column(String(16), nullable=False, server_default="partner")
+    rate_limit: Mapped[int] = mapped_column(Integer, nullable=False, server_default="120")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_partner_api_keys_owner", "owner_user_id"),)
+
+
+class WebhookORM(Base):
+    """Подписки на события партнёра (webhook-доставка).
+
+    ``events`` — список типов событий (bond.updated, alert.triggered, …).
+    ``secret`` используется для HMAC-SHA256 подписи тела запроса.
+    """
+
+    __tablename__ = "partner_webhooks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    partner_key_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("partner_api_keys.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    events: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list
+    )
+    secret: Mapped[str] = mapped_column(String(128), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    last_delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (Index("ix_partner_webhooks_partner", "partner_key_id"),)

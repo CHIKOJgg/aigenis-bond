@@ -20,6 +20,7 @@ from api.analytics import router as analytics_router
 from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
+from api.partner.router import router as partner_router
 from scraper.config import get_settings
 from scraper.db import check_db_health, dispose, session_scope
 from scraper.errors import ScraperError
@@ -70,6 +71,10 @@ app.include_router(analytics_router)
 # (ЮKassa) for card / SBP / Apple Pay / Google Pay on the website.
 app.include_router(billing_router)
 logger.info("yookassa_billing_enabled")
+
+# Partner API (B2B keys, webhooks, read-only analytics).
+app.include_router(partner_router)
+logger.info("partner_api_enabled")
 
 # --- Security headers ---
 # Applied to every response (except the docs/OpenAPI endpoints) to harden the
