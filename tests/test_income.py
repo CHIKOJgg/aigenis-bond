@@ -96,6 +96,47 @@ def test_matured_bond_has_no_future_flows():
     assert flows == []
 
 
+def test_bond_cashflows_day_count_uses_issue_schedule():
+    # When issue_date is known, coupons follow the issue-anchored schedule and
+    # per-coupon amounts are day-count adjusted (30/360 keeps the familiar value).
+    issue = date(2024, 1, 31)
+    maturity = date(2026, 1, 31)
+    flows = bond_cashflows(
+        internal_id="DC",
+        amount_invested=Decimal("10000"),
+        coupon_rate=Decimal("10"),
+        coupon_frequency=2,
+        maturity_date=maturity,
+        price=Decimal("100"),
+        issue_date=issue,
+        from_date=date(2024, 2, 1),
+    )
+    coupons = [f for f in flows if f.kind == "coupon"]
+    assert len(coupons) == 4  # 2024-07-31, 2025-01-31, 2025-07-31, 2026-01-31
+    assert all(c.amount == Decimal("500.00") for c in coupons)
+
+
+def test_bond_cashflows_act365_differs_from_naive():
+    # ACT/365 values a non-30/360 period differently from the naive /freq split.
+    issue = date(2024, 1, 31)
+    maturity = date(2024, 7, 31)
+    flows = bond_cashflows(
+        internal_id="ACT",
+        amount_invested=Decimal("10000"),
+        coupon_rate=Decimal("10"),
+        coupon_frequency=2,
+        maturity_date=maturity,
+        price=Decimal("100"),
+        issue_date=issue,
+        day_count="ACT/365",
+        from_date=date(2024, 2, 1),
+    )
+    coupons = [f for f in flows if f.kind == "coupon"]
+    assert coupons
+    # 182-day half-year -> 10000 * 10% * 182/365 != 500.00.
+    assert coupons[0].amount != Decimal("500.00")
+
+
 def test_portfolio_income_aggregates():
     maturity = date.today().replace(year=date.today().year + 3)
     holdings = [
@@ -180,6 +221,51 @@ def test_cashflow_endpoint_gated_and_works():
             assert body["annual_income"] == 1000.0
             assert body["cashflows"]
             assert any(f["kind"] == "redemption" for f in body["cashflows"])
+
+    _run(run)
+
+
+def test_cashflow_endpoint_includes_accrued():
+    async def run():
+        await _ensure_schema()
+        async with session_scope() as s:
+            s.add(
+                UserORM(
+                    id=2,
+                    email="pro2@example.com",
+                    name="Pro2",
+                    password_hash="x",
+                    role="user",
+                    is_active=True,
+                    is_verified=False,
+                    subscription_tier="pro",
+                    subscription_expires_at=datetime.now(UTC) + timedelta(days=30),
+                )
+            )
+            s.add(
+                BondORM(
+                    internal_id="ACCR",
+                    name="Accrued Bond",
+                    currency="USD",
+                    yield_to_maturity=10.0,
+                    coupon_rate=10.0,
+                    coupon_frequency=2,
+                    price=100.0,
+                    status="active",
+                    start_date=date(2024, 1, 31),
+                    maturity_date=date(2028, 1, 31),
+                    fetched_at=datetime.now(UTC),
+                )
+            )
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get(
+                "/api/v1/bond/ACCR/cashflow?amount=10000", headers=_auth(2)
+            )
+            assert resp.status_code == 200
+            body = resp.json()
+            assert "accrued_interest" in body
+            assert body["accrued_interest"] > 0
 
     _run(run)
 

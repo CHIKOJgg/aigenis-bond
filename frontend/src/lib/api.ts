@@ -415,6 +415,7 @@ export interface Cashflow {
   annual_income: number;
   yield_on_cost: number;
   total_coupons: number;
+  accrued_interest: number;
   cashflows: { date: string; amount: number; kind: string }[];
 }
 

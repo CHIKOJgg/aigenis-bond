@@ -69,14 +69,21 @@ def bond_cashflows(
     price: Decimal | None = None,
     from_date: date | None = None,
     include_redemption: bool = True,
+    issue_date: date | None = None,
+    day_count: str = "30/360",
+    settlement: date | None = None,
 ) -> list[CashFlow]:
     """Project future cashflows for a single holding.
 
-    Coupon dates are generated backward from ``maturity_date`` at the coupon
-    period, keeping only dates strictly after ``from_date``. The final coupon
-    coincides with maturity; principal is returned as a ``redemption`` flow.
+    Coupon dates are generated from ``issue_date`` when available (so the
+    day-count timing is exact), keeping only dates strictly after ``from_date``
+    (or ``settlement``). The per-coupon amount is day-count adjusted. When no
+    ``issue_date`` is known we fall back to the legacy month-spaced schedule so
+    existing callers (portfolio income calendar) stay unchanged. The final
+    coupon coincides with maturity; principal is returned as a ``redemption``
+    flow.
     """
-    from_date = from_date or date.today()
+    from_date = from_date or settlement or date.today()
     if maturity_date is None or maturity_date <= from_date:
         return []
 
@@ -85,17 +92,31 @@ def bond_cashflows(
 
     freq = coupon_frequency if coupon_frequency in (1, 2, 4, 12) else None
     if freq and coupon_rate and coupon_rate > 0:
-        step = 12 // freq
-        per_period = face * (coupon_rate / Decimal("100")) / Decimal(freq)
-        cur = maturity_date
-        dates: list[date] = []
-        while cur > from_date:
-            dates.append(cur)
-            cur = _add_months(cur, -step)
-        for d in sorted(dates):
-            flows.append(
-                CashFlow(date=d, amount=per_period, kind="coupon", internal_id=internal_id)
-            )
+        if issue_date is not None:
+            from desk.cashflow import coupon_dates, year_fraction
+
+            schedule = coupon_dates(issue_date, maturity_date, freq)
+            for i, d in enumerate(schedule):
+                if d <= from_date:
+                    continue
+                prev = schedule[i - 1] if i > 0 else issue_date
+                yf = Decimal(str(year_fraction(prev, d, day_count)))
+                per = face * (coupon_rate / Decimal("100")) * yf
+                flows.append(
+                    CashFlow(date=d, amount=per, kind="coupon", internal_id=internal_id)
+                )
+        else:
+            step = 12 // freq
+            per_period = face * (coupon_rate / Decimal("100")) / Decimal(freq)
+            cur = maturity_date
+            dates: list[date] = []
+            while cur > from_date:
+                dates.append(cur)
+                cur = _add_months(cur, -step)
+            for d in sorted(dates):
+                flows.append(
+                    CashFlow(date=d, amount=per_period, kind="coupon", internal_id=internal_id)
+                )
 
     if include_redemption:
         flows.append(

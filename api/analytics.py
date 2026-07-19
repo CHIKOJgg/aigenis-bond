@@ -8,6 +8,7 @@ overview, scores, stats) are always available.
 from __future__ import annotations
 
 import os
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,6 +27,7 @@ from desk import relative_value as desk_rv
 from desk import repo as desk_repo
 from desk import stress as desk_stress
 from desk import yield_curve as desk_curve
+from desk.cashflow import accrued_interest as dc_accrued
 from desk.repository import latest_rv_signals, latest_stress_runs
 from forecast.engine import forecast_capital, forecast_horizons
 from ml.repository import latest_model_version, predictions_for_bond
@@ -272,6 +274,7 @@ async def api_bond_cashflow(
     на вложенные средства (yield-on-cost).
     """
     bond = await _get_bond_or_404(internal_id)
+    settlement = date.today()
     flows = bond_cashflows(
         internal_id=internal_id,
         amount_invested=Decimal(str(amount)),
@@ -279,20 +282,40 @@ async def api_bond_cashflow(
         coupon_frequency=bond.coupon_frequency,
         maturity_date=bond.maturity_date,
         price=bond.price,
+        issue_date=bond.start_date,
+        settlement=settlement,
     )
     total_coupons = sum(
         (f.amount for f in flows if f.kind == "coupon"), start=Decimal("0")
     )
     ann = Decimal("0")
+    face = Decimal(str(amount)) * Decimal("100") / bond.price if bond.price else Decimal(str(amount))
     if bond.coupon_rate and bond.coupon_rate > 0:
-        face = Decimal(str(amount)) * Decimal("100") / bond.price if bond.price else Decimal(str(amount))
         ann = (face * bond.coupon_rate / Decimal("100")).quantize(Decimal("0.01"))
+    accrued = 0.0
+    if (
+        bond.coupon_rate
+        and bond.coupon_rate > 0
+        and bond.start_date is not None
+        and bond.maturity_date is not None
+    ):
+        accrued_per_face = dc_accrued(
+            coupon_rate_pct=float(bond.coupon_rate),
+            coupon_frequency=bond.coupon_frequency or 2,
+            issue_date=bond.start_date,
+            maturity_date=bond.maturity_date,
+            asof=settlement,
+            convention="30/360",
+            face=100.0,
+        )
+        accrued = float(accrued_per_face) * float(face) / 100.0
     return {
         "bond": _h.bond_facts(bond),
         "amount_invested": round(amount, 2),
         "annual_income": float(ann),
         "yield_on_cost": round(float(ann / Decimal(str(amount)) * 100), 2) if amount > 0 else 0.0,
         "total_coupons": float(total_coupons),
+        "accrued_interest": round(accrued, 2),
         "cashflows": [f.as_dict() for f in flows],
     }
 

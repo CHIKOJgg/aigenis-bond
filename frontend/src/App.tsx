@@ -1586,6 +1586,7 @@ function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose, onSubscr
             <div className="flex justify-between"><span className="text-gray-400">Годовой доход</span><span className="font-mono text-emerald-400">{cashflow.annual_income.toFixed(2)}</span></div>
             <div className="flex justify-between"><span className="text-gray-400">Доходность на вложения</span><span className="font-mono">{cashflow.yield_on_cost.toFixed(2)}%</span></div>
             <div className="flex justify-between"><span className="text-gray-400">Всего купонов</span><span className="font-mono">{cashflow.total_coupons.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gray-400">НКД (accrued)</span><span className="font-mono text-amber-400">{cashflow.accrued_interest.toFixed(2)}</span></div>
             <div className="max-h-48 overflow-y-auto border-t border-gray-700 pt-2 mt-2">
               {cashflow.cashflows.map((c, i) => (
                 <div key={i} className="flex justify-between py-1 border-b border-gray-800 last:border-0">
