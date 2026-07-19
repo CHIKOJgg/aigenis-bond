@@ -18,10 +18,10 @@ from notifications.alerts_repository import (
     mark_rule_triggered,
     record_event,
 )
-from scraper.config import get_settings
+from notifications.delivery import deliver_telegram, emit_partner_alert
 from scraper.db import session_scope
 from scraper.logging import get_logger
-from scraper.orm import AlertEventORM, BondORM, UserORM
+from scraper.orm import AlertEventORM, BondORM
 
 logger = get_logger("alerts.service")
 
@@ -63,28 +63,7 @@ def _is_fired(rule: object, value: Decimal | None) -> tuple[bool, str | None]:
 
 async def _deliver(user_id: int, text: str) -> bool:
     """Best-effort Telegram-уведомление. Возвращает True при успешной отправке."""
-    token = get_settings().telegram.bot_token
-    if not token:
-        return False
-    try:
-        from aiogram import Bot
-        from aiogram.client.default import DefaultBotProperties
-
-        async with session_scope() as session:
-            user = (
-                await session.execute(select(UserORM).where(UserORM.id == user_id))
-            ).scalar_one_or_none()
-        if user is None or user.telegram_id is None:
-            return False
-        bot = Bot(token=token, default=DefaultBotProperties(parse_mode="HTML"))
-        try:
-            await bot.send_message(chat_id=user.telegram_id, text=text)
-            return True
-        finally:
-            await bot.session.close()
-    except Exception as exc:  # pragma: no cover - network/dependency dependent
-        logger.warning("alert_delivery_failed", user_id=user_id, error=str(exc))
-        return False
+    return await deliver_telegram(user_id, text)
 
 
 async def run_alert_checks() -> int:
@@ -136,6 +115,14 @@ async def run_alert_checks() -> int:
                     .where(AlertEventORM.id == event.id)
                     .values(delivered=True)
                 )
+            # B2B partners subscribed to alert.triggered also get the event.
+            await emit_partner_alert(
+                kind=f"user_rule:{rule.metric}:{rule.direction}",
+                title=message.splitlines()[0] if message else "Alert",
+                message=message,
+                internal_id=rule.internal_id,
+                alert_id=event.id,
+            )
             fired += 1
         logger.info("alert_checks_done", fired=fired, rules=len(rules))
         return fired

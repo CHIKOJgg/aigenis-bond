@@ -51,6 +51,27 @@ async def _latest_history(
     return result.scalar_one_or_none()
 
 
+async def _add_and_publish(session: AsyncSession, alert: dict) -> int | None:
+    """Persist an alert (dedup-aware) and best-effort emit a partner webhook.
+
+    Returns the new alert id, or ``None`` when the alert was suppressed as a
+    duplicate (within the 24h dedup window). System alerts have no user, so
+    delivery is via partner ``alert.triggered`` webhooks only.
+    """
+    alert_id = await add_alert(session, alert)
+    if alert_id is not None:
+        from notifications.delivery import emit_partner_alert
+
+        await emit_partner_alert(
+            kind=alert["kind"],
+            title=alert["title"],
+            message=alert["message"],
+            internal_id=alert.get("internal_id"),
+            alert_id=alert_id,
+        )
+    return alert_id
+
+
 async def _emit_change_alert(
     session: AsyncSession,
     counts: dict[str, int],
@@ -62,19 +83,16 @@ async def _emit_change_alert(
     dedup_key: str,
 ) -> bool:
     """Persist a change alert, updating ``counts`` on success. Returns True if added."""
-    try:
-        alert_id = await add_alert(
-            session,
-            {
-                "kind": kind,
-                "title": title,
-                "message": message,
-                "internal_id": internal_id,
-                "dedup_key": dedup_key,
-            },
-        )
-    except Exception:
-        alert_id = None
+    alert_id = await _add_and_publish(
+        session,
+        {
+            "kind": kind,
+            "title": title,
+            "message": message,
+            "internal_id": internal_id,
+            "dedup_key": dedup_key,
+        },
+    )
     if alert_id:
         counts[kind] = counts.get(kind, 0) + 1
         return True
@@ -92,19 +110,16 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
     for b in bonds:
         seen_ids.add(b.internal_id)
         if b.status == "delisted" or b.status == "matured":
-            try:
-                alert_id = await add_alert(
-                    session,
-                    {
-                        "kind": "matured" if b.status == "matured" else "delisted",
-                        "title": f"{b.name}: статус {b.status}",
-                        "message": f"Облигация {b.internal_id} ({b.name}) теперь {b.status}",
-                        "internal_id": b.internal_id,
-                        "dedup_key": f"status:{b.internal_id}:{b.status}",
-                    },
-                )
-            except Exception:
-                alert_id = None
+            alert_id = await _add_and_publish(
+                session,
+                {
+                    "kind": "matured" if b.status == "matured" else "delisted",
+                    "title": f"{b.name}: статус {b.status}",
+                    "message": f"Облигация {b.internal_id} ({b.name}) теперь {b.status}",
+                    "internal_id": b.internal_id,
+                    "dedup_key": f"status:{b.internal_id}:{b.status}",
+                },
+            )
             if alert_id:
                 counts["matured" if b.status == "matured" else "delisted"] = (
                     counts.get("matured" if b.status == "matured" else "delisted", 0) + 1
@@ -112,19 +127,16 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
                 total_new += 1
 
         if b.offer_date and b.offer_date >= date.today():
-            try:
-                alert_id = await add_alert(
-                    session,
-                    {
-                        "kind": "offer",
-                        "title": f"Оферта {b.name}",
-                        "message": f"Оферта по {b.internal_id} {b.offer_date.isoformat()}",
-                        "internal_id": b.internal_id,
-                        "dedup_key": f"offer:{b.internal_id}:{b.offer_date.isoformat()}",
-                    },
-                )
-            except Exception:
-                alert_id = None
+            alert_id = await _add_and_publish(
+                session,
+                {
+                    "kind": "offer",
+                    "title": f"Оферта {b.name}",
+                    "message": f"Оферта по {b.internal_id} {b.offer_date.isoformat()}",
+                    "internal_id": b.internal_id,
+                    "dedup_key": f"offer:{b.internal_id}:{b.offer_date.isoformat()}",
+                },
+            )
             if alert_id:
                 counts["offer"] = counts.get("offer", 0) + 1
                 total_new += 1
@@ -200,19 +212,16 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
         select(BondScoreORM).where(BondScoreORM.score >= THRESHOLDS["high_score"])
     )
     for s in score_res.scalars():
-        try:
-            alert_id = await add_alert(
-                session,
-                {
-                    "kind": "high_score",
-                    "title": f"Высокий Score {float(s.score):.0f}",
-                    "message": f"{s.internal_id} набрал {float(s.score):.1f} баллов",
-                    "internal_id": s.internal_id,
-                    "dedup_key": f"high_score:{s.internal_id}:{s.computed_at.date().isoformat()}",
-                },
-            )
-        except Exception:
-            alert_id = None
+        alert_id = await _add_and_publish(
+            session,
+            {
+                "kind": "high_score",
+                "title": f"Высокий Score {float(s.score):.0f}",
+                "message": f"{s.internal_id} набрал {float(s.score):.1f} баллов",
+                "internal_id": s.internal_id,
+                "dedup_key": f"high_score:{s.internal_id}:{s.computed_at.date().isoformat()}",
+            },
+        )
         if alert_id:
             counts["high_score"] = counts.get("high_score", 0) + 1
             total_new += 1
@@ -235,19 +244,16 @@ async def detect_fx_changes(session: AsyncSession) -> MonitoringResult:
                 if "USD" in pair and "BYN" in pair
                 else f"fx_{pair.replace('/', '_').lower()}"
             )
-            try:
-                alert_id = await add_alert(
-                    session,
-                    {
-                        "kind": kind,
-                        "title": f"{pair}: {change:+.2f}%",
-                        "message": f"Курс {pair} изменился с {prev.rate} на {cur.rate} ({change:+.2f}%)",
-                        "payload": {"old": float(prev.rate), "new": float(cur.rate)},
-                        "dedup_key": f"fx:{pair}:{cur.observed_at.date().isoformat()}",
-                    },
-                )
-            except Exception:
-                alert_id = None
+            alert_id = await _add_and_publish(
+                session,
+                {
+                    "kind": kind,
+                    "title": f"{pair}: {change:+.2f}%",
+                    "message": f"Курс {pair} изменился с {prev.rate} на {cur.rate} ({change:+.2f}%)",
+                    "payload": {"old": float(prev.rate), "new": float(cur.rate)},
+                    "dedup_key": f"fx:{pair}:{cur.observed_at.date().isoformat()}",
+                },
+            )
             if alert_id:
                 counts[kind] = counts.get(kind, 0) + 1
                 total += 1
@@ -265,19 +271,16 @@ async def detect_metal_changes(session: AsyncSession) -> MonitoringResult:
         change = _pct_change(float(prev.price), float(cur.price))
         if abs(change) >= THRESHOLDS["metal_change_pct"]:
             kind = f"metal_{metal.lower()}"
-            try:
-                alert_id = await add_alert(
-                    session,
-                    {
-                        "kind": kind,
-                        "title": f"{metal}: {change:+.2f}%",
-                        "message": f"Цена {metal} изменилась с {prev.price} на {cur.price} ({change:+.2f}%)",
-                        "payload": {"old": float(prev.price), "new": float(cur.price)},
-                        "dedup_key": f"metal:{metal}:{cur.observed_at.date().isoformat()}",
-                    },
-                )
-            except Exception:
-                alert_id = None
+            alert_id = await _add_and_publish(
+                session,
+                {
+                    "kind": kind,
+                    "title": f"{metal}: {change:+.2f}%",
+                    "message": f"Цена {metal} изменилась с {prev.price} на {cur.price} ({change:+.2f}%)",
+                    "payload": {"old": float(prev.price), "new": float(cur.price)},
+                    "dedup_key": f"metal:{metal}:{cur.observed_at.date().isoformat()}",
+                },
+            )
             if alert_id:
                 counts[kind] = counts.get(kind, 0) + 1
                 total += 1
@@ -380,18 +383,15 @@ async def detect_data_quality(session: AsyncSession) -> MonitoringResult:
     counts: dict[str, int] = {}
     total = 0
     for issue in report.issues:
-        try:
-            alert_id = await add_alert(
-                session,
-                {
-                    "kind": "data_quality",
-                    "title": "⚠️ Качество данных",
-                    "message": issue,
-                    "dedup_key": f"data_quality:{hash(issue) % 10**8}:{date.today().isoformat()}",
-                },
-            )
-        except Exception:
-            alert_id = None
+        alert_id = await _add_and_publish(
+            session,
+            {
+                "kind": "data_quality",
+                "title": "⚠️ Качество данных",
+                "message": issue,
+                "dedup_key": f"data_quality:{hash(issue) % 10**8}:{date.today().isoformat()}",
+            },
+        )
         if alert_id:
             counts["data_quality"] = counts.get("data_quality", 0) + 1
             total += 1
