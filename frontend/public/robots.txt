@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /widget
+Disallow: /admin/
+
+Sitemap: https://aigenis.by/sitemap.xml
