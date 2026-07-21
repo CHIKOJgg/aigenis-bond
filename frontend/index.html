@@ -1,10 +1,127 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Aigenis Bonds — Fixed Income Assistant</title>
+
+    <title>Aigenis Bonds — AI-скоринг облигаций: найдите лучшие облигации для инвестиций</title>
+    <meta name="description" content="AI-платформа для анализа облигаций. Скоринг риска/доходности, кривые доходности, ML-прогнозы и алерты. 100+ облигаций в 6 валютах. 7 дней бесплатно." />
+    <meta name="keywords" content="облигации, анализ облигаций, скоринг, доходность,投资, fixed income, bond analysis, YTM, купоны, MOEX, белорусские облигации" />
+    <meta name="author" content="Aigenis" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://aigenis.by/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://aigenis.by/" />
+    <meta property="og:title" content="Aigenis Bonds — AI-скоринг облигаций" />
+    <meta property="og:description" content="Найдите лучшие облигации за секунды. AI-скоринг анализирует 100+ облигаций и показывает оптимальное соотношение риска и доходности." />
+    <meta property="og:image" content="https://aigenis.by/og-image.png" />
+    <meta property="og:locale" content="ru_RU" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <meta property="og:site_name" content="Aigenis Bonds" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Aigenis Bonds — AI-скоринг облигаций" />
+    <meta name="twitter:description" content="Найдите лучшие облигации за секунды. AI-скоринг 100+ облигаций в 6 валютах." />
+    <meta name="twitter:image" content="https://aigenis.by/og-image.png" />
+
+    <!-- Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+
+    <!-- JSON-LD: SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Aigenis Bonds",
+      "url": "https://aigenis.by",
+      "applicationCategory": "FinanceApplication",
+      "operatingSystem": "Web",
+      "description": "AI-платформа для анализа облигаций с фиксированным доходом. Скоринг, кривые доходности, ML-прогнозы, алерты.",
+      "offers": [
+        {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "BYN",
+          "name": "Free",
+          "description": "Базовый обзор рынка, скоринг, листинги облигаций"
+        },
+        {
+          "@type": "Offer",
+          "price": "2900",
+          "priceCurrency": "BYN",
+          "name": "Pro",
+          "description": "Fixed Income Desk, ML-прогнозы, портфель, алерты"
+        },
+        {
+          "@type": "Offer",
+          "price": "9900",
+          "priceCurrency": "BYN",
+          "name": "Enterprise",
+          "description": "Максимальные лимиты, приоритетная поддержка, кастомные интеграции"
+        }
+      ],
+      "featureList": [
+        "AI-скоринг облигаций 0-100",
+        "Кривые доходности Nelson-Siegel",
+        "ML-прогнозы buy/hold/wait/avoid",
+        "Fixed Income Desk: RV, Duration, Carry, Repo, Stress",
+        "Оптимизация портфеля Mean-Variance",
+        "Алерты в реальном времени",
+        "Telegram-бот"
+      ],
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "120"
+      }
+    }
+    </script>
+
+    <!-- JSON-LD: FAQPage -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Как работает AI-скоринг облигаций?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Наш алгоритм анализирует доходность, дюрацию, ликвидность и качество эмитента каждой облигации. На основе этих данных вычисляется Score от 0 до 100 и буквенный рейтинг A-D, показывающий оптимальность соотношения риска и доходности."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Какие облигации доступны для анализа?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Мы отслеживаем 100+ облигаций в 6 валютах: белорусские рубли (BYN), российские рубли (RUB), доллары (USD), евро (EUR) и другие. Данные обновляются регулярно с MOEX и других источников."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Как часто обновляются данные?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Данные обновляются автоматически каждые 6 часов. ML-модели переобучаются еженедельно. Кривые доходности и аналитика Desk обновляются ежедневно."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Можно ли использовать без регистрации?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, вы можете увидеть лучшие облигации по скору без регистрации. Для полного доступа к аналитике, ML-прогнозам и алертам необходим аккаунт с бесплатным 7-дневным пробным периодом."
+          }
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
