@@ -23,6 +23,7 @@ import DocumentAnalysisPage from './components/DocumentAnalysis';
 import PortfolioAdvancedPage from './components/PortfolioAdvancedPage';
 import BottomNav from './components/BottomNav';
 import MobileMenu from './components/MobileMenu';
+import ReferralProgram from './components/ReferralProgram';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
 import YieldCurveChart from './components/charts/YieldCurveChart';
 import RVHeatmap from './components/charts/RVHeatmap';
@@ -625,6 +626,7 @@ function SettingsPage({ onSubscribe }: { onSubscribe?: () => void }) {
           </button>
         </div>
       </div>
+      <ReferralProgram />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { api } from '../lib/api';
+import ReportExportButton from './ReportExportButton';
 
 interface PnLData {
   total_invested: number;
@@ -72,7 +73,10 @@ export default function PnLDashboard() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold text-white">P&L Дашборд</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-white">P&L Дашборд</h2>
+        <ReportExportButton />
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
