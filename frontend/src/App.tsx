@@ -21,6 +21,8 @@ import { RecommendationsPage } from './components/RecommendationsPage';
 import AIChatModal from './components/AIChatModal';
 import DocumentAnalysisPage from './components/DocumentAnalysis';
 import PortfolioAdvancedPage from './components/PortfolioAdvancedPage';
+import BottomNav from './components/BottomNav';
+import MobileMenu from './components/MobileMenu';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
 import YieldCurveChart from './components/charts/YieldCurveChart';
 import RVHeatmap from './components/charts/RVHeatmap';
@@ -215,22 +217,19 @@ function AppInner() {
             {mobileMenu ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
-        {mobileMenu && (
-          <div className="md:hidden border-t border-gray-800 px-4 py-2 bg-gray-900">
-            {navItems.map(({ id, label, icon, premium }) => {
-              const locked = premium && user?.subscription_tier === 'free';
-              return (
-                <button key={id} onClick={() => { goToPage(id); setMobileMenu(false); }}
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm ${page === id ? 'bg-emerald-600 text-white' : 'text-gray-400'}`}>
-                  {icon}{label}
-                  {locked && <Lock size={12} className="text-amber-400" />}
-                </button>
-              );
-            })}
-          </div>
-        )}
       </header>
-      <main className="max-w-7xl mx-auto p-4">
+      <MobileMenu
+        isOpen={mobileMenu}
+        onClose={() => setMobileMenu(false)}
+        navItems={navItems}
+        activePage={page}
+        onNavigate={goToPage}
+        userTier={user?.subscription_tier || 'free'}
+        userName={user?.name || ''}
+        onSubscribe={() => setPage('subscribe')}
+        onSettings={() => setPage('settings')}
+      />
+      <main className="max-w-7xl mx-auto p-4 pb-24 md:pb-4">
         {trialExpiring && (
           <div className="mb-4 flex items-center gap-3 bg-amber-900/30 border border-amber-800 text-amber-200 rounded-xl px-4 py-3 text-sm">
             <Clock size={16} className="shrink-0" />
@@ -287,6 +286,11 @@ function AppInner() {
         </div>
       )}
       <AIChatModal isOpen={chatOpen} onClose={() => setChatOpen(false)} bondId={chatBondId} />
+      <BottomNav
+        activePage={page}
+        onNavigate={(p) => goToPage(p as Page)}
+        onOpenMenu={() => setMobileMenu(true)}
+      />
     </div>
   );
 }
