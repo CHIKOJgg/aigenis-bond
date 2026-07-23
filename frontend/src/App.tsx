@@ -18,6 +18,8 @@ import { LegalPages } from './LegalPages';
 import { OnboardingFlow, isOnboardingNeeded } from './OnboardingFlow';
 import { CompanyPage } from './components/CompanyPage';
 import { RecommendationsPage } from './components/RecommendationsPage';
+import AIChatModal from './components/AIChatModal';
+import DocumentAnalysisPage from './components/DocumentAnalysis';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
 import YieldCurveChart from './components/charts/YieldCurveChart';
 import RVHeatmap from './components/charts/RVHeatmap';
@@ -25,9 +27,9 @@ import CarryBarChart from './components/charts/CarryBarChart';
 import StressWaterfall from './components/charts/StressWaterfall';
 import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check, Building2 } from 'lucide-react';
 
-const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'alerts']);
+const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'alerts', 'documents']);
 
-type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe' | 'company' | 'recommendations';
+type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe' | 'company' | 'recommendations' | 'documents';
 
 function trialDaysWord(n: number, lang: Lang): string {
   if (lang === 'en') return n === 1 ? 'day' : 'days';
@@ -64,6 +66,8 @@ function AppInner() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [selectedBond, setSelectedBond] = useState<Bond | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatBondId, setChatBondId] = useState<string | undefined>(undefined);
 
   // Detect successful YooKassa payment redirect (?success=1) and refresh tier.
   useEffect(() => {
@@ -136,9 +140,9 @@ function AppInner() {
     { id: 'desk', label: t('nav.desk'), icon: <LineChart size={16} />, premium: true },
     { id: 'portfolio', label: t('nav.portfolio'), icon: <PieChart size={16} />, premium: true },
     { id: 'forecast', label: t('nav.forecast'), icon: <TrendingUp size={16} />, premium: true },
-    { id: 'ml', label: t('nav.ml'), icon: <Brain size={16} />, premium: true },
     { id: 'alerts', label: t('nav.alerts'), icon: <Bell size={16} />, premium: true },
     { id: 'calculator', label: t('nav.calculator'), icon: <Calculator size={16} /> },
+    { id: 'documents', label: 'Документы', icon: <FileText size={16} />, premium: true },
   ];
 
   const goToPage = (id: Page) => {
@@ -201,6 +205,10 @@ function AppInner() {
             </button>
           </nav>
           <LanguageToggle />
+          <button onClick={() => { setChatBondId(undefined); setChatOpen(true); }}
+            className="p-2 text-gray-400 hover:text-emerald-400 transition-colors" title="AI-ассистент">
+            <Brain size={18} />
+          </button>
           <button className="md:hidden p-2 text-gray-400" onClick={() => setMobileMenu(!mobileMenu)} aria-label={mobileMenu ? t('nav.menuClose') : t('nav.menuOpen')}>
             {mobileMenu ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -243,6 +251,7 @@ function AppInner() {
         {page === 'company' && selectedCompany && <CompanyPage issuer={selectedCompany} onBack={() => setPage('dashboard')} onOpenBond={openBond} />}
         {page === 'alerts' && <AlertsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'calculator' && <BondCalculator />}
+        {page === 'documents' && <DocumentAnalysisPage />}
         {page === 'settings' && <SettingsPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'subscribe' && <SubscribePage />}
       </main>
@@ -274,6 +283,7 @@ function AppInner() {
           <Check size={16} /> {toast}
         </div>
       )}
+      <AIChatModal isOpen={chatOpen} onClose={() => setChatOpen(false)} bondId={chatBondId} />
     </div>
   );
 }
@@ -1553,6 +1563,10 @@ function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose, onSubscr
           </button>
           <button onClick={createAlert} disabled={busy} className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-500 disabled:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">
             🔔 Следить за ценой
+          </button>
+          <button onClick={() => { setChatBondId(bond.internal_id); setChatOpen(true); }}
+            className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-sm text-white px-3 py-2 rounded-lg transition-colors">
+            🧠 Спросить AI
           </button>
         </div>
 

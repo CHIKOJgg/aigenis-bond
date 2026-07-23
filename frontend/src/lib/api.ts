@@ -552,6 +552,23 @@ export const api = {
       post<TokenResponse>('/auth/google', { id_token, name }),
     me: () => get<User>('/auth/me'),
   },
+
+  chat: {
+    send: (message: string, context?: { internal_id?: string }) =>
+      post<{ reply: string; sources: string[] }>('/api/v1/chat', { message, context }),
+  },
+
+  documents: {
+    upload: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return request<{ id: number; filename: string; summary: string; extracted: Record<string, unknown>; risk_flags: string[] }>(
+        '/api/v1/documents/upload',
+        { method: 'POST', body: form },
+      );
+    },
+    list: () => get<{ id: number; filename: string; internal_id: string | null; summary: string; extracted: Record<string, unknown>; risk_flags: string[]; created_at: string }[]>('/api/v1/documents'),
+  },
 };
 
 export function exportCsv(filename: string, headers: string[], rows: (string | number | null)[][]) {

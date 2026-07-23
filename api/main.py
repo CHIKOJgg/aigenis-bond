@@ -20,7 +20,11 @@ from api.analytics import router as analytics_router
 from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
+from api.nlp import router as nlp_router
+from api.document_analysis import router as document_router
 from api.partner.router import router as partner_router
+from api.seo import router as seo_router
+from api.stocks import router as stocks_router
 from api.widget import router as widget_router
 from scraper.config import get_settings
 from scraper.db import check_db_health, dispose, session_scope
@@ -67,6 +71,8 @@ if not _cors_origins:
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
+app.include_router(nlp_router)
+app.include_router(document_router)
 
 # Payments are handled via Telegram Stars inside the bot and YooKassa
 # (ЮKassa) for card / SBP / Apple Pay / Google Pay on the website.
@@ -81,6 +87,15 @@ logger.info("partner_api_enabled")
 # permitted for this router via the CSP exception in `security_headers`.
 app.include_router(widget_router)
 logger.info("widget_enabled")
+
+# Public, server-rendered SEO pages (bond leaderboard + per-bond pages,
+# sitemap, robots). Free organic acquisition surface — see docs/sales/cmo_audit.md.
+app.include_router(seo_router)
+logger.info("seo_pages_enabled")
+
+# MOEX Stock data (free public ISS source).
+app.include_router(stocks_router)
+logger.info("stocks_api_enabled")
 
 # --- Security headers ---
 # Applied to every response (except the docs/OpenAPI endpoints) to harden the
@@ -205,6 +220,9 @@ def _memory_allow(client: str, limit: int) -> bool:
 @app.middleware("http")
 async def rate_limit(request: Request, call_next):
     if request.url.path in ("/health", "/ready", "/openapi.json", "/docs", "/redoc"):
+        return await call_next(request)
+    # Public SEO pages must stay crawlable — never rate-limit crawlers away.
+    if request.url.path.startswith(("/bonds", "/partners", "/sitemap.xml", "/robots.txt")):
         return await call_next(request)
     client, limit = _rate_identity_and_limit(request)
     allowed = (
