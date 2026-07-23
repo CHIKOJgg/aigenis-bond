@@ -441,6 +441,12 @@ export interface AlertFeedItem {
   created_at: string | null;
 }
 
+export interface BondHistoryData {
+  date: string;
+  price: number | null;
+  ytm: number | null;
+}
+
 export const api = {
   health: () => get<Health>('/health'),
 
@@ -517,6 +523,8 @@ export const api = {
       get<BondAnalysisResult>(`/api/v1/bond/${encodeURIComponent(internal_id)}/analysis`),
     cashflow: (internal_id: string, amount: number) =>
       get<Cashflow>(`/api/v1/bond/${encodeURIComponent(internal_id)}/cashflow?amount=${amount}`),
+    history: (internal_id: string, months = 12) =>
+      get<BondHistoryData[]>(`/api/v1/bond/${encodeURIComponent(internal_id)}/history?months=${months}`),
     mlPredict: (internal_id: string) =>
       get<MLPredictionResult>(`/api/v1/ml/predict/${encodeURIComponent(internal_id)}`),
   },

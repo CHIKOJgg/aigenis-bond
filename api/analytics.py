@@ -320,6 +320,35 @@ async def api_bond_cashflow(
     }
 
 
+@router.get(
+    "/bond/{internal_id}/history",
+    dependencies=[Depends(RequireFeature("access_bond_analysis"))],
+)
+async def api_bond_history(internal_id: str, months: int = Query(12, ge=1, le=120)):
+    """История цены и YTM для графика."""
+    from datetime import timedelta
+    from scraper.orm import BondHistoryORM
+
+    cutoff = date.today() - timedelta(days=months * 30)
+    async with session_scope() as session:
+        rows = (
+            await session.execute(
+                select(BondHistoryORM)
+                .where(BondHistoryORM.internal_id == internal_id)
+                .where(BondHistoryORM.date >= cutoff)
+                .order_by(BondHistoryORM.date)
+            )
+        ).scalars().all()
+    return [
+        {
+            "date": r.date.isoformat(),
+            "price": float(r.price) if r.price is not None else None,
+            "ytm": float(r.yield_) if r.yield_ is not None else None,
+        }
+        for r in rows
+    ]
+
+
 # --------------------------------------------------------------------------- #
 # Pro: Desk analytics
 # --------------------------------------------------------------------------- #

@@ -19,6 +19,10 @@ import { OnboardingFlow, isOnboardingNeeded } from './OnboardingFlow';
 import { CompanyPage } from './components/CompanyPage';
 import { RecommendationsPage } from './components/RecommendationsPage';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
+import YieldCurveChart from './components/charts/YieldCurveChart';
+import RVHeatmap from './components/charts/RVHeatmap';
+import CarryBarChart from './components/charts/CarryBarChart';
+import StressWaterfall from './components/charts/StressWaterfall';
 import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check, Building2 } from 'lucide-react';
 
 const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'alerts']);
@@ -1769,71 +1773,6 @@ function DeskPage({ onSubscribe }: { onSubscribe?: () => void }) {
   );
 }
 
-function YieldCurveChart({ points, color = '#34d399' }: { points: { tenor: string; years: number; rate_pct: number }[]; color?: string }) {
-  const { t } = useI18n();
-  const data = points
-    .filter((p) => p.years > 0 && p.rate_pct != null)
-    .slice()
-    .sort((a, b) => a.years - b.years);
-  if (data.length < 2) {
-    return <p className="text-xs text-gray-500">{t('desk.emptyYtm')}</p>;
-  }
-  const W = 320, H = 160, pad = 30;
-  const xs = data.map((d) => d.years);
-  const ys = data.map((d) => d.rate_pct);
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMin = Math.min(...ys), yMax = Math.max(...ys);
-  const xRange = xMax - xMin || 1;
-  const yRange = yMax - yMin || 1;
-  const sx = (x: number) => pad + ((x - xMin) / xRange) * (W - pad * 2);
-  const sy = (y: number) => H - pad - ((y - yMin) / yRange) * (H - pad * 2);
-  const path = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${sx(d.years).toFixed(1)} ${sy(d.rate_pct).toFixed(1)}`).join(' ');
-  const area = `${path} L ${sx(xMax).toFixed(1)} ${H - pad} L ${sx(xMin).toFixed(1)} ${H - pad} Z`;
-  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
-  const xTicks = [xMin, (xMin + xMax) / 2, xMax];
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40" role="img" aria-label={t('chart.yieldCurve')}>
-      {yTicks.map((t, i) => (
-        <g key={`y${i}`}>
-          <line x1={pad} y1={sy(t)} x2={W - pad} y2={sy(t)} stroke="#1f2937" strokeWidth={1} />
-          <text x={4} y={sy(t) + 3} fill="#6b7280" fontSize={9}>{t.toFixed(1)}%</text>
-        </g>
-      ))}
-      {xTicks.map((t, i) => (
-        <text key={`x${i}`} x={sx(t)} y={H - 8} fill="#6b7280" fontSize={9} textAnchor="middle">{t.toFixed(1)}y</text>
-      ))}
-      <path d={area} fill={color} fillOpacity={0.12} />
-      <path d={path} fill="none" stroke={color} strokeWidth={2} />
-      {data.map((d, i) => (
-        <circle key={i} cx={sx(d.years)} cy={sy(d.rate_pct)} r={2.5} fill={color} />
-      ))}
-    </svg>
-  );
-}
-
-function MiniBarChart({ data, formatValue }: { data: { label: string; value: number }[]; formatValue?: (v: number) => string }) {
-  if (data.length === 0) return null;
-  const max = Math.max(...data.map((d) => Math.abs(d.value)), 0.0001);
-  return (
-    <div className="space-y-1.5">
-      {data.map((d, i) => {
-        const pct = Math.min(100, (Math.abs(d.value) / max) * 100);
-        const positive = d.value >= 0;
-        return (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <span className="w-28 shrink-0 truncate text-gray-400 font-mono">{d.label}</span>
-            <div className="flex-1 bg-gray-800 rounded h-3 relative overflow-hidden">
-              <div className={`h-3 rounded ${positive ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${pct}%` }} />
-            </div>
-            <span className="w-16 shrink-0 text-right font-mono">{formatValue ? formatValue(d.value) : d.value.toFixed(2)}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function DeskCurve({ onSubscribe }: { onSubscribe?: () => void }) {
   const { t } = useI18n();
   const { data: curves, loading, error, locked } = useGated<AnalyticsCurve[]>(() => api.analytics.curve());
@@ -1842,25 +1781,32 @@ function DeskCurve({ onSubscribe }: { onSubscribe?: () => void }) {
   if (locked) return <UpgradePrompt onSubscribe={onSubscribe} />;
   if (error) return <ErrorBanner message={error} />;
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {(curves ?? []).map(c => (
-        <div key={c.currency} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <LineChart size={16} className="text-emerald-400" /> {c.currency} Curve
-            <span className="text-xs text-gray-500 font-normal ml-auto">{t('desk.slope')} {c.slope.toFixed(2)}</span>
-          </h3>
-          <YieldCurveChart points={c.points} />
-          <div className="space-y-1 mt-2">
-            {c.points.filter(p => p.years > 0).slice(0, 15).map((p, i) => (
-              <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-800/50">
-                <span className="text-gray-400 font-mono text-xs">{p.tenor}</span>
-                <span className="text-emerald-400 font-mono">{p.rate_pct.toFixed(2)}%</span>
-              </div>
-            ))}
+    <div className="space-y-4">
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <LineChart size={16} className="text-emerald-400" /> {t('desk.tabCurve')}
+        </h3>
+        <YieldCurveChart currencies={(curves ?? []).map((c) => ({ currency: c.currency, points: c.points }))} />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {(curves ?? []).map(c => (
+          <div key={c.currency} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <LineChart size={14} className="text-emerald-400" /> {c.currency} Curve
+              <span className="text-xs text-gray-500 font-normal ml-auto">{t('desk.slope')} {c.slope.toFixed(2)}</span>
+            </h3>
+            <div className="space-y-1">
+              {c.points.filter(p => p.years > 0).slice(0, 15).map((p, i) => (
+                <div key={i} className="flex justify-between text-sm py-1 border-b border-gray-800/50">
+                  <span className="text-gray-400 font-mono text-xs">{p.tenor}</span>
+                  <span className="text-emerald-400 font-mono">{p.rate_pct.toFixed(2)}%</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      ))}
-      {(curves ?? []).length === 0 && <EmptyState message={t('desk.curveEmpty')} className="col-span-full" />}
+        ))}
+        {(curves ?? []).length === 0 && <EmptyState message={t('desk.curveEmpty')} className="col-span-full" />}
+      </div>
     </div>
   );
 }
@@ -1874,18 +1820,20 @@ function DeskRV({ onSubscribe }: { onSubscribe?: () => void }) {
   if (error) return <ErrorBanner message={error} />;
 
   const rows = signals ?? [];
-  const chart = rows
+  const heatmapData = rows
     .filter((s) => s.z_score != null)
-    .slice()
-    .sort((a, b) => Math.abs(b.z_score!) - Math.abs(a.z_score!))
-    .slice(0, 12)
-    .map((s) => ({ label: s.internal_id, value: s.z_score! }));
+    .map((s) => ({
+      internal_id: s.internal_id,
+      z_score: s.z_score!,
+      currency: 'BYN',
+      issuer: s.internal_id,
+    }));
   return (
     <div className="space-y-4">
-      {chart.length > 0 && (
+      {heatmapData.length > 0 && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-sm font-semibold mb-3 text-gray-300">{t('desk.rvTitle')}</h3>
-          <MiniBarChart data={chart} />
+          <RVHeatmap signals={heatmapData} />
         </div>
       )}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
@@ -1931,17 +1879,12 @@ function DeskCarry({ onSubscribe }: { onSubscribe?: () => void }) {
   if (error) return <ErrorBanner message={error} />;
 
   const rows = trades ?? [];
-  const chart = rows
-    .slice()
-    .sort((a, b) => Math.abs(b.expected_pnl_pct) - Math.abs(a.expected_pnl_pct))
-    .slice(0, 12)
-    .map((t) => ({ label: t.internal_id, value: t.expected_pnl_pct }));
   return (
     <div className="space-y-4">
-      {chart.length > 0 && (
+      {rows.length > 0 && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-sm font-semibold mb-3 text-gray-300">{t('desk.carryTitle')}</h3>
-          <MiniBarChart data={chart} formatValue={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`} />
+          <CarryBarChart trades={rows.map((t) => ({ internal_id: t.internal_id, expected_pnl_pct: t.expected_pnl_pct, coupon_pct: t.coupon_pct }))} />
         </div>
       )}
       <div className="flex items-center gap-3">
@@ -2065,9 +2008,15 @@ function DeskStress({ onSubscribe }: { onSubscribe?: () => void }) {
   if (error) return <ErrorBanner message={error} />;
 
   const results = data ?? [];
+  const waterfallData = results.map((r) => ({ scenario_name: r.scenario, pnl_pct: r.pnl_pct }));
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold flex items-center gap-2"><Zap size={16} className="text-amber-400" /> {t('desk.stressTitle')}</h3>
+      {waterfallData.length > 0 && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <StressWaterfall runs={waterfallData} />
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {results.map(r => (
           <div key={r.scenario} className="bg-gray-900 rounded-xl border border-gray-800 p-4">
