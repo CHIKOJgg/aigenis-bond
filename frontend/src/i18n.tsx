@@ -550,6 +550,14 @@ const ru: Dict = {
   'trust.stat2': 'валюты отслеживаются',
   'trust.stat3': 'модулей аналитики',
   'trust.stat4': 'мониторинг рынка',
+
+  'testimonials.title': 'Что говорят пользователи',
+  'testimonials.q0': 'Скоринг облигаций сэкономил мне часы анализа. Раньше тратил выходные на просмотр выпусков, теперь вижу лучшие варианты за 5 минут.',
+  'testimonials.author0': 'Алексей К., частный инвестор',
+  'testimonials.q1': 'Desk-аналитика не уступает терминалам, за которые я платил тысячи долларов. Carry и RV-сигналы реально работают на нашем рынке.',
+  'testimonials.author1': 'Дмитрий С., управляющий активами',
+  'testimonials.q2': 'Telegram-алерты спасли от просадки — получил уведомление об изменении цены за минуты. Успел выйти до падения.',
+  'testimonials.author2': 'Елена В., трейдер',
 };
 
 const en: Dict = {
@@ -1095,6 +1103,14 @@ const en: Dict = {
   'trust.stat2': 'currencies tracked',
   'trust.stat3': 'analytics modules',
   'trust.stat4': 'market monitoring',
+
+  'testimonials.title': 'What users say',
+  'testimonials.q0': 'Bond scoring saved me hours of analysis. I used to spend weekends screening issues, now I see the best options in 5 minutes.',
+  'testimonials.author0': 'Alex K., retail investor',
+  'testimonials.q1': 'The Desk analytics compete with terminals I paid thousands for. Carry and RV signals actually work in our market.',
+  'testimonials.author1': 'Dmitry S., asset manager',
+  'testimonials.q2': 'Telegram alerts saved me from a drawdown — got a price change notification within minutes. Exited before the drop.',
+  'testimonials.author2': 'Elena V., trader',
 };
 
 const dictionaries: Record<Lang, Dict> = { ru, en };

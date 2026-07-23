@@ -104,6 +104,16 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
         </div>
         <h3 className="text-xl font-bold">{t(state.feature.title)}</h3>
         <p className="text-sm text-gray-400 mt-2">{t(state.feature.description)}</p>
+        {state.feature.benefit && (
+          <p className="text-sm text-emerald-300 mt-3 max-w-md mx-auto font-medium">
+            {state.feature.benefit}
+          </p>
+        )}
+        {state.feature.stat && (
+          <p className="text-xs text-gray-500 mt-2 italic">
+            {state.feature.stat}
+          </p>
+        )}
       </div>
 
       <div className="px-6 py-5">
