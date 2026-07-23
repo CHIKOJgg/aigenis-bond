@@ -11,6 +11,7 @@
 #   make down           — остановка всех сервисов
 #   make logs           — логи парсера
 #   make once           — однократный сбор данных
+#   make seo-sitemap    — сгенерировать sitemap.xml (нужен SEO_PUBLIC_BASE_URL)
 #   make health         — health-check
 #   make shell          — bash в контейнере парсера
 #   make psql           — psql в контейнере PostgreSQL
@@ -83,6 +84,9 @@ once-usd:
 
 history:
 	docker compose run --rm parser backfill
+
+seo-sitemap:
+	docker compose run --rm parser seo-sitemap
 
 health:
 	docker compose run --rm parser health

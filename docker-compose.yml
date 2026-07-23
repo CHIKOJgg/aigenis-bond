@@ -110,6 +110,14 @@ services:
       AIGENIS_TIMEOUT: ${AIGENIS_TIMEOUT:-30}
       AIGENIS_HISTORY_BACKFILL_DAYS: ${AIGENIS_HISTORY_BACKFILL_DAYS:-1825}
       AIGENIS_CURRENCIES: ${AIGENIS_CURRENCIES:-USD,BYN,EUR,XAU,XAG,XPT}
+      # --- Data source: default to public MOEX (no paid login required) ---
+      # Set DATA_SOURCE=aigenis (or both) only if you have aigenis.by credentials.
+      DATA_SOURCE: ${DATA_SOURCE:-moex}
+      MOEX_BOARDS: ${MOEX_BOARDS:-TQCB,TQOB}
+      MOEX_TIMEOUT: ${MOEX_TIMEOUT:-30}
+      MOEX_CAP: ${MOEX_CAP:-1000}
+      MOEX_HISTORY_SAMPLE: ${MOEX_HISTORY_SAMPLE:-200}
+      DEMO_MODE: ${DEMO_MODE:-1}
       # --- API Auth (invest.aigenis.by) ---
       AIGENIS_WEB_URL: ${AIGENIS_WEB_URL:-}
       AIGENIS_WEB_USERNAME: ${AIGENIS_WEB_USERNAME:-}
@@ -181,6 +189,7 @@ services:
       AIGENIS_WEB_USERNAME: ${AIGENIS_WEB_USERNAME:-}
       AIGENIS_WEB_PASSWORD: ${AIGENIS_WEB_PASSWORD:-}
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+      DEMO_MODE: ${DEMO_MODE:-1}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
       WEBHOOK_URL: ${WEBHOOK_URL:-}
@@ -240,6 +249,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+      DEMO_MODE: ${DEMO_MODE:-1}
       # API runs behind the nginx frontend; trust the last X-Forwarded-For hop
       # for client-IP rate limiting and YooKassa webhook IP filtering.
       TRUSTED_PROXY: ${TRUSTED_PROXY:-1}

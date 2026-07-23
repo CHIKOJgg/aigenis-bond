@@ -58,6 +58,8 @@ python scripts/generate_secrets.py --write-env
 | `REFERRAL_COMMISSION_PCT` | Комиссия партнёра с конверсии (affiliate), деф. 0 |
 | `DEMO_MODE` | Публичный DEMO-режим (read-only, watermark), `1/true/yes` |
 | `FALLBACK_SOURCE` | Альтернативный источник котировок при недоступности платного |
+| `SEO_PUBLIC_BASE_URL` | Канонический публичный домен для `sitemap.xml` (напр. `https://bonds.aigenis.by`). Если задан — планировщик перегенерирует кэш-файл sitemap после каждого парсинга, иначе sitemap рендерится на лету. |
+| `SEO_SITEMAP_PATH` | Путь к кэш-файлу sitemap (деф. temp-каталог). Задайте, если хотите отдавать `/sitemap.xml` как статику через nginx. |
 
 > Никогда не коммитьте `.env` — он в `.gitignore`.
 
@@ -169,11 +171,47 @@ read-only полный доступ (тир `demo`), фронтенд показ
 > (отдаёт уже сохранённые данные) вместо падения. Для диверсификации источника
 > настройте `FALLBACK_SOURCE` (адаптер в `scraper/fallback_source.py`).
 >
+
+### Источник данных: MOEX (публичный, без логина)
+
+Продукт может собирать живые котировки с MOEX ISS без платной подписки:
+
+- `DATA_SOURCE=moex` — только MOEX; `aigenis` — только платный источник;
+  `both` — оба.
+- `MOEX_BOARDS=TQCB,TQOB` — RUB корпоративы (TQCB) + USD/EUR евробонды (TQOB).
+- Реализация: `scraper/moex.py` (`MoexClient`), нативный pipeline
+  `scraper/pipeline.py:run_once_moex`, CLI: `python -m scraper moex`.
+- Собирается: живые котировки (цена/YTM), история цен и YTM (`history` блок ISS),
+  купонный календарь (bondization endpoint, поле `coupondate`).
+- Охват: RUB корпоративные облигации + еврооблигации в USD/EUR. BYN по-прежнему
+  через платный источник; расширение на другие рынки — подключением новых фидов.
+
 > Готовый адаптер: `FALLBACK_SOURCE=moex` — публичный MOEX ISS API (без ключа,
 > RUB-корпоративные облигации, board `TQCB`). При недоступности платного
 > источника парсер сам подтянет котировки MOEX и сохранит их в БД. Требует
 > сетевого доступа и соблюдения rate-limit MOEX. Тонкая настройка:
 > `FALLBACK_MOEX_BOARD`, `FALLBACK_MOEX_TIMEOUT`.
+
+### Быстрый запуск без вложений (MOEX + DEMO_MODE)
+
+`docker-compose.yml` по умолчанию ставит `DATA_SOURCE=moex` и `DEMO_MODE=1`, поэтому
+`docker compose up -d` поднимает рабочий продукт **без платных ключей и логинов**:
+
+```bash
+cp .env.example .env            # при необходимости задайте POSTGRES_PASSWORD
+docker compose up -d postgres redis parser api frontend
+# парсер сам соберёт RUB-корпоративы (TQCB) + USD/EUR евробонды (TQOB) с MOEX ISS
+docker compose run --rm parser moex          # однократный сбор из MOEX
+docker compose run --rm parser health         # проверка
+```
+
+Публичный доступ без белого IP и платного SSL — через Cloudflare Tunnel:
+`CLOUDFLARED_TUNNEL_TOKEN=... docker compose --profile tunnel up -d cloudflared`
+(или `docker compose --profile quick-tunnel up -d cloudflared-quick` для временного
+`*.trycloudflare.com` URL). DEMO_MODE включает водяной знак и throttle на бэкенде.
+
+> Платный источник aigenis.by подключается отдельно: `DATA_SOURCE=both` + логин в `.env`.
+> Бот и платежи (YooKassa/Stars) опциональны и не нужны для демо.
 
 ---
 
@@ -194,6 +232,33 @@ docker compose restart frontend
 
 Certbot автоматически обновляет сертификаты (cron внутри контейнера).
 HSTS в `frontend/nginx.conf` выключен по умолчанию — раскомментируйте после проверки.
+
+---
+
+## 6.1 Публичные SEO-страницы и индексация
+
+Продукт отдаёт бесплатные server-rendered страницы (`/bonds`, `/bonds/{id}`,
+`/partners`, `/sitemap.xml`, `/robots.txt`) — органический канал без бюджета
+(см. `docs/sales/cmo_audit.md`, §2/§6).
+
+Чтобы поисковики их нашли:
+
+1. **Отдайте `sitemap.xml` и `robots.txt` на каноническом домене.**
+   `robots.txt` уже указывает `Sitemap: <domain>/sitemap.xml`. Если включили
+   `SEO_PUBLIC_BASE_URL`, планировщик (`scraper.scheduler.scheduled_job`)
+   перегенерирует кэш-файл `sitemap.xml` после каждого парсинга; при желании
+   отдавайте его как статику через nginx (путь задаётся `SEO_SITEMAP_PATH`).
+   Разовая генерация: `make seo-sitemap` (или `docker compose run --rm parser seo-sitemap`).
+2. **Зарегистрируйте сайт в Google Search Console** и Яндекс.Вебмастер и
+   отправьте `https://<ваш-домен>/sitemap.xml` на индексацию. Без этого шага
+   органический трафик не пойдёт — страницы существуют, но краулеры о них не знают.
+3. **Канонический домен.** Задайте `SEO_PUBLIC_BASE_URL=https://<домен>` (без
+   слэша), чтобы абсолютные URL в sitemap и JSON-LD были корректны. Без него
+   sitemap рендерится на лету по домену входящего запроса (тоже работает, но
+   менее предсказуемо для повторной индексации).
+4. **Внутренние ссылки.** Лендинг веб-приложения и виджет содержат ссылку
+   «Для бизнеса» → `/partners`; страницы `/bonds` и `/partners` перекрёстно
+   ссылаются друг на друга — это ускоряет обход и передачу веса.
 
 ---
 

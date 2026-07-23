@@ -44,6 +44,7 @@ from scoring.engine import score_bond
 from scoring.repository import get_score, top_scores
 from scraper import repositories
 from scraper.db import session_scope
+from scraper.config import get_settings
 from scraper.models import Bond
 from scraper.orm import BondORM
 from telegram_bot import _cmd_helpers as _ch
@@ -199,6 +200,23 @@ async def cmd_refer(message: Message) -> None:
         parse_mode=ParseMode.HTML,
         reply_markup=_home_kb(),
     )
+
+
+@router.message(Command("partner"))
+async def cmd_partner(message: Message) -> None:
+    settings = get_settings()
+    partners_url = f"{settings.web_url.rstrip('/')}/partners"
+    text = (
+        "🤝 <b>Aigenis Bonds для бизнеса</b>\n\n"
+        "White-label аналитика облигаций, Bond API, виджет «Топ облигаций» и "
+        "партнёрская программа с % с приведённых подписок.\n\n"
+        "На странице можно сразу оставить заявку и получить партнёрский ключ, "
+        "виджет и реферальную ссылку — без звонков и договоров."
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🌐 Открыть B2B-страницу", url=partners_url),
+    ]])
+    await message.answer(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 @router.callback_query(lambda c: c.data == "cmd_status")

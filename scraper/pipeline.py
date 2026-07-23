@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from typing import Any
 
+from sqlalchemy import select
 from tqdm.asyncio import tqdm
 
 from scoring.repository import recompute_all
@@ -13,7 +17,6 @@ from scraper.api.history import parse_history_payload
 from scraper.api.listing import parse_listing_payload
 from scraper.client import AigenisClient
 from scraper.db import session_scope
-from sqlalchemy import select
 from scraper.errors import (
     HistoryUnavailable,
     NotFoundError,
@@ -23,6 +26,7 @@ from scraper.errors import (
 )
 from scraper.logging import get_logger
 from scraper.models import Bond, BondDailyAccrual
+from scraper.moex import MoexClient
 from scraper.orm import BondORM
 from scraper.parsers.xlsx import XlsxParseResult, parse_all
 from scraper.validation import validate_detail, validate_listing
@@ -30,7 +34,7 @@ from scraper.validation import validate_detail, validate_listing
 logger = get_logger("scraper.pipeline")
 
 
-def _d(value: object) -> "Decimal | None":
+def _d(value: object) -> Decimal | None:
     """Coerce a fallback quote value to Decimal, tolerating strings/None."""
     from decimal import Decimal, InvalidOperation
 
@@ -287,6 +291,213 @@ async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str
         await session.commit()
 
     return {"xlsx_bonds_enriched": enriched, "xlsx_accruals_written": accruals_written}
+
+
+async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[str, int]:
+    """MOEX-native pipeline path (no aigenis.by parsers involved).
+
+    Fetches bonds directly as ``Bond`` models and upserts them, then backfills
+    daily price/YTM history (via the MOEX ``history`` block) and the coupon
+    calendar (via bondization) for the top-N bonds per currency.
+    """
+    if not isinstance(client, MoexClient):
+        raise TypeError("run_once_moex requires a MoexClient")
+
+    cur_list = list(currencies)
+    # MOEX's home market is RUB corporates (the largest segment). The shared
+    # currency config may omit RUB (it targets the paid aigenis.by source), so
+    # always include it when running the MOEX pipeline.
+    if "RUB" not in [c.upper() for c in cur_list]:
+        logger.info("moex_adding_rub_home_market")
+        cur_list = ["RUB", *cur_list]
+    logger.info("moex_pipeline_start", currencies=cur_list)
+
+    saved = 0
+    async with session_scope() as session:
+        for cur in cur_list:
+            bonds = await client.fetch_bonds(cur)
+            if not bonds:
+                logger.info("moex_no_bonds", currency=cur)
+                continue
+            for b in bonds:
+                existing = (
+                    await session.execute(
+                        select(BondORM).where(BondORM.internal_id == b.internal_id)
+                    )
+                ).scalar_one_or_none()
+                if existing is None:
+                    session.add(
+                        BondORM(
+                            internal_id=b.internal_id,
+                            name=b.name,
+                            issuer=b.issuer,
+                            currency=b.currency,
+                            nominal=b.nominal,
+                            coupon_rate=b.coupon_rate,
+                            coupon_frequency=b.coupon_frequency,
+                            maturity_date=b.maturity_date,
+                            price=b.price,
+                            yield_to_maturity=b.yield_to_maturity,
+                            isin=b.isin,
+                            status=b.status,
+                            is_government=b.is_government,
+                            fetched_at=datetime.now(UTC),
+                        )
+                    )
+                else:
+                    existing.name = b.name
+                    existing.issuer = b.issuer
+                    existing.currency = b.currency
+                    existing.nominal = b.nominal
+                    existing.coupon_rate = b.coupon_rate
+                    existing.coupon_frequency = b.coupon_frequency
+                    existing.maturity_date = b.maturity_date
+                    existing.price = b.price
+                    existing.yield_to_maturity = b.yield_to_maturity
+                    existing.isin = b.isin
+                    existing.status = b.status
+                    existing.is_government = b.is_government
+                    existing.fetched_at = datetime.now(UTC)
+                saved += 1
+            await session.commit()
+
+    # Score newly-fetched bonds.
+    xlsx_stats = await enrich_from_xlsx()
+    async with session_scope() as session:
+        scored = await recompute_all(session)
+
+    # History backfill (best-effort): daily close+YTM candles from MOEX for a
+    # bounded sample so charts/accruals work without the paid source.
+    history_rows = 0
+    history_err = 0
+    cap = int(os.getenv("MOEX_HISTORY_SAMPLE", "200"))
+    sample_ids = []
+    async with session_scope() as session:
+        for cur in cur_list:
+            rows = (
+                await session.execute(
+                    select(BondORM.internal_id)
+                    .where(BondORM.currency == cur.upper())
+                    .order_by(BondORM.yield_to_maturity.desc())
+                    .limit(cap)
+                )
+            ).scalars().all()
+            sample_ids.extend(rows)
+    for iid in sample_ids:
+        try:
+            hist = await client.fetch_history(iid, _days=30)
+            if hist:
+                async with session_scope() as session:
+                    history_rows += await repositories.history.upsert_history_batch(
+                        session, hist
+                    )
+        except Exception:
+            history_err += 1
+
+    # Coupon calendar backfill (best-effort) from MOEX bondization.
+    coupon_bonds = 0
+    coupon_err = 0
+    for iid in sample_ids:
+        try:
+            coupons = await client.fetch_coupons(iid)
+            if coupons:
+                schedule = _build_coupon_schedule(coupons)
+                async with session_scope() as session:
+                    orm = (
+                        await session.execute(
+                            select(BondORM).where(BondORM.internal_id == iid)
+                        )
+                    ).scalar_one_or_none()
+                    if orm is not None:
+                        orm.coupon_schedule = schedule
+                        coupon_bonds += 1
+        except Exception:
+            coupon_err += 1
+
+    summary = {
+        "listing_total": saved,
+        "details_ok": saved,
+        "details_err": 0,
+        "history_rows": history_rows,
+        "history_err": history_err,
+        "coupon_bonds": coupon_bonds,
+        "coupon_err": coupon_err,
+        "scored": scored,
+        **xlsx_stats,
+        "moex_mode": True,
+    }
+    logger.info("moex_pipeline_done", **summary)
+    return summary
+
+
+def _build_coupon_schedule(coupons: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Group MOEX coupon rows ({date, coupon}) into a year -> [iso dates] map."""
+    sched: dict[str, list[str]] = {}
+    for c in coupons:
+        d = c.get("date")
+        if not d:
+            continue
+        sched.setdefault(d.strftime("%Y"), []).append(d.isoformat())
+    for y in sched:
+        sched[y].sort()
+    return sched
+
+
+async def run_once_moex_stocks(boards: list[str] | None = None) -> dict[str, int]:
+    """MOEX stock pipeline: fetch stocks, upsert, backfill history.
+
+    Fully independent of the bond pipeline — uses ``MoexStockClient``
+    and the ``stocks`` / ``stock_history`` tables.
+    """
+    from scraper.config import get_settings
+    from scraper.moex_stocks import MoexStockClient
+
+    settings = get_settings()
+    client = MoexStockClient(settings)
+    if boards:
+        client._boards = boards
+
+    logger.info("moex_stocks_pipeline_start", boards=client._boards)
+
+    saved = 0
+    async with client:
+        stocks = await client.fetch_stocks()
+        if not stocks:
+            logger.info("moex_stocks_no_stocks")
+            return {"stocks_saved": 0, "history_rows": 0, "history_err": 0}
+
+        async with session_scope() as session:
+            saved = await repositories.stocks.upsert_stocks_batch(session, stocks)
+            await session.commit()
+
+        # History backfill (best-effort): top-N stocks by value_traded
+        history_rows = 0
+        history_err = 0
+        cap = int(os.getenv("MOEX_STOCK_HISTORY_SAMPLE", "100"))
+        sample_ids = []
+        async with session_scope() as session:
+            all_ids = await repositories.stocks.get_all_stock_internal_ids(session)
+            sample_ids = list(all_ids[:cap])
+
+        for iid in sample_ids:
+            try:
+                hist = await client.fetch_stock_history(iid, _days=30)
+                if hist:
+                    async with session_scope() as session:
+                        history_rows += await repositories.stocks.upsert_stock_history_batch(
+                            session, hist
+                        )
+            except Exception:
+                history_err += 1
+
+    summary = {
+        "stocks_saved": saved,
+        "history_rows": history_rows,
+        "history_err": history_err,
+        "moex_stocks_mode": True,
+    }
+    logger.info("moex_stocks_pipeline_done", **summary)
+    return summary
 
 
 async def run_once(client: AigenisClient, currencies: Iterable[str]) -> dict[str, int]:

@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aigenis-parser"
-version = "3.0.0"
-description = "Bond Fixed Income Assistant — Production-grade scraper & analytics platform"
+version = "4.0.0"
+description = "Aigenis — AI-powered Bond & Stock Analytics Platform for MOEX and Belarus markets"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "LicenseRef-Proprietary" }
-authors = [{ name = "Aigenis Parser" }]
-keywords = ["bonds", "fixed-income", "scraper", "analytics", "belarus"]
+authors = [{ name = "Aigenis" }]
+keywords = ["bonds", "stocks", "fixed-income", "equities", "moex", "scraper", "analytics", "belarus", "russia"]
 
 dependencies = [
     "playwright>=1.49.0",

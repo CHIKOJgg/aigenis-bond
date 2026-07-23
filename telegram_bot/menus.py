@@ -13,6 +13,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
 )
 
+from scraper.config import get_settings
 from telegram_bot.handler_state import PAGE_SIZE  # noqa: F401  (re-exported for callers)
 
 router = Router()
@@ -41,6 +42,8 @@ HELP_TEXT = (
 
 
 def _main_menu_kb() -> InlineKeyboardMarkup:
+    settings = get_settings()
+    partners_url = f"{settings.web_url.rstrip('/')}/partners"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates")],
@@ -61,6 +64,7 @@ def _main_menu_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="⭐ Подписка", callback_data="stars:menu"),
                 InlineKeyboardButton(text="👤 Мой тариф", callback_data="cmd_status"),
             ],
+            [InlineKeyboardButton(text="🤝 Для бизнеса", url=partners_url)],
         ]
     )
 

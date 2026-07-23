@@ -86,7 +86,28 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("fx-fetch", help="Загрузить курсы валют с сайта Нацбанка РБ")
     sub.add_parser("fx-metals", help="Загрузить цены на драгметаллы с сайта Нацбанка РБ")
 
+    sub.add_parser(
+        "seo-sitemap",
+        help="Сгенерировать sitemap.xml (нужен SEO_PUBLIC_BASE_URL в окружении)",
+    )
+
     sub.add_parser("health", help="Health-check")
+
+    p_moex = sub.add_parser("moex", help="Сбор облигаций с MOEX ISS (публичный, без логина)")
+    p_moex.add_argument(
+        "--currency",
+        type=str,
+        default="",
+        help="Список валют через запятую (пусто = все из MOEX_BOARDS)",
+    )
+
+    p_moex_stocks = sub.add_parser("moex-stocks", help="Сбор акций с MOEX ISS (публичный, без логина)")
+    p_moex_stocks.add_argument(
+        "--boards",
+        type=str,
+        default="",
+        help="Список досок через запятую (пусто = TQBR,TQOD,TQDE)",
+    )
     return parser
 
 
@@ -145,6 +166,35 @@ async def _cmd_fx_fetch() -> int:
     return 0
 
 
+async def _cmd_moex(currencies_csv: str) -> int:
+    from scraper.moex import MoexClient
+    from scraper.pipeline import run_once_moex
+
+    settings = get_settings()
+    currencies = (
+        [c.strip().upper() for c in currencies_csv.split(",") if c.strip()]
+        if currencies_csv
+        else settings.aigenis.currencies
+    )
+    async with MoexClient(settings) as client:
+        summary = await run_once_moex(client, currencies)
+    print(summary)
+    return 0
+
+
+async def _cmd_moex_stocks(boards_csv: str) -> int:
+    from scraper.pipeline import run_once_moex_stocks
+
+    boards = (
+        [b.strip().upper() for b in boards_csv.split(",") if b.strip()]
+        if boards_csv
+        else None
+    )
+    summary = await run_once_moex_stocks(boards)
+    print(summary)
+    return 0
+
+
 async def _cmd_fx_metals() -> int:
     from scraper.fx import fetch_and_save_metal_prices
 
@@ -156,7 +206,8 @@ async def _cmd_fx_metals() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
-    init_sentry(get_settings().sentry_dsn, environment=get_settings().environment)
+    settings = get_settings()
+    init_sentry(settings.aigenis.sentry_dsn, environment=settings.aigenis.environment)
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -168,6 +219,10 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_run())
     if args.command == "health":
         return asyncio.run(health_cmd())
+    if args.command == "moex":
+        return asyncio.run(_cmd_moex(args.currency))
+    if args.command == "moex-stocks":
+        return asyncio.run(_cmd_moex_stocks(args.boards))
     if args.command == "score":
         return main_score()
     if args.command == "monitor":
@@ -202,6 +257,15 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_cmd_fx_fetch())
     if args.command == "fx-metals":
         return asyncio.run(_cmd_fx_metals())
+    if args.command == "seo-sitemap":
+        from api.seo import regenerate_sitemap
+
+        xml = asyncio.run(regenerate_sitemap())
+        if xml is None:
+            print("skipped: set SEO_PUBLIC_BASE_URL (and optional SEO_SITEMAP_PATH)")
+            return 0
+        print({"sitemap": "written", "bytes": len(xml)})
+        return 0
     parser.print_help()
     return 1
 

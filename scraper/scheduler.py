@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import signal
 from collections.abc import Awaitable, Callable
 
@@ -17,6 +18,19 @@ logger = get_logger("scraper.scheduler")
 _pipeline_lock = asyncio.Lock()
 
 
+async def scheduled_stocks_job() -> None:
+    """Scheduled job for MOEX stock scraping (independent of bond pipeline)."""
+    from scraper.pipeline import run_once_moex_stocks
+
+    cid = correlation_id()
+    logger.info("scheduled_stocks_job_start", correlation_id=cid)
+    try:
+        await run_once_moex_stocks()
+        logger.info("scheduled_stocks_job_done", correlation_id=cid)
+    except Exception:
+        logger.exception("scheduled_stocks_job_failed", correlation_id=cid)
+
+
 async def scheduled_job() -> None:
     if _pipeline_lock.locked():
         logger.info("scheduled_job_skipped_already_running")
@@ -26,8 +40,24 @@ async def scheduled_job() -> None:
         cid = correlation_id()
         logger.info("scheduled_job_start", correlation_id=cid)
         try:
-            async with AigenisClient(settings.aigenis) as client:
-                await run_once(client, settings.aigenis.currencies)
+            source = (os.getenv("DATA_SOURCE") or "aigenis").strip().lower()
+            if source in ("moex", "both"):
+                from scraper.moex import MoexClient
+                from scraper.pipeline import run_once_moex
+
+                async with MoexClient(settings) as client:
+                    await run_once_moex(client, settings.aigenis.currencies)
+            if source in ("aigenis", "both"):
+                async with AigenisClient(settings.aigenis) as client:
+                    await run_once(client, settings.aigenis.currencies)
+            # Refresh the public sitemap cache (no-op unless SEO_PUBLIC_BASE_URL
+            # is configured) so new bond pages are discoverable by crawlers.
+            try:
+                from api.seo import regenerate_sitemap
+
+                await regenerate_sitemap()
+            except Exception:
+                logger.exception("seo_sitemap_regenerate_failed", correlation_id=cid)
             logger.info("scheduled_job_done", correlation_id=cid)
         except Exception:
             logger.exception("scheduled_job_failed", correlation_id=cid)
@@ -77,6 +107,9 @@ def build_scheduler() -> AsyncIOScheduler:
         jobs.append(("reminders_daily", "0 9 * * *", notify_expiring_trials, 1800))
     except ImportError:
         logger.warning("reminders_module_not_available")
+
+    # Stock scraping runs every 30 minutes during market hours.
+    jobs.append(("moex_stocks_30m", "*/30 10-18 * * 1-5", scheduled_stocks_job, 600))
 
     try:
         from scraper.scheduler_v4 import (
