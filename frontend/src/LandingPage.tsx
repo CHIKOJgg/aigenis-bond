@@ -18,7 +18,9 @@ interface LandingPageProps {
 export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: LandingPageProps) {
   const { t } = useI18n();
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [billing, setBilling] = useState<'month' | 'year'>('month');
   const [plans, setPlans] = useState<Record<string, { id: string; name: string; price: number; currency: string; features: string[] }>>({});
+  const discount = 0.8;
 
   useEffect(() => {
     api.billing.plans()
@@ -213,6 +215,45 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
         </div>
       </section>
 
+      {/* Comparison Table */}
+      <section className="max-w-5xl mx-auto px-4 py-20">
+        <h2 className="text-3xl md:text-4xl font-bold text-center mb-4">{t('compare.title')}</h2>
+        <p className="text-gray-400 text-center mb-12 max-w-2xl mx-auto">{t('compare.sub')}</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-800">
+                <th className="p-3 md:p-4 text-left text-gray-400 font-medium">{t('compare.col1')}</th>
+                <th className="p-3 md:p-4 text-center text-emerald-400 font-semibold">{t('compare.col2')}</th>
+                <th className="p-3 md:p-4 text-center text-gray-500 font-medium">{t('compare.col3')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { label: t('compare.feature1'), yes: true, other: true },
+                { label: t('compare.feature2'), yes: true, other: false },
+                { label: t('compare.feature3'), yes: true, other: false },
+                { label: t('compare.feature4'), yes: true, other: false },
+                { label: t('compare.feature5'), yes: true, other: true },
+              ].map((r) => (
+                <tr key={r.label} className="border-b border-gray-800/50 hover:bg-gray-900/30 transition-colors">
+                  <td className="p-3 md:p-4 text-gray-300">{r.label}</td>
+                  <td className="p-3 md:p-4 text-center"><Check className="inline text-emerald-400" size={18} /></td>
+                  <td className="p-3 md:p-4 text-center">
+                    {r.other ? <Check className="inline text-gray-600" size={18} /> : <X className="inline text-gray-600" size={18} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="text-center mt-10">
+          <button onClick={onRegister} className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl text-sm font-medium transition-colors">
+            {t('cta.seeResults')} <ArrowRight size={16} />
+          </button>
+        </div>
+      </section>
+
       {/* How It Works — Simple 3 steps */}
       <section className="bg-gray-900/50 border-y border-gray-800">
         <div className="max-w-5xl mx-auto px-4 py-20">
@@ -281,9 +322,19 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
 
       {/* Pricing */}
       <section id="pricing" className="max-w-5xl mx-auto px-4 py-20">
-        <div className="text-center mb-16">
+        <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">{t('pricing.highlight')}</h2>
-          <p className="text-gray-400">{t('pricing.startFree')}</p>
+          <p className="text-gray-400 mb-8">{t('pricing.startFree')}</p>
+          <div className="inline-flex items-center bg-gray-900 rounded-xl p-1 border border-gray-800">
+            <button onClick={() => setBilling('month')}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${billing === 'month' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'text-gray-400 hover:text-white'}`}>
+              {t('billing.monthly')}
+            </button>
+            <button onClick={() => setBilling('year')}
+              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${billing === 'year' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'text-gray-400 hover:text-white'}`}>
+              {t('billing.yearly')}
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {/* Free */}
@@ -308,9 +359,19 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-xs font-semibold px-4 py-1 rounded-full">
               {t('landing.mostPopular')}
             </div>
-            <h3 className="text-lg font-bold mb-1">Pro</h3>
+            <div className="flex items-start justify-between mb-1">
+              <h3 className="text-lg font-bold">Pro</h3>
+              {billing === 'year' && (
+                <span className="text-xs bg-emerald-900/60 text-emerald-300 border border-emerald-700 rounded-full px-2.5 py-0.5 font-medium">{t('billing.save')}</span>
+              )}
+            </div>
             <p className="text-sm text-gray-400 mb-4">{t('pricing.upgradeNote')}</p>
-            <p className="text-3xl font-bold mb-2">{plans.pro?.price ?? 2900} <span className="text-base text-gray-500 font-normal">{t('landing.planPerMonth')}</span></p>
+            <p className="text-3xl font-bold mb-2">
+              {billing === 'year' ? (
+                <>{Math.round((plans.pro?.price ?? 2900) * discount)} <span className="text-base line-through text-gray-600">{plans.pro?.price ?? 2900}</span></>
+              ) : plans.pro?.price ?? 2900}
+              <span className="text-base text-gray-500 font-normal"> {billing === 'year' ? '/мес при оплате за год' : t('landing.planPerMonth')}</span>
+            </p>
             <p className="text-sm text-gray-500 mb-6">{t('landing.or')} 150 Stars</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatFree')}</li>
@@ -330,7 +391,12 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
           <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 flex flex-col">
             <h3 className="text-lg font-bold mb-1">Enterprise</h3>
             <p className="text-sm text-gray-400 mb-4">{t('landing.planEntDesc')}</p>
-            <p className="text-3xl font-bold mb-2">{plans.enterprise?.price ?? 9900} <span className="text-base text-gray-500 font-normal">{t('landing.planPerMonth')}</span></p>
+            <p className="text-3xl font-bold mb-2">
+              {billing === 'year' ? (
+                <>{Math.round((plans.enterprise?.price ?? 9900) * discount)} <span className="text-base line-through text-gray-600">{plans.enterprise?.price ?? 9900}</span></>
+              ) : plans.enterprise?.price ?? 9900}
+              <span className="text-base text-gray-500 font-normal"> {billing === 'year' ? '/мес при оплате за год' : t('landing.planPerMonth')}</span>
+            </p>
             <p className="text-sm text-gray-500 mb-6">{t('landing.or')} 500 Stars</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatFree')}</li>

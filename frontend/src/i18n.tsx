@@ -551,6 +551,21 @@ const ru: Dict = {
   'trust.stat3': 'модулей аналитики',
   'trust.stat4': 'мониторинг рынка',
 
+  'billing.monthly': 'В месяц',
+  'billing.yearly': 'В год',
+  'billing.save': 'Экономия 20%',
+
+  'compare.title': 'Почему Aigenis?',
+  'compare.sub': 'Сравните с другими платформами — разница очевидна.',
+  'compare.feature1': 'Скоринг риска/доходности (A–D)',
+  'compare.feature2': 'Fixed Income Desk (RV, дюрация, carry)',
+  'compare.feature3': 'ML-прогнозы и рекомендации',
+  'compare.feature4': 'Telegram-бот с алертами',
+  'compare.feature5': 'White-label / API для бизнеса',
+  'compare.col1': 'Функция',
+  'compare.col2': 'Aigenis Bonds',
+  'compare.col3': 'RusBonds / Cbonds',
+
   'testimonials.title': 'Что говорят пользователи',
   'testimonials.q0': 'Скоринг облигаций сэкономил мне часы анализа. Раньше тратил выходные на просмотр выпусков, теперь вижу лучшие варианты за 5 минут.',
   'testimonials.author0': 'Алексей К., частный инвестор',
@@ -1103,6 +1118,21 @@ const en: Dict = {
   'trust.stat2': 'currencies tracked',
   'trust.stat3': 'analytics modules',
   'trust.stat4': 'market monitoring',
+
+  'billing.monthly': 'Monthly',
+  'billing.yearly': 'Yearly',
+  'billing.save': 'Save 20%',
+
+  'compare.title': 'Why Aigenis?',
+  'compare.sub': 'Compare with other platforms — the difference is clear.',
+  'compare.feature1': 'Risk/reward scoring (A–D)',
+  'compare.feature2': 'Fixed Income Desk (RV, duration, carry)',
+  'compare.feature3': 'ML predictions & recommendations',
+  'compare.feature4': 'Telegram bot with alerts',
+  'compare.feature5': 'White-label / API for business',
+  'compare.col1': 'Feature',
+  'compare.col2': 'Aigenis Bonds',
+  'compare.col3': 'RusBonds / Cbonds',
 
   'testimonials.title': 'What users say',
   'testimonials.q0': 'Bond scoring saved me hours of analysis. I used to spend weekends screening issues, now I see the best options in 5 minutes.',

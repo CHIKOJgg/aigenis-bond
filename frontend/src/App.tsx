@@ -200,10 +200,22 @@ function AppInner() {
               );
             })}
             {user.subscription_tier === 'free' && (
-              <button onClick={() => setPage('subscribe')}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'subscribe' ? 'bg-amber-600 text-white' : 'text-amber-400 hover:text-white hover:bg-amber-600/30'}`}>
-                <Star size={16} />{t('nav.subscribe')}
-              </button>
+              <>
+                {trialDaysLeft != null && trialDaysLeft <= 7 && (
+                  <div className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1 ${
+                    trialDaysLeft <= 3
+                      ? 'bg-red-900/40 border border-red-800 text-red-300 animate-pulse'
+                      : 'bg-amber-900/40 border border-amber-800 text-amber-300'
+                  }`}>
+                    <Clock size={12} />
+                    {trialDaysLeft} {trialDaysWord(trialDaysLeft, lang)}
+                  </div>
+                )}
+                <button onClick={() => setPage('subscribe')}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'subscribe' ? 'bg-amber-600 text-white' : 'text-amber-400 hover:text-white hover:bg-amber-600/30'}`}>
+                  <Star size={16} />{t('nav.subscribe')}
+                </button>
+              </>
             )}
             <button onClick={() => setPage('settings')}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm whitespace-nowrap ${page === 'settings' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
