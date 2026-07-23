@@ -22,6 +22,7 @@ from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
 from api.nlp import router as nlp_router
 from api.document_analysis import router as document_router
+from api.portfolio_api import router as portfolio_advanced_router
 from api.partner.router import router as partner_router
 from api.seo import router as seo_router
 from api.stocks import router as stocks_router
@@ -73,6 +74,7 @@ app.include_router(admin_router)
 app.include_router(analytics_router)
 app.include_router(nlp_router)
 app.include_router(document_router)
+app.include_router(portfolio_advanced_router)
 
 # Payments are handled via Telegram Stars inside the bot and YooKassa
 # (ЮKassa) for card / SBP / Apple Pay / Google Pay on the website.

@@ -510,6 +510,71 @@ class StressRunORM(Base):
     )
 
 
+class StockORM(Base):
+    """Акция с MOEX."""
+
+    __tablename__ = "stocks"
+
+    internal_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    secid: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    isin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    board: Mapped[str] = mapped_column(String(8), nullable=False, server_default="TQBR")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, server_default="RUB")
+    lot_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prev_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    open_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    high_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    low_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    close_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value_traded: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    market_capitalization: Mapped[Decimal | None] = mapped_column(Numeric(24, 6), nullable=True)
+    pe_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    pbr_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    dividend_yield: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    earnings_per_share: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="unknown")
+    raw: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_stocks_secid", "secid"),
+        Index("ix_stocks_board", "board"),
+        Index("ix_stocks_status", "status"),
+        Index("ix_stocks_sector", "sector"),
+        Index("ix_stocks_price", "price"),
+    )
+
+
+class StockHistoryORM(Base):
+    """История торгов акцией (дневные свечи)."""
+
+    __tablename__ = "stock_history"
+
+    internal_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("stocks.internal_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    date: Mapped[date] = mapped_column(Date, primary_key=True)
+    open_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    high_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    low_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    close_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    volume: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value_traded: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    weighted_avg_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="unknown")
+
+    __table_args__ = (Index("ix_stock_history_id_date", "internal_id", "date"),)
+
+
 class AlertRuleORM(Base):
     """Пользовательские правила алертов (цена / доходность пробила порог)."""
 
@@ -642,6 +707,32 @@ class PartnerReferralORM(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PartnerLeadORM(Base):
+    """Inbound B2B partnership / white-label / affiliate requests.
+
+    Captured from the public ``/partners`` landing page (see ``api/seo.py``).
+    A lead is recorded before a partner key exists, so the team can qualify and
+    convert it manually. An alert is pushed to Telegram on creation.
+    """
+
+    __tablename__ = "partner_leads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    telegram: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    company: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    interest: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="new")
+    partner_key_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class WebhookORM(Base):
     """Подписки на события партнёра (webhook-доставка).
 
@@ -670,3 +761,78 @@ class WebhookORM(Base):
     )
 
     __table_args__ = (Index("ix_partner_webhooks_partner", "partner_key_id"),)
+
+
+class TransactionORM(Base):
+    """Portfolio transaction log — every buy/sell recorded."""
+
+    __tablename__ = "portfolio_transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    internal_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)  # "buy" | "sell"
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(20, 6), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    note: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    __table_args__ = (
+        Index("ix_tx_user_id", "user_id"),
+        Index("ix_tx_executed", "executed_at"),
+    )
+
+
+class PnLSnapshotORM(Base):
+    """Daily P&L snapshots per user — for equity curve charts."""
+
+    __tablename__ = "portfolio_pnl_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    total_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    invested: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, server_default="0")
+    unrealized_pnl: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, server_default="0")
+    coupon_income: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, server_default="0")
+    daily_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "date", name="uq_pnl_user_date"),
+        Index("ix_pnl_user_date", "user_id", "date"),
+    )
+
+
+class BacktestORM(Base):
+    """Saved backtest results for a user."""
+
+    __tablename__ = "portfolio_backtests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    strategy: Mapped[str] = mapped_column(String(32), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    initial_capital: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    final_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
+    total_return_pct: Mapped[Decimal] = mapped_column(Numeric(10, 4), nullable=False)
+    annual_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    sharpe_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    max_drawdown_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    equity_curve: Mapped[list] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=False
+    )
+    positions_history: Mapped[list] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_backtest_user_id", "user_id"),
+    )

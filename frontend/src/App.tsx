@@ -20,6 +20,7 @@ import { CompanyPage } from './components/CompanyPage';
 import { RecommendationsPage } from './components/RecommendationsPage';
 import AIChatModal from './components/AIChatModal';
 import DocumentAnalysisPage from './components/DocumentAnalysis';
+import PortfolioAdvancedPage from './components/PortfolioAdvancedPage';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
 import YieldCurveChart from './components/charts/YieldCurveChart';
 import RVHeatmap from './components/charts/RVHeatmap';
@@ -27,9 +28,9 @@ import CarryBarChart from './components/charts/CarryBarChart';
 import StressWaterfall from './components/charts/StressWaterfall';
 import { BarChart3, Shield, Banknote, Activity, TrendingUp, Search, Menu, X, AlertTriangle, LineChart, PieChart, Zap, Brain, Bell, Clock, User, LogOut, Lock, Star, ExternalLink, FileText, ShieldCheck, CreditCard, Globe2, Download, GitCompare, Calculator, Check, Building2 } from 'lucide-react';
 
-const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'forecast', 'alerts', 'documents']);
+const PREMIUM_PAGES = new Set<Page>(['desk', 'portfolio', 'portfolio-advanced', 'forecast', 'alerts', 'documents']);
 
-type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe' | 'company' | 'recommendations' | 'documents';
+type Page = 'dashboard' | 'bonds' | 'scores' | 'desk' | 'forecast' | 'portfolio' | 'portfolio-advanced' | 'ml' | 'alerts' | 'calculator' | 'settings' | 'subscribe' | 'company' | 'recommendations' | 'documents';
 
 function trialDaysWord(n: number, lang: Lang): string {
   if (lang === 'en') return n === 1 ? 'day' : 'days';
@@ -139,6 +140,7 @@ function AppInner() {
     { id: 'ml', label: t('nav.recommendations') || 'Рекомендации', icon: <Brain size={16} /> },
     { id: 'desk', label: t('nav.desk'), icon: <LineChart size={16} />, premium: true },
     { id: 'portfolio', label: t('nav.portfolio'), icon: <PieChart size={16} />, premium: true },
+    { id: 'portfolio-advanced', label: 'P&L / Транзакции', icon: <TrendingUp size={16} />, premium: true },
     { id: 'forecast', label: t('nav.forecast'), icon: <TrendingUp size={16} />, premium: true },
     { id: 'alerts', label: t('nav.alerts'), icon: <Bell size={16} />, premium: true },
     { id: 'calculator', label: t('nav.calculator'), icon: <Calculator size={16} /> },
@@ -245,6 +247,7 @@ function AppInner() {
         {page === 'scores' && <ScoresPage />}
         {page === 'desk' && <DeskPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'portfolio' && <PortfolioPage onSubscribe={() => setPage('subscribe')} />}
+        {page === 'portfolio-advanced' && <PortfolioAdvancedPage />}
         {page === 'forecast' && <ForecastPage onSubscribe={() => setPage('subscribe')} />}
         {page === 'ml' && <RecommendationsPage onSubscribe={() => setPage('subscribe')} onOpenBond={openBond} />}
         {page === 'recommendations' && <RecommendationsPage onSubscribe={() => setPage('subscribe')} onOpenBond={openBond} />}
