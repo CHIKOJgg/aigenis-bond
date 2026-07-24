@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
-export type Lang = 'ru' | 'en';
+export type Lang = 'ru' | 'en' | 'by';
 
 type Dict = Record<string, string>;
 
@@ -1143,7 +1143,67 @@ const en: Dict = {
   'testimonials.author2': 'Elena V., trader',
 };
 
-const dictionaries: Record<Lang, Dict> = { ru, en };
+const by: Dict = {
+  'nav.dashboard': 'Дашборд',
+  'nav.bonds': 'Аблігацыі',
+  'nav.scores': 'Скоры',
+  'nav.portfolio': 'Партфель',
+  'nav.subscribe': 'Падпіска',
+  'nav.settings': 'Настройкі',
+  'nav.alerts': 'Алерты',
+  'nav.calculator': 'Калькулятар',
+  'nav.locked': 'Толькі Pro',
+  'auth.signIn': 'Увайсці',
+  'auth.signUp': 'Рэгістрацыя',
+  'auth.email': 'Email',
+  'auth.password': 'Пароль',
+  'auth.name': 'Імя',
+  'common.loading': 'Загрузка…',
+  'common.allRights': 'Усе правы абаронены.',
+  'common.currency': 'Валюта',
+  'common.bond': 'Аблігацыя',
+  'common.name': 'Назва',
+  'common.price': 'Цана',
+  'common.ytm': 'YTM',
+  'common.coupon': 'Купон',
+  'common.score': 'Скор',
+  'common.maturity': 'Пагашэнне',
+  'common.status': 'Статус',
+  'common.issuer': 'Эмітэнт',
+  'landing.features': 'Магчымасці',
+  'landing.pricing': 'Тарыфы',
+  'landing.forBusiness': 'Для бізнесу',
+  'landing.getStarted': 'Пачаць',
+  'landing.startTrial': 'Пачаць бясплатны пробны перыяд',
+  'landing.hero1': 'Аналізуйце аблігацыі як',
+  'landing.hero2': 'прафесійны трэйдэр',
+  'landing.planFree': 'Бясплатна',
+  'landing.planPerMonth': 'BYN/мес',
+  'landing.mostPopular': 'САМЫ ПАПУЛЯРНЫ',
+  'pricing.highlight': 'Празрыстыя цэны — зразумелая выгода',
+  'pricing.startFree': 'Пачніце бясплатна і пераканайцеся самі',
+  'cta.urgency': 'Рынак не чакае',
+  'cta.tryNow': 'Паспрабуйце бясплатна',
+  'faq.title': 'Частыя пытанні',
+  'faq.q1': 'Як працуе AI-скорынг?',
+  'faq.a1': 'Алгарытм аналізуе даходнасць, дзюрацыю, ліквіднасць і якасць эмітэнта.',
+  'faq.q2': 'Якія аблігацыі даступныя?',
+  'faq.a2': '100+ аблігацый у 6 валютах: BYN, RUB, USD, EUR.',
+  'billing.monthly': 'У месяц',
+  'billing.yearly': 'У год',
+  'billing.save': 'Эканомія 20%',
+  'compare.title': 'Чаму Aigenis?',
+  'compare.sub': 'Параўнайце з іншымі платформамі.',
+  'compare.col1': 'Функцыя',
+  'compare.col2': 'Aigenis Bonds',
+  'compare.col3': 'RusBonds / Cbonds',
+  'testimonials.title': 'Што кажуць карыстальнікі',
+  'testimonials.author0': 'Аляксей К., прыватны інвестар',
+  'testimonials.author1': 'Дзмітрый С., кіраўнік актывамі',
+  'testimonials.author2': 'Алена В., трэйдэр',
+};
+
+const dictionaries: Record<Lang, Dict> = { ru, en, by };
 
 interface I18nValue {
   lang: Lang;

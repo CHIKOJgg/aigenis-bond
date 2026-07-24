@@ -19,11 +19,6 @@ export default function UsageLimits({ tier, bondsUsed, currenciesUsed }: UsageLi
   const bondsPct = bondsLimit > 0 ? Math.min((bondsUsed / bondsLimit) * 100, 100) : 0;
   const currenciesPct = currenciesLimit > 0 ? Math.min((currenciesUsed / currenciesLimit) * 100, 100) : 0;
 
-  const showBondsWarning = bondsPct >= 80;
-  const showCurrenciesWarning = currenciesPct >= 80;
-
-  if (!showBondsWarning && !showCurrenciesWarning) return null;
-
   return (
     <div className="rounded-xl bg-amber-900/20 border border-amber-500/20 p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -31,46 +26,31 @@ export default function UsageLimits({ tier, bondsUsed, currenciesUsed }: UsageLi
         <span className="text-sm font-medium text-amber-300">Лимиты Free-аккаунта</span>
       </div>
 
-      {showBondsWarning && (
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Облигации</span>
-            <span className="text-amber-300">{bondsUsed} / {bondsLimit}</span>
-          </div>
-          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                bondsPct >= 100 ? 'bg-red-500' : 'bg-amber-500'
-              }`}
-              style={{ width: `${bondsPct}%` }}
-            />
-          </div>
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs">
+          <span className="text-slate-400">Облигации</span>
+          <span className="text-amber-300">{bondsUsed} / {bondsLimit}</span>
         </div>
-      )}
-
-      {showCurrenciesWarning && (
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Валюты</span>
-            <span className="text-amber-300">{currenciesUsed} / {currenciesLimit}</span>
-          </div>
-          <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                currenciesPct >= 100 ? 'bg-red-500' : 'bg-amber-500'
-              }`}
-              style={{ width: `${currenciesPct}%` }}
-            />
-          </div>
+        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${bondsPct >= 100 ? 'bg-red-500' : bondsPct >= 80 ? 'bg-amber-500' : 'bg-emerald-500/60'}`}
+            style={{ width: `${bondsPct}%` }} />
         </div>
-      )}
+      </div>
 
-      <button
-        onClick={() => openPaywall('default')}
-        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors"
-      >
-        <TrendingUp size={14} />
-        Обновить до Pro — безлимит
+      <div className="space-y-1">
+        <div className="flex justify-between text-xs">
+          <span className="text-slate-400">Валюты</span>
+          <span className="text-amber-300">{currenciesUsed} / {currenciesLimit}</span>
+        </div>
+        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${currenciesPct >= 100 ? 'bg-red-500' : currenciesPct >= 80 ? 'bg-amber-500' : 'bg-emerald-500/60'}`}
+            style={{ width: `${currenciesPct}%` }} />
+        </div>
+      </div>
+
+      <button onClick={() => openPaywall('default')}
+        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors">
+        <TrendingUp size={14} /> Обновить до Pro — безлимит
       </button>
     </div>
   );
