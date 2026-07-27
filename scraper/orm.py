@@ -672,6 +672,7 @@ class PartnerKeyORM(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    branding: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True, server_default="{}")
 
     __table_args__ = (Index("ix_partner_api_keys_owner", "owner_user_id"),)
 

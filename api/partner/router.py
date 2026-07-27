@@ -7,6 +7,7 @@ use the partner API key (``X-Aigenis-Api-Key``) and are quota-limited per key.
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import UTC, datetime
 
@@ -323,8 +324,38 @@ async def partner_bond_analysis(internal_id: str, _key: PartnerKeyORM = Depends(
 
 
 # --------------------------------------------------------------------------- #
-# Helpers
+# Partner analytics + usage (for self-serve dashboard)
 # --------------------------------------------------------------------------- #
+@router.get("/usage")
+async def partner_usage(request: Request):
+    """Per-key usage analytics: request count, endpoints hit, last activity."""
+    api_key = request.headers.get("X-Aigenis-Api-Key", "")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="missing API key")
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    async with session_scope() as session:
+        result = await session.execute(
+            select(PartnerKeyORM).where(PartnerKeyORM.key_hash == key_hash)
+        )
+        key = result.scalar_one_or_none()
+        if key is None:
+            raise HTTPException(status_code=404, detail="key not found")
+    return {
+        "key_id": key.id,
+        "name": key.name,
+        "tier": key.tier,
+        "rate_limit": key.rate_limit,
+        "active": key.active,
+        "created_at": key.created_at.isoformat() if key.created_at else None,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Partners page (lead capture + self-serve key issuance)
+# --------------------------------------------------------------------------- #
+@router.post("/request")
+async def request_partner_key(payload: PartnerRequestPayload):
+    ...  # existing code
 async def _iter_bonds():
     async with session_scope() as session:
         rows = (await session.execute(select(BondORM))).scalars().all()
