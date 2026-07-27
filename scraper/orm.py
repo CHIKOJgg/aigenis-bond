@@ -206,7 +206,6 @@ class UserORM(Base):
         Index("ix_users_telegram_id", "telegram_id"),
         Index("ix_users_role", "role"),
         Index("ix_users_subscription_tier", "subscription_tier"),
-        Index("ix_users_referred_by", "referred_by"),
     )
 
 

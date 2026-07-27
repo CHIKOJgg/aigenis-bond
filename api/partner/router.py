@@ -353,9 +353,16 @@ async def partner_usage(request: Request):
 # --------------------------------------------------------------------------- #
 # Partners page (lead capture + self-serve key issuance)
 # --------------------------------------------------------------------------- #
+class PartnerRequestPayload(BaseModel):
+    name: str
+    email: str
+    company: str | None = None
+    message: str | None = None
+
+
 @router.post("/request")
 async def request_partner_key(payload: PartnerRequestPayload):
-    ...  # existing code
+    ...
 async def _iter_bonds():
     async with session_scope() as session:
         rows = (await session.execute(select(BondORM))).scalars().all()
