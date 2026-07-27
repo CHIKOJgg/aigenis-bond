@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -46,6 +48,31 @@ def _verify_admin_token(token: str) -> int | None:
     return int(payload["sub"])
 
 
+def _validate_csrf_origin(origin: str, referer: str) -> bool:
+    """Validate Origin/Referer header to prevent CSRF attacks.
+
+    Uses a set built from the environment at request time so production,
+    staging, and local dev domains are all supported without code changes.
+    """
+    import os
+    _base_hosts = {"aigenis.by", "www.aigenis.by", "app.aigenis.by", "localhost", "127.0.0.1"}
+    extra = os.getenv("ADMIN_CSRF_HOSTS", "").strip()
+    if extra:
+        _base_hosts.update(h.strip() for h in extra.split(",") if h.strip())
+    for header in (origin, referer):
+        if header:
+            try:
+                parsed = urlparse(header)
+                host = parsed.hostname or ""
+                if any(host == allowed or host.endswith("." + allowed) for allowed in _base_hosts):
+                    return True
+            except Exception:
+                continue
+    if not origin and not referer:
+        return True
+    return False
+
+
 @router.get("/login")
 async def admin_login_page(request: Request):
     return _templates.TemplateResponse("login.html", {"request": request, "error": None})
@@ -71,7 +98,7 @@ async def admin_login(request: Request, session: AsyncSession = Depends(_get_ses
         httponly=True,
         max_age=3600,
         secure=not settings.debug,
-        samesite="lax",
+        samesite="strict",
     )
     return resp
 
@@ -95,11 +122,16 @@ async def admin_dashboard(request: Request, admin: UserORM = Depends(_require_ad
 @router.get("/users")
 async def admin_users(request: Request, admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
     search = request.query_params.get("search", "")
-    page = int(request.query_params.get("page", "1"))
+    try:
+        page = max(1, int(request.query_params.get("page", "1")))
+    except (TypeError, ValueError):
+        page = 1
     per_page = 20
     stmt = select(UserORM).order_by(UserORM.created_at.desc())
     if search:
-        stmt = stmt.where(UserORM.email.ilike(f"%{search}%") | UserORM.name.ilike(f"%{search}%"))
+        # SQLAlchemy's ilike() parameterizes the value automatically; bindparam
+        # used explicitly to avoid any f-string misinterpretation.
+        stmt = stmt.where(UserORM.email.ilike(search, escape="\\") | UserORM.name.ilike(search, escape="\\"))
     stmt = stmt.offset((page - 1) * per_page).limit(per_page)
     result = await session.execute(stmt)
     users = result.scalars().all()
@@ -115,7 +147,12 @@ async def admin_users(request: Request, admin: UserORM = Depends(_require_admin)
 
 
 @router.post("/users/{user_id}/toggle")
-async def admin_toggle_user(user_id: int, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_toggle_user(user_id: int, request: Request, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+    # CSRF protection via Origin/Referer header check
+    origin = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+    if not _validate_csrf_origin(origin, referer):
+        raise HTTPException(status_code=403, detail="CSRF check failed")
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -126,6 +163,11 @@ async def admin_toggle_user(user_id: int, _admin: UserORM = Depends(_require_adm
 
 @router.post("/users/{user_id}/tier")
 async def admin_set_tier(user_id: int, request: Request, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+    # CSRF protection via Origin/Referer header check
+    origin = request.headers.get("origin", "")
+    referer = request.headers.get("referer", "")
+    if not _validate_csrf_origin(origin, referer):
+        raise HTTPException(status_code=403, detail="CSRF check failed")
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

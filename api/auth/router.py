@@ -43,8 +43,12 @@ async def _get_session() -> AsyncIterator[AsyncSession]:
 
 @router.post("/register", response_model=TokenResponse)
 async def register(req: RegisterRequest, session: AsyncSession = Depends(_get_session)):
-    if len(req.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not any(c.isupper() for c in req.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+    if not any(c.isdigit() for c in req.password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one digit")
     user, error = await register_user(session, req.email.lower().strip(), req.password, req.name.strip(), getattr(req, "referral_code", None))
     if error:
         raise HTTPException(status_code=409, detail=error)
@@ -54,8 +58,35 @@ async def register(req: RegisterRequest, session: AsyncSession = Depends(_get_se
     )
 
 
+import time as time_module
+
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_LOCK = __import__("threading").Lock()
+_LOGIN_RATE_LIMIT = 5  # attempts
+_LOGIN_RATE_WINDOW = 300  # 5 minutes
+_MAX_LOGIN_TRACKED_EMAILS = 10000  # prevent memory exhaustion from brute-force
+
+
+def _check_login_rate_limit(email: str) -> None:
+    now = time_module.time()
+    with _LOGIN_LOCK:
+        # Periodic cleanup to prevent memory exhaustion from distributed attacks
+        if len(_LOGIN_ATTEMPTS) > _MAX_LOGIN_TRACKED_EMAILS:
+            _LOGIN_ATTEMPTS.clear()
+        attempts = _LOGIN_ATTEMPTS.get(email, [])
+        attempts = [t for t in attempts if t > now - _LOGIN_RATE_WINDOW]
+        if len(attempts) >= _LOGIN_RATE_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many login attempts. Please try again in 5 minutes.",
+            )
+        attempts.append(now)
+        _LOGIN_ATTEMPTS[email] = attempts
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, session: AsyncSession = Depends(_get_session)):
+    _check_login_rate_limit(req.email.lower().strip())
     user, error = await login_user(session, req.email.lower().strip(), req.password)
     if error:
         raise HTTPException(status_code=401, detail=error)
@@ -85,7 +116,7 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
     try:
         import httpx
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={req.id_token}")
+            resp = await client.post("https://oauth2.googleapis.com/tokeninfo", params={"id_token": req.id_token})
         if resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Invalid Google token")
         data = resp.json()
@@ -104,7 +135,8 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Google auth failed: {e}") from e
+        logger.warning("google_auth_failed", error=str(e))
+        raise HTTPException(status_code=401, detail="Google authentication failed. Please try again.") from e
     user, _ = await find_or_create_google_user(session, google_id, email, name)
     return TokenResponse(
         access_token=create_access_token(user.id),
@@ -114,6 +146,7 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
 
 @router.post("/forgot-password")
 async def forgot_password(req: ForgotPasswordRequest, session: AsyncSession = Depends(_get_session)):
+    _check_login_rate_limit(req.email.lower().strip())
     token = await create_password_reset_token(session, req.email.lower().strip())
     if token:
         from api.notifications.email import send_password_reset_email
@@ -127,6 +160,13 @@ async def forgot_password(req: ForgotPasswordRequest, session: AsyncSession = De
 
 @router.post("/reset-password")
 async def reset_password_endpoint(req: ResetPasswordRequest, session: AsyncSession = Depends(_get_session)):
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if not any(c.isupper() for c in req.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+    if not any(c.isdigit() for c in req.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain at least one digit")
+    _check_login_rate_limit(f"reset:{req.token[:16]}")
     success = await reset_password(session, req.token, req.new_password)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
@@ -137,6 +177,10 @@ async def reset_password_endpoint(req: ResetPasswordRequest, session: AsyncSessi
 async def verify_email(token: str, session: AsyncSession = Depends(_get_session)):
     payload = decode_token(token)
     if not payload:
+        raise HTTPException(status_code=400, detail="Invalid verification token")
+    # Accept both access tokens (used during registration) and dedicated
+    # email-verification tokens.
+    if payload.get("type") not in ("access", "email_verification"):
         raise HTTPException(status_code=400, detail="Invalid verification token")
     user_id = int(payload["sub"])
     user = await get_user_by_id(session, user_id)

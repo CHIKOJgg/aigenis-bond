@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import threading
 import time
 from collections import defaultdict
 from typing import Any
@@ -20,11 +21,11 @@ from api.analytics import router as analytics_router
 from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
-from api.nlp import router as nlp_router
 from api.document_analysis import router as document_router
+from api.nlp import router as nlp_router
+from api.partner.router import router as partner_router
 from api.portfolio_api import router as portfolio_advanced_router
 from api.reports import router as reports_router
-from api.partner.router import router as partner_router
 from api.seo import router as seo_router
 from api.stocks import router as stocks_router
 from api.widget import router as widget_router
@@ -151,6 +152,7 @@ add_feature_access_headers(app)
 #     peer), so the limiter is not trivially bypassed by spoofing the header.
 
 _rate_limit_store: dict[str, list[float]] = defaultdict(list)
+_rate_limit_lock = threading.Lock()
 _RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "60"))
 _RATE_WINDOW = int(os.environ.get("API_RATE_WINDOW", "60"))
 _RATE_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "memory").strip().lower()
@@ -212,12 +214,13 @@ async def _redis_allow(client: str, limit: int) -> bool:
 
 def _memory_allow(client: str, limit: int) -> bool:
     now = time.monotonic()
-    timestamps = _rate_limit_store[client]
     cutoff = now - _RATE_WINDOW
-    timestamps[:] = [t for t in timestamps if t > cutoff]
-    if len(timestamps) >= limit:
-        return False
-    timestamps.append(now)
+    with _rate_limit_lock:
+        timestamps = _rate_limit_store[client]
+        timestamps[:] = [t for t in timestamps if t > cutoff]
+        if len(timestamps) >= limit:
+            return False
+        timestamps.append(now)
     return True
 
 
@@ -226,7 +229,7 @@ async def rate_limit(request: Request, call_next):
     if request.url.path in ("/health", "/ready", "/openapi.json", "/docs", "/redoc"):
         return await call_next(request)
     # Public SEO pages must stay crawlable — never rate-limit crawlers away.
-    if request.url.path.startswith(("/bonds", "/partners", "/sitemap.xml", "/robots.txt")):
+    if request.url.path.startswith(("/bonds", "/partners", "/sitemap.xml", "/robots.txt", "/calculator", "/guides")):
         return await call_next(request)
     client, limit = _rate_identity_and_limit(request)
     allowed = (
@@ -238,6 +241,7 @@ async def rate_limit(request: Request, call_next):
         return JSONResponse(
             status_code=429,
             content={"error": "Too many requests", "retry_after": _RATE_WINDOW},
+            headers={"Retry-After": str(_RATE_WINDOW)},
         )
     return await call_next(request)
 

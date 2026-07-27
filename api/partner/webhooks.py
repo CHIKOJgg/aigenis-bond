@@ -37,7 +37,7 @@ SUPPORTED_EVENTS = frozenset(
 
 
 def sign_payload(secret: str, body: bytes) -> str:
-    return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return hmac.HMAC(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
 
 
 async def register_webhook(

@@ -11,8 +11,7 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from api.access_control import RequireFeature, get_optional_user_id
-from api import _helpers as _h
+from api.access_control import RequireFeature
 from scraper.db import session_scope
 from scraper.orm import BondORM, BondScoreORM, BondHistoryORM
 from sqlalchemy import select
@@ -31,50 +30,33 @@ class ChatResponse(BaseModel):
     sources: list[str] = []
 
 
-def _build_bond_context(internal_id: str) -> str:
+async def _build_bond_context(internal_id: str) -> str:
     """Load bond data and build context string for the LLM."""
-    import asyncio
+    async with session_scope() as session:
+        bond = (
+            await session.execute(
+                select(BondORM).where(BondORM.internal_id == internal_id)
+            )
+        ).scalar_one_or_none()
+        if bond is None:
+            return f"Облигация {internal_id} не найдена в базе данных."
 
-    async def _load():
-        async with session_scope() as session:
-            bond = (
-                await session.execute(
-                    select(BondORM).where(BondORM.internal_id == internal_id)
-                )
-            ).scalar_one_or_none()
-            if bond is None:
-                return None
+        score = (
+            await session.execute(
+                select(BondScoreORM).where(BondScoreORM.internal_id == internal_id)
+            )
+        ).scalar_one_or_none()
 
-            score = (
-                await session.execute(
-                    select(BondScoreORM).where(BondScoreORM.internal_id == internal_id)
-                )
-            ).scalar_one_or_none()
-
-            cutoff = date.today() - timedelta(days=30)
-            history = (
-                await session.execute(
-                    select(BondHistoryORM)
-                    .where(BondHistoryORM.internal_id == internal_id)
-                    .where(BondHistoryORM.date >= cutoff)
-                    .order_by(BondHistoryORM.date.desc())
-                    .limit(10)
-                )
-            ).scalars().all()
-
-            return bond, score, history
-
-    try:
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(_load())
-    except RuntimeError:
-        import asyncio
-        result = asyncio.run(_load())
-
-    if result is None:
-        return f"Облигация {internal_id} не найдена в базе данных."
-
-    bond, score, history = result
+        cutoff = date.today() - timedelta(days=30)
+        history = (
+            await session.execute(
+                select(BondHistoryORM)
+                .where(BondHistoryORM.internal_id == internal_id)
+                .where(BondHistoryORM.date >= cutoff)
+                .order_by(BondHistoryORM.date.desc())
+                .limit(10)
+            )
+        ).scalars().all()
     lines = [
         f"Облигация: {bond.name} (ID: {bond.internal_id})",
         f"Валюта: {bond.currency}",
@@ -118,8 +100,8 @@ def _call_llm(system_prompt: str, user_message: str) -> str:
             temperature=0.3,
         )
         return response.choices[0].message.content or "Не удалось получить ответ."
-    except Exception as e:
-        return f"Ошибка при обращении к AI: {type(e).__name__}"
+    except Exception:
+        return "Ошибка при обращении к AI. Попробуйте позже."
 
 
 @router.post(
@@ -134,9 +116,10 @@ async def api_chat(req: ChatRequest):
 
     internal_id = (req.context or {}).get("internal_id")
     if internal_id:
-        bond_ctx = _build_bond_context(internal_id)
-        context_parts.append(bond_ctx)
-        sources.append(f"bond:{internal_id}")
+        entry = await _build_bond_context_entries(internal_id)
+        if entry:
+            sources.append(f"bond:{entry[0]}")
+            context_parts.append(entry[1])
 
     system_prompt = (
         "Ты аналитик по облигациям для платформы Aigenis Bonds. "
@@ -149,3 +132,11 @@ async def api_chat(req: ChatRequest):
 
     reply = _call_llm(system_prompt, req.message)
     return ChatResponse(reply=reply, sources=sources)
+
+
+async def _build_bond_context_entries(internal_id: str) -> tuple[str, str] | None:
+    """Async helper: returns (bond_id, context_text) or None if bond not found."""
+    ctx = await _build_bond_context(internal_id)
+    if ctx.startswith("Облигация") and ctx.endswith("не найдена в базе данных."):
+        return None
+    return internal_id, ctx

@@ -146,22 +146,29 @@ def add_feature_access_headers(app: FastAPI) -> FastAPI:
     async def add_headers(request: Request, call_next):
         response = await call_next(request)
 
+        # Skip non-API paths to avoid unnecessary DB round-trips
+        if not request.url.path.startswith("/api/") and not request.url.path.startswith("/auth/"):
+            return response
+
         # Check if user is authenticated and add feature headers
         user_id = _get_current_user_from_request(request)
         if user_id:
-            async with session_scope() as session:
-                user_tier = await _get_user_tier(session, user_id)
-                tier = user_tier or "free"
+            try:
+                async with session_scope() as session:
+                    user_tier = await _get_user_tier(session, user_id)
+                    tier = user_tier or "free"
+            except Exception:
+                tier = "free"
 
-                headers = {
-                    "X-User-Tier": tier,
-                    "X-API-Rate-Limit": str(FEATURE_FLAGS[tier]["api_rate_limit"]),
-                    "X-Is-Demo": "true" if FEATURE_FLAGS[tier].get("is_demo") else "false",
-                    "X-Features": ",".join([k for k, v in FEATURE_FLAGS[tier].items() if v]),
-                }
+            headers = {
+                "X-User-Tier": tier,
+                "X-API-Rate-Limit": str(FEATURE_FLAGS[tier]["api_rate_limit"]),
+                "X-Is-Demo": "true" if FEATURE_FLAGS[tier].get("is_demo") else "false",
+                "X-Features": ",".join([k for k, v in FEATURE_FLAGS[tier].items() if v]),
+            }
 
-                for key, value in headers.items():
-                    response.headers[key] = value
+            for key, value in headers.items():
+                response.headers[key] = value
 
         return response
 

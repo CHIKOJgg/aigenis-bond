@@ -483,7 +483,9 @@ async def regenerate_sitemap() -> str | None:
     urls = await _sitemap_urls(base_url)
     xml = _sitemap_xml(urls)
     try:
-        os.makedirs(os.path.dirname(SEO_SITEMAP_PATH) or ".", exist_ok=True)
+        dirname = os.path.dirname(SEO_SITEMAP_PATH)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
         with open(SEO_SITEMAP_PATH, "w", encoding="utf-8") as fh:
             fh.write(xml)
     except OSError as exc:
@@ -719,6 +721,26 @@ def _lead_error_page(request: Request, error: str) -> HTMLResponse:
     return resp
 
 
+_lead_rate_store: dict[str, list[float]] = {}
+_lead_rate_lock = __import__("threading").Lock()
+_MAX_LEADS_PER_HOUR = 3  # per IP
+
+
+def _lead_rate_check(ip: str) -> bool:
+    """Per-IP rate limit for partner lead form (3 per hour)."""
+    import time as _time
+    now = _time.time()
+    cutoff = now - 3600
+    with _lead_rate_lock:
+        hits = _lead_rate_store.get(ip, [])
+        hits = [t for t in hits if t > cutoff]
+        if len(hits) >= _MAX_LEADS_PER_HOUR:
+            return False
+        hits.append(now)
+        _lead_rate_store[ip] = hits
+    return True
+
+
 @router.post("/partners/request", response_class=HTMLResponse)
 async def seo_partners_request(
     request: Request,
@@ -730,6 +752,11 @@ async def seo_partners_request(
     message: str = Form(""),
 ):
     """Capture a B2B lead from the public /partners page and self-serve a key."""
+    # Rate-limit: 3 leads per IP per hour to prevent form abuse / key spam.
+    client_ip = request.client.host if request.client else "unknown"
+    if not _lead_rate_check(client_ip):
+        return _lead_error_page(request, "Слишком много заявок. Попробуйте позже.")
+
     name = (name or "").strip()
     email = (email or "").strip() or None
     telegram = ((telegram or "").strip().lstrip("@")) or None
@@ -739,6 +766,8 @@ async def seo_partners_request(
 
     if not name:
         return _lead_error_page(request, "Укажите имя.")
+    if len(name) > 128:
+        return _lead_error_page(request, "Имя слишком длинное.")
     if not email and not telegram:
         return _lead_error_page(request, "Укажите email или Telegram для связи.")
 

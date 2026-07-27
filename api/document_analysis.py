@@ -5,6 +5,7 @@ PDF, sends to LLM for structured parsing of bond parameters.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -17,7 +18,8 @@ from sqlalchemy import select
 
 from api.access_control import RequireFeature, get_optional_user_id
 from scraper.db import session_scope
-from scraper.orm import Base
+
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 router = APIRouter(prefix="/api/v1", tags=["documents"])
 
@@ -125,14 +127,22 @@ async def api_upload_document(
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Только PDF-файлы поддерживаются")
 
-    # Save to temp file
-    suffix = ".pdf"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Файл слишком большой. Максимум: {_MAX_UPLOAD_BYTES // (1024 * 1024)} МБ.",
+        )
+    if len(content) < 100:
+        raise HTTPException(status_code=400, detail="Файл слишком мал или повреждён.")
 
+    # Save to temp file using a context manager to guarantee cleanup
+    tmp_path: str | None = None
     try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
         text = _extract_text_from_pdf(tmp_path)
         if not text.strip():
             return {
@@ -157,7 +167,9 @@ async def api_upload_document(
             "created_at": datetime.now().isoformat(),
         }
     finally:
-        os.unlink(tmp_path)
+        if tmp_path is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
 
 
 @router.get(

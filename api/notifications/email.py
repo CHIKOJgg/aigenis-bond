@@ -68,6 +68,11 @@ def _base_html(body: str) -> str:
 </div><div class="footer">&copy; 2026 Aigenis Parser. All rights reserved.</div></div></body></html>"""
 
 
+def _esc_html(s: str) -> str:
+    """Minimal HTML entity escaping for safe interpolation in email bodies."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
 def send_verification_email(to: str, token: str) -> bool:
     url = f"{APP_BASE_URL}/auth/verify?token={token}"
     html = _base_html(f"""
@@ -101,8 +106,9 @@ def send_subscription_expiring_email(to: str, tier: str, days_left: int) -> bool
 
 def send_welcome_email(to: str, name: str) -> bool:
     url = f"{APP_BASE_URL}"
+    safe_name = _esc_html(name)
     html = _base_html(f"""
-        <p>Hi {name},</p>
+        <p>Hi {safe_name},</p>
         <p>Welcome to Aigenis Bonds! Your <b>7-day free trial</b> of Pro features is now active.</p>
         <p>Explore the platform and see how our fixed income tools can help you make better investment decisions.</p>
         <p style="text-align:center"><a href="{url}" class="btn">Go to Dashboard</a></p>

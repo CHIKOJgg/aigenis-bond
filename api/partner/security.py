@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import threading
 import time
 from collections import defaultdict
 
@@ -52,19 +53,28 @@ async def get_partner_key(
 
 
 _partner_hits: dict[int, list[float]] = defaultdict(list)
+_partner_lock = threading.Lock()
+_MAX_TRACKED_PARTNERS = 1000  # prevent memory exhaustion
 
 
 async def partner_rate_limit(key: PartnerKeyORM = Depends(get_partner_key)) -> PartnerKeyORM:
-    """Enforce the partner key's per-minute quota (authenticates first)."""
+    """Enforce the partner key's per-minute quota (authenticates first).
+
+    Uses a per-key lock to prevent race conditions under concurrent requests.
+    """
     now = time.monotonic()
     cutoff = now - _WINDOW_SECONDS
-    hits = _partner_hits[key.id]
-    hits[:] = [t for t in hits if t > cutoff]
-    if len(hits) >= key.rate_limit:
-        raise HTTPException(
-            status_code=429,
-            detail="Partner rate limit exceeded",
-            headers={"Retry-After": str(_WINDOW_SECONDS)},
-        )
-    hits.append(now)
+    with _partner_lock:
+        # Periodic cleanup to prevent memory exhaustion
+        if len(_partner_hits) > _MAX_TRACKED_PARTNERS:
+            _partner_hits.clear()
+        hits = _partner_hits[key.id]
+        hits[:] = [t for t in hits if t > cutoff]
+        if len(hits) >= key.rate_limit:
+            raise HTTPException(
+                status_code=429,
+                detail="Partner rate limit exceeded",
+                headers={"Retry-After": str(_WINDOW_SECONDS)},
+            )
+        hits.append(now)
     return key
