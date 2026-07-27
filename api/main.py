@@ -212,9 +212,9 @@ async def _redis_allow(client: str, limit: int) -> bool:
         if count == 1:
             await redis.expire(key, _RATE_WINDOW)
         return count <= limit
-    except Exception as exc:  # pragma: no cover - fail open, log and fall back
-        logger.warning("rate_limit_redis_unavailable", error=str(exc))
-        return True
+    except Exception as exc:  # pragma: no cover - fail closed on Redis outage
+        logger.warning("rate_limit_redis_unavailable_blocking", error=str(exc))
+        return False
 
 
 def _memory_allow(client: str, limit: int) -> bool:
