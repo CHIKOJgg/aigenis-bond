@@ -1,0 +1,25 @@
+Subject: Fixed Income product for Aigenis ecosystem / strategic deal
+
+Hi,
+
+I built a production-ready Fixed Income analytics product on top of your API. Key points:
+
+- MOEX ISS parser (RUB corporates TQCB + USD/EUR eurobonds TQOB, public, no login needed)
+- Reward/Risk Score 0-100 + ML (YTM regression + buy/hold/wait/avoid classifier)
+- Full Fixed Income Desk (Duration, Nelson-Siegel curve, RV, Carry, Repo, 7 stress scenarios)
+- Telegram bot + React SPA + Partner API + embedded widget
+- 102 tests, Docker Compose (9 services), CI/CD, Prometheus+Grafana
+- ~44k lines of code (Python 3.13 / FastAPI / React 19 / TypeScript)
+
+Options:
+1. Code sale (license / white-label)
+2. I stay on contract - support + development
+3. Strategic acquisition (M&A)
+
+Price: negotiable (replacement cost: 6+ months and \+ budget).
+
+Can show demo in 15 minutes. One of the most complete Fixed Income products on the CIS market.
+
+Best regards,
+[Your name]
+[Your telegram/email]
