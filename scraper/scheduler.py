@@ -8,10 +8,8 @@ from collections.abc import Awaitable, Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from scraper.client import AigenisClient
 from scraper.config import get_settings
 from scraper.logging import correlation_id, get_logger
-from scraper.pipeline import run_once
 
 logger = get_logger("scraper.scheduler")
 
@@ -48,6 +46,9 @@ async def scheduled_job() -> None:
                 async with MoexClient(settings) as client:
                     await run_once_moex(client, settings.aigenis.currencies)
             if source in ("aigenis", "both"):
+                from scraper.client import AigenisClient
+                from scraper.pipeline import run_once
+
                 async with AigenisClient(settings.aigenis) as client:
                     await run_once(client, settings.aigenis.currencies)
             # Refresh the public sitemap cache (no-op unless SEO_PUBLIC_BASE_URL

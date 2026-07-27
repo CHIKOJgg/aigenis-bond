@@ -1,4 +1,4 @@
-# Aigenis — AI-powered Bond & Stock Analytics Platform
+# Bonds Engine — Fixed Income Analytics Platform
 
 V1: парсер облигаций + Postgres + история + Docker.
 V2: Reward/Risk Score, Portfolio Optimizer, сценарии USD/BYN, Telegram-бот, мониторинг.

@@ -12,10 +12,6 @@ from tqdm.asyncio import tqdm
 
 from scoring.repository import recompute_all
 from scraper import repositories
-from scraper.api.detail import parse_detail_payload
-from scraper.api.history import parse_history_payload
-from scraper.api.listing import parse_listing_payload
-from scraper.client import AigenisClient
 from scraper.db import session_scope
 from scraper.errors import (
     HistoryUnavailable,
@@ -28,7 +24,6 @@ from scraper.logging import get_logger
 from scraper.models import Bond, BondDailyAccrual
 from scraper.moex import MoexClient
 from scraper.orm import BondORM
-from scraper.parsers.xlsx import XlsxParseResult, parse_all
 from scraper.validation import validate_detail, validate_listing
 
 logger = get_logger("scraper.pipeline")
@@ -47,6 +42,8 @@ def _d(value: object) -> Decimal | None:
 
 
 async def collect_listing(client: AigenisClient, currencies: Iterable[str]) -> list[str]:
+    from scraper.api.listing import parse_listing_payload
+
     seen: set[str] = set()
     # Clear the internal_id→api_id map ONCE before launching the concurrent
     # listing tasks. ``_api_fetch_listing`` must NOT clear it itself (that would
@@ -79,6 +76,8 @@ async def collect_details(
     *,
     batch_size: int = 50,
 ) -> tuple[int, int]:
+    from scraper.api.detail import parse_detail_payload
+
     ok, err = 0, 0
     sem = asyncio.Semaphore(client.settings.max_concurrency)
 
@@ -135,12 +134,14 @@ def _delisted_placeholder(internal_id: str, currency: str = "unknown") -> Bond:
 
 
 async def backfill_history(
-    client: AigenisClient,
+    client,
     internal_ids: list[str],
     *,
     days: int,
     end_date: date | None = None,
 ) -> tuple[int, int]:
+    from scraper.api.history import parse_history_payload
+
     today = end_date or date.today()
     since_default = today - timedelta(days=days)
     ok, err = 0, 0
@@ -179,7 +180,9 @@ async def backfill_history(
     return ok, err
 
 
-async def enrich_from_xlsx(xlsx_data: XlsxParseResult | None = None) -> dict[str, int]:
+async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
+    from scraper.parsers.xlsx import XlsxParseResult, parse_all
+
     if xlsx_data is None:
         try:
             xlsx_data = parse_all()
@@ -500,7 +503,7 @@ async def run_once_moex_stocks(boards: list[str] | None = None) -> dict[str, int
     return summary
 
 
-async def run_once(client: AigenisClient, currencies: Iterable[str]) -> dict[str, int]:
+async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
     settings = client.settings
     cur_list = list(currencies)
     logger.info("pipeline_start", currencies=cur_list)

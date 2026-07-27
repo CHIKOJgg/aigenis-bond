@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import sys
 
-from scraper.client import AigenisClient
 from scraper.commands import main_monitor, main_score
 from scraper.commands_v3 import (
     cmd_ml_predict,
@@ -35,7 +34,7 @@ logger = get_logger("scraper.cli")
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="aigenis-parser")
+    parser = argparse.ArgumentParser(prog="bonds-engine")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("run", help="Запустить планировщик (cron jobs)")
@@ -118,6 +117,8 @@ async def _cmd_once(currencies_csv: str) -> int:
         if currencies_csv
         else settings.aigenis.currencies
     )
+    from scraper.client import AigenisClient
+
     async with AigenisClient(settings.aigenis) as client:
         summary = await run_once(client, currencies)
     print(summary)
@@ -139,6 +140,8 @@ async def _cmd_backfill(currencies_csv: str, days: int | None) -> int:
                 existing.extend(b.internal_id for b in bonds)
         else:
             existing = list(await repositories.bonds.get_all_internal_ids(session))
+
+    from scraper.client import AigenisClient
 
     async with AigenisClient(settings.aigenis) as client:
         ok, err = await backfill_history(

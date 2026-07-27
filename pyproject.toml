@@ -3,14 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aigenis-parser"
+name = "bonds-engine"
 version = "4.0.0"
-description = "Aigenis — AI-powered Bond & Stock Analytics Platform for MOEX and Belarus markets"
+description = "Fixed Income Analytics Engine: bond parsing, scoring, ML, desk tools for MOEX markets"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "LicenseRef-Proprietary" }
-authors = [{ name = "Aigenis" }]
-keywords = ["bonds", "stocks", "fixed-income", "equities", "moex", "scraper", "analytics", "belarus", "russia"]
+keywords = ["bonds", "stocks", "fixed-income", "equities", "moex", "scraper", "analytics"]
 
 dependencies = [
     "playwright>=1.49.0",
@@ -57,14 +56,15 @@ load = [
 ]
 
 [project.scripts]
-aigenis-parser = "scraper.__main__:main"
-aigenis-bot = "telegram_bot.bot:cli"
-aigenis-api = "api.main:run"
+bonds-engine = "scraper.__main__:main"
+bonds-bot = "telegram_bot.bot:cli"
+bonds-api = "api.main:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
-    "scraper*", "desk*", "forecast*", "ml*", "monitoring*",
+    "scraper*", "scraper/sources*", "scraper/sources/aigenis*",
+    "desk*", "forecast*", "ml*", "monitoring*",
     "notifications*", "portfolio*", "recommendations*",
     "scoring*", "telegram_bot*", "visualization*", "api*",
     "api/auth*", "api/billing*", "api/admin*",

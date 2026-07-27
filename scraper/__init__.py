@@ -1,4 +1,4 @@
-"""Aigenis parser (V1)."""
+"""Bonds Engine — Fixed Income Analytics Platform."""
 
 from __future__ import annotations
 
