@@ -24,6 +24,7 @@ from api.billing.router import router as billing_router
 from api.document_analysis import router as document_router
 from api.nlp import router as nlp_router
 from api.partner.router import router as partner_router
+from api.pricing.router import router as pricing_router
 from api.portfolio_api import router as portfolio_advanced_router
 from api.reports import router as reports_router
 from api.seo import router as seo_router
@@ -87,6 +88,10 @@ logger.info("yookassa_billing_enabled")
 # Partner API (B2B keys, webhooks, read-only analytics).
 app.include_router(partner_router)
 logger.info("partner_api_enabled")
+
+# Pricing endpoint with IP-based currency detection (BYN/RUB/USD).
+app.include_router(pricing_router)
+logger.info("pricing_enabled")
 
 # Public acquisition widget (SEO / partner iframes). Framing is explicitly
 # permitted for this router via the CSP exception in `security_headers`.
