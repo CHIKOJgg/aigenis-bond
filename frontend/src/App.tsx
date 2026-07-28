@@ -4,7 +4,7 @@ import type {
   Bond, BondScore, Stats, SubscribeInfo, WatchlistItem,
   AnalyticsCurve, AnalyticsRV, AnalyticsCarry, AnalyticsStress, AnalyticsRepo,
   AnalyticsPortfolio, AnalyticsForecast, AnalyticsAlert, CompanySummary,
-  Position, PortfolioIncome, BondAnalysisResult, Cashflow, AlertRule, AlertFeedItem,
+  Position, PortfolioIncome, AlertRule, AlertFeedItem,
 } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { PaywallProvider, usePaywall } from './lib/PaywallContext';
@@ -92,7 +92,7 @@ function AppInner() {
         });
       };
       poll();
-      setTimeout(() => setToast(null), 15000);
+      setTimeout(() => setToast(null), 5000);
     }
   }, [refreshUser]);
 
@@ -177,8 +177,8 @@ function AppInner() {
     <div className="min-h-screen bg-gray-950 text-white">
       {isDemoMode && (
         <div className="bg-amber-600 text-black text-center text-sm font-semibold py-1.5 px-3">
-          DEMO — ознакомительный режим. Данные могут быть неполными.{' '}
-          <a href="/?ref=demo" className="underline">Открыть полную версию →</a>
+          {t('demo.banner')}{' '}
+          <a href="/?ref=demo" className="underline">{t('demo.fullVersion')}</a>
         </div>
       )}
       <header className="border-b border-gray-800 bg-gray-900 sticky top-0 z-40">
@@ -237,7 +237,7 @@ function AppInner() {
         onClose={() => setMobileMenu(false)}
         navItems={navItems}
         activePage={page}
-        onNavigate={goToPage}
+        onNavigate={(p) => goToPage(p as Page)}
         userTier={user?.subscription_tier || 'free'}
         userName={user?.name || ''}
         onSubscribe={() => setPage('subscribe')}
@@ -278,6 +278,8 @@ function AppInner() {
             setSelectedBond(null);
           }}
           onSubscribe={() => setPage('subscribe')}
+          onOpenCompany={(issuer) => { setSelectedBond(null); openCompany(issuer); }}
+          onOpenBond={(id) => { setSelectedBond(null); openBond(id); }}
         />
       )}
       <PaywallModal onSubscribe={() => setPage('subscribe')} />
@@ -419,10 +421,13 @@ function GlobalSearch({ onOpenBond, onOpenCompany }: { onOpenBond?: (id: string)
           aria-label={t('search.aria')}
         />
       </div>
-      {open && (bondHits.length > 0 || companyHits.length > 0) && (
+      {open && q.trim().length > 0 && (
         <div className="absolute z-50 mt-1 w-72 md:w-96 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto">
+          {bondHits.length === 0 && companyHits.length === 0 && !searching && (
+            <div className="px-4 py-3 text-sm text-gray-500">{t('search.noResults', { query: q })}</div>
+          )}
           {companyHits.length > 0 && (
-            <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-800/50">Компании</div>
+            <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-800/50">{t('common.issuer')}</div>
           )}
           {companyHits.map((c) => (
             <button
@@ -437,7 +442,7 @@ function GlobalSearch({ onOpenBond, onOpenCompany }: { onOpenBond?: (id: string)
               </span>
             </button>
           ))}
-          {bondHits.length > 0 && <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-800/50">Облигации</div>}
+          {bondHits.length > 0 && <div className="px-3 py-1.5 text-xs text-gray-500 bg-gray-800/50">{t('nav.bonds')}</div>}
           {bondHits.map((b) => (
             <button
               key={b.internal_id}
@@ -469,6 +474,7 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,6 +489,12 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
     }
   };
 
+  const handleReset = () => {
+    setResetSent(true);
+    setError('');
+    setTimeout(() => setResetSent(false), 6000);
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-white flex items-center justify-center p-4">
       <div className="absolute top-3 right-3">
@@ -495,6 +507,7 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
         </div>
         <h2 className="text-lg font-semibold mb-4">{t('auth.signInTitle')}</h2>
         {error && <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 mb-4 text-sm text-red-300">{error}</div>}
+        {resetSent && <div className="bg-emerald-900/30 border border-emerald-800 rounded-lg p-3 mb-4 text-sm text-emerald-300">Сброс пароля. Обратитесь в поддержку: support@aigenis.by</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="text-sm text-gray-400 block mb-1">{t('auth.email')}</label>
@@ -510,6 +523,11 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
             className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white py-2 rounded-lg text-sm font-medium transition-colors">
             {submitting ? t('auth.signingIn') : t('auth.signIn')}
           </button>
+          <div className="text-center">
+            <button type="button" onClick={handleReset} className="text-sm text-gray-500 hover:text-emerald-400 transition-colors">
+              Забыли пароль?
+            </button>
+          </div>
         </form>
         <p className="text-sm text-gray-400 mt-4 text-center">
           {t('auth.noAccount')}{' '}
@@ -664,12 +682,17 @@ function Dashboard({ onPickCurrency, onOpenCompany, onSubscribe }: { onPickCurre
       api.health().catch(() => null),
       api.analytics.companies({ limit: 6 }).catch(() => []),
     ]).then(([s, b, sc, h, c]) => {
+      if (!s && b.length === 0) {
+        setError(t('dash.loadError'));
+        return;
+      }
       setStats(s);
       setBonds(b);
       setScores(sc);
       setHealth(h);
       setCompanies(c as CompanySummary[]);
-    }).finally(() => setLoading(false));
+    }).catch(() => setError(t('dash.loadError')))
+    .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <LoadingSkeleton />;
@@ -710,10 +733,10 @@ function Dashboard({ onPickCurrency, onOpenCompany, onSubscribe }: { onPickCurre
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Building2 size={16} className="text-emerald-400" /> Топ компаний-эмитентов
+              <Building2 size={16} className="text-emerald-400" /> {t('dash.topCompanies')}
             </h3>
             <button onClick={() => onOpenCompany?.(companies[0].issuer)} className="text-xs text-emerald-400 hover:underline">
-              Смотреть всё
+              {t('dash.viewAll')}
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1401,6 +1424,12 @@ function BondsPage() {
           onToggleFavorite={() => toggleFav(selected.internal_id)}
           onClose={() => setSelected(null)}
           onSubscribe={() => openPaywall('portfolio')}
+          onOpenBond={async (id) => {
+            try {
+              const b = await api.bonds.get(id);
+              setSelected(b);
+            } catch { /* ignore */ }
+          }}
         />
       )}
 
@@ -1574,7 +1603,7 @@ function ScoresPage() {
           {scores.length === 0 && <EmptyState message={t('scores.empty')} />}
         </div>
       )}
-      {detail && <BondDetailModal bond={detail} onClose={() => setDetail(null)} onSubscribe={() => openPaywall('portfolio')} />}
+      {detail && <BondDetailModal bond={detail} onClose={() => setDetail(null)} onSubscribe={() => openPaywall('portfolio')} onOpenBond={openDetail} />}
     </div>
   );
 }
@@ -1886,7 +1915,7 @@ function ModelPortfolioSection({ onSubscribe }: { onSubscribe?: () => void }) {
 
   return (
     <div>
-      <h3 className="text-lg font-semibold mb-3">Модельный портфель</h3>
+      <h3 className="text-lg font-semibold mb-3">{t('portfolio.modelPortfolio')}</h3>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <h3 className="text-lg font-semibold mb-3">{t('portfolio.metrics')}</h3>
@@ -1975,6 +2004,7 @@ function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
   };
 
   const removePosition = async (id: string) => {
+    if (!window.confirm(t('settings.deleteConfirm', { id }))) return;
     setBusy(true);
     try {
       await api.portfolio.removePosition(id);
@@ -1985,45 +2015,46 @@ function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
     } finally { setBusy(false); }
   };
 
+  const myPosTitle = t('portfolio.myPositions');
   if (loading) return (
     <div>
-      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <h3 className="text-lg font-semibold mb-3">{myPosTitle}</h3>
       <LoadingSkeleton />
     </div>
   );
   if (locked) return (
     <div>
-      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <h3 className="text-lg font-semibold mb-3">{myPosTitle}</h3>
       <UpgradePrompt onSubscribe={onSubscribe} />
     </div>
   );
   if (error) return (
     <div>
-      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <h3 className="text-lg font-semibold mb-3">{myPosTitle}</h3>
       <ErrorBanner message={error} />
     </div>
   );
 
   return (
     <div>
-      <h3 className="text-lg font-semibold mb-3">Мои позиции</h3>
+      <h3 className="text-lg font-semibold mb-3">{myPosTitle}</h3>
 
       {income && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
-            <p className="text-xs text-gray-400">Вложено всего</p>
+            <p className="text-xs text-gray-400">{t('portfolio.totalInvested')}</p>
             <p className="text-lg font-bold font-mono">{income.total_invested.toFixed(2)}</p>
           </div>
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
-            <p className="text-xs text-gray-400">Годовой доход</p>
+            <p className="text-xs text-gray-400">{t('portfolio.annualIncome')}</p>
             <p className="text-lg font-bold font-mono text-emerald-400">{income.annual_income.toFixed(2)}</p>
           </div>
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
-            <p className="text-xs text-gray-400">Доходность на вложения</p>
+            <p className="text-xs text-gray-400">{t('portfolio.yieldOnCost')}</p>
             <p className="text-lg font-bold font-mono">{income.yield_on_cost.toFixed(2)}%</p>
           </div>
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
-            <p className="text-xs text-gray-400">Следующая выплата</p>
+            <p className="text-xs text-gray-400">{t('portfolio.nextPayment')}</p>
             <p className="text-lg font-bold font-mono">{income.next_payment ? new Date(income.next_payment).toLocaleDateString() : '—'}</p>
           </div>
         </div>
@@ -2036,7 +2067,7 @@ function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
               <tr className="border-b border-gray-800 text-gray-400">
                 <th className="text-left p-3">{t('common.name')}</th>
                 <th className="text-left p-3">{t('common.currencyShort')}</th>
-                <th className="text-right p-3">Сумма</th>
+                <th className="text-right p-3">{t('portfolio.amount')}</th>
                 <th className="text-right p-3">{t('common.ytm')}</th>
                 <th className="text-right p-3">{t('common.price')}</th>
                 <th className="text-right p-3"></th>
@@ -2063,12 +2094,12 @@ function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
             </tbody>
           </table>
         ) : (
-          <EmptyState message={'Позиций пока нет'} />
+          <EmptyState message={t('portfolio.noPositions')} />
         )}
       </div>
 
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-        <h4 className="text-sm font-semibold mb-3">Добавить позицию</h4>
+        <h4 className="text-sm font-semibold mb-3">{t('portfolio.addPosition')}</h4>
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex-1 min-w-[140px]">
             <label className="text-xs text-gray-400 block mb-1">{t('common.id')}</label>
@@ -2081,7 +2112,7 @@ function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
           </div>
           <button onClick={addPosition} disabled={busy}
-            className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">Добавить</button>
+            className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm transition-colors">{t('alerts.add')}</button>
         </div>
       </div>
     </div>
@@ -2146,7 +2177,7 @@ function AlertsPage({ onSubscribe }: { onSubscribe?: () => void }) {
       <h2 className="text-2xl font-bold">{t('nav.alerts')}</h2>
 
       <section>
-        <h3 className="text-lg font-semibold mb-3">Системные уведомления</h3>
+        <h3 className="text-lg font-semibold mb-3">{t('alerts.systemNotifications')}</h3>
         {loading ? <LoadingSkeleton /> : locked ? <UpgradePrompt onSubscribe={onSubscribe} /> : error ? <ErrorBanner message={error} /> : (
           (data ?? []).length > 0 ? (
             <div className="space-y-3">
@@ -2167,7 +2198,7 @@ function AlertsPage({ onSubscribe }: { onSubscribe?: () => void }) {
       </section>
 
       <section>
-        <h3 className="text-lg font-semibold mb-3">Мои алерты</h3>
+        <h3 className="text-lg font-semibold mb-3">{t('alerts.myAlerts')}</h3>
         <UserAlertsPanel rules={rules} feed={feed} busy={busy} onAdd={addRule} onRemove={removeRule} emptyLabel={t('alerts.noRules')} />
       </section>
     </div>
@@ -2249,12 +2280,12 @@ function UserAlertsPanel({
 
   return (
     <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-        <Bell size={16} className="text-emerald-400" /> {t('alerts.title')}
-        {feed.length > 0 && (
-          <span className="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded ml-auto">{t('alerts.triggered', { n: feed.length })}</span>
-        )}
-      </h3>
+        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <Bell size={16} className="text-emerald-400" /> {t('alerts.myAlerts')}
+          {feed.length > 0 && (
+            <span className="text-xs bg-blue-900 text-blue-300 px-2 py-0.5 rounded ml-auto">{t('alerts.triggeredBadge', { n: feed.length })}</span>
+          )}
+        </h3>
 
       {feed.length > 0 && (
         <div className="mb-3 space-y-1">
@@ -2547,15 +2578,15 @@ function BondCalculator() {
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-5 grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-xs text-gray-400">{t('calc.cleanPrice')}</p>
-            <p className="text-xl font-bold text-emerald-400">{result.clean.toFixed(2)}</p>
+            <p className="text-xl font-bold text-emerald-400">{result.clean.toFixed(2)} {t('calc.currency')}</p>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-xs text-gray-400">{t('calc.accrued')}</p>
-            <p className="text-xl font-bold text-amber-400">{result.accrued.toFixed(2)}</p>
+            <p className="text-xl font-bold text-amber-400">{result.accrued.toFixed(2)} {t('calc.currency')}</p>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-xs text-gray-400">{t('calc.dirtyPrice')}</p>
-            <p className="text-xl font-bold text-white">{result.dirty.toFixed(2)}</p>
+            <p className="text-xl font-bold text-white">{result.dirty.toFixed(2)} {t('calc.currency')}</p>
           </div>
           <div className="bg-gray-800/50 rounded-lg p-3">
             <p className="text-xs text-gray-400">{t('calc.currentYield')}</p>
@@ -2598,7 +2629,7 @@ function BondRow({ bond }: { bond: Bond }) {
 }
 
 function CurrencyBadge({ currency }: { currency: string }) {
-  const colors: Record<string, string> = { USD: 'bg-blue-900 text-blue-300', BYN: 'bg-green-900 text-green-300', EUR: 'bg-purple-900 text-green-300', XAU: 'bg-amber-900 text-amber-300', XAG: 'bg-gray-700 text-gray-300', XPT: 'bg-slate-700 text-slate-300' };
+  const colors: Record<string, string> = { USD: 'bg-blue-900 text-blue-300', BYN: 'bg-green-900 text-green-300', EUR: 'bg-purple-900 text-purple-300', XAU: 'bg-amber-900 text-amber-300', XAG: 'bg-gray-700 text-gray-300', XPT: 'bg-slate-700 text-slate-300' };
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[currency] || 'bg-gray-800 text-gray-400'}`}>{currency}</span>;
 }
 

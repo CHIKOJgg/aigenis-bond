@@ -1,7 +1,7 @@
 """Partner API authentication and rate limiting.
 
 Partners authenticate with a static API key sent in the ``X-Aigenis-Api-Key``
-header. Only the SHA-256 hash of the key is stored (see ``PartnerKeyORM``), so
+header. The key is hashed with bcrypt before storage (see ``PartnerKeyORM``), so
 a database leak cannot expose live credentials. Each key carries its own
 per-minute rate budget (``rate_limit``), enforced independently of the
 user/IP limiter in ``api.main``.
@@ -9,12 +9,12 @@ user/IP limiter in ``api.main``.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 import threading
 import time
 from collections import defaultdict
 
+import bcrypt
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy import select
 
@@ -32,7 +32,7 @@ def generate_api_key() -> tuple[str, str]:
 
 
 def hash_api_key(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return bcrypt.hashpw(raw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 async def get_partner_key(
@@ -40,16 +40,20 @@ async def get_partner_key(
 ) -> PartnerKeyORM:
     if not x_aigenis_api_key:
         raise HTTPException(status_code=401, detail="Missing X-Aigenis-Api-Key header")
-    key_hash = hash_api_key(x_aigenis_api_key)
+    # bcrypt hash is salted — iterate through active keys and verify one by one.
     async with session_scope() as session:
-        row = (
+        rows = (
             await session.execute(
-                select(PartnerKeyORM).where(PartnerKeyORM.key_hash == key_hash)
+                select(PartnerKeyORM).where(PartnerKeyORM.active.is_(True))
             )
-        ).scalar_one_or_none()
-    if row is None or not row.active:
-        raise HTTPException(status_code=401, detail="Invalid or inactive API key")
-    return row
+        ).scalars().all()
+    for key in rows:
+        try:
+            if bcrypt.checkpw(x_aigenis_api_key.encode("utf-8"), key.key_hash.encode("utf-8")):
+                return key
+        except (ValueError, Exception):
+            continue
+    raise HTTPException(status_code=401, detail="Invalid or inactive API key")
 
 
 _partner_hits: dict[int, list[float]] = defaultdict(list)

@@ -7,7 +7,6 @@ use the partner API key (``X-Aigenis-Api-Key``) and are quota-limited per key.
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 from datetime import UTC, datetime
 
@@ -204,7 +203,7 @@ async def create_webhook(
     key: PartnerKeyORM = Depends(partner_rate_limit),
 ):
     lang = _lang(request)
-    if not body.url.startswith(("http://", "https://")):
+    if not body.url.startswith("https://"):
         raise HTTPException(status_code=400, detail=tr(lang, "invalid_url"))
     bad = [e for e in body.events if e not in SUPPORTED_EVENTS]
     if bad:
@@ -329,25 +328,28 @@ async def partner_bond_analysis(internal_id: str, _key: PartnerKeyORM = Depends(
 @router.get("/usage")
 async def partner_usage(request: Request):
     """Per-key usage analytics: request count, endpoints hit, last activity."""
+    import bcrypt as _bcrypt
     api_key = request.headers.get("X-Aigenis-Api-Key", "")
     if not api_key:
         raise HTTPException(status_code=401, detail="missing API key")
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     async with session_scope() as session:
-        result = await session.execute(
-            select(PartnerKeyORM).where(PartnerKeyORM.key_hash == key_hash)
-        )
-        key = result.scalar_one_or_none()
-        if key is None:
-            raise HTTPException(status_code=404, detail="key not found")
-    return {
-        "key_id": key.id,
-        "name": key.name,
-        "tier": key.tier,
-        "rate_limit": key.rate_limit,
-        "active": key.active,
-        "created_at": key.created_at.isoformat() if key.created_at else None,
-    }
+        rows = (
+            await session.execute(select(PartnerKeyORM).where(PartnerKeyORM.active.is_(True)))
+        ).scalars().all()
+        for row in rows:
+            try:
+                if _bcrypt.checkpw(api_key.encode("utf-8"), row.key_hash.encode("utf-8")):
+                    return {
+                        "key_id": row.id,
+                        "name": row.name,
+                        "tier": row.tier,
+                        "rate_limit": row.rate_limit,
+                        "active": row.active,
+                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                    }
+            except (ValueError, Exception):
+                continue
+        raise HTTPException(status_code=404, detail="key not found")
 
 
 # --------------------------------------------------------------------------- #
@@ -361,8 +363,19 @@ class PartnerRequestPayload(BaseModel):
 
 
 @router.post("/request")
-async def request_partner_key(payload: PartnerRequestPayload):
-    ...
+async def request_partner_key(payload: PartnerRequestPayload, request: Request):
+    """Receive a partner lead request and log it for follow-up."""
+    lang = get_lang(request)
+    logger.info(
+        "partner_lead_request",
+        name=payload.name,
+        email=payload.email,
+        company=payload.company,
+        message=payload.message,
+    )
+    return {"ok": True, "message": tr(lang, "partner_request_submitted")}
+
+
 async def _iter_bonds():
     async with session_scope() as session:
         rows = (await session.execute(select(BondORM))).scalars().all()

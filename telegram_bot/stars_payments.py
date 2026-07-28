@@ -107,7 +107,24 @@ async def cb_stars_close(callback_query) -> None:
 
 @stars_router.pre_checkout_query()
 async def on_pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
-    # For Stars (XTR) we accept all pre-checkout queries.
+    # Validate the invoice payload before accepting.
+    payload = (getattr(pre_checkout_query, "invoice_payload", None) or "")
+    if not payload.startswith("stars_sub:"):
+        logger.warning("stars_pre_checkout_invalid_payload", payload=payload)
+        await pre_checkout_query.answer(ok=False, error_message="Invalid subscription payload")
+        return
+    tier = payload.split(":", 1)[1]
+    if tier not in STAR_PLANS:
+        logger.warning("stars_pre_checkout_unknown_tier", tier=tier, payload=payload)
+        await pre_checkout_query.answer(ok=False, error_message="Unknown plan tier")
+        return
+    # Verify the total amount matches the plan price.
+    total = sum(getattr(p, "amount", 0) for p in (getattr(pre_checkout_query, "prices", None) or []))
+    expected = STAR_PLANS[tier].stars
+    if total != expected:
+        logger.warning("stars_pre_checkout_amount_mismatch", total=total, expected=expected)
+        await pre_checkout_query.answer(ok=False, error_message="Price mismatch")
+        return
     await pre_checkout_query.answer(ok=True)
 
 

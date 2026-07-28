@@ -196,10 +196,18 @@ def _rate_identity_and_limit(request: Request) -> tuple[str, int]:
     separately by the RequireFeature dependency on each endpoint.
     """
     from api.access_control import _get_current_user_from_request
+    from telegram_bot.subscriptions import _TIER_RANK
 
     user_id = _get_current_user_from_request(request)
     if user_id:
-        return f"user:{user_id}", _RATE_LIMIT
+        tier = getattr(request.user, "subscription_tier", "free") if hasattr(request, "user") else "free"
+    else:
+        tier = "free"
+    # Tier-aware rate limits: free=60, pro=120, enterprise=300
+    _TIER_LIMITS = {"free": _RATE_LIMIT, "pro": _RATE_LIMIT * 2, "enterprise": _RATE_LIMIT * 5}
+    limit = _TIER_LIMITS.get(tier, _RATE_LIMIT)
+    if user_id:
+        return f"user:{user_id}", limit
     return f"ip:{_client_ip(request)}", _RATE_LIMIT
 
 
@@ -494,17 +502,21 @@ def _validate_production_config() -> None:
     """Surface insecure configuration at startup instead of failing silently.
 
     Hard requirements (missing secret) are enforced earlier in
-    ``api.auth.service._resolve_jwt_secret``; here we only warn loudly.
+    ``api.auth.service._resolve_jwt_secret``; here we block startup for
+    any detectable insecure configuration.
     """
     from api.auth.service import is_jwt_secret_weak
 
     if is_jwt_secret_weak():
-        logger.warning(
-            "security_risk: JWT_SECRET_KEY is using an insecure default — set a strong random "
-            "secret via JWT_SECRET_KEY before exposing this service."
+        raise RuntimeError(
+            "SECURITY: JWT_SECRET_KEY is using an insecure default. "
+            "Set a strong random secret via JWT_SECRET_KEY before starting this service."
         )
     db_url = os.environ.get("DATABASE_URL", "")
     if "aigenis:aigenis" in db_url or ":aigenis@" in db_url:
-        logger.warning("security_risk: DATABASE_URL uses the default credentials — change POSTGRES_PASSWORD.")
+        raise RuntimeError(
+            "SECURITY: DATABASE_URL contains the default credentials 'aigenis:aigenis'. "
+            "Change POSTGRES_PASSWORD and update DATABASE_URL accordingly."
+        )
 
 

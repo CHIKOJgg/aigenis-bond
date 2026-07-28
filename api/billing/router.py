@@ -152,8 +152,19 @@ async def create_payment(
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
     base = req.success_url
-    if base.startswith("/"):
-        base = f"https://{req.success_url}"  # fallback
+    # Security: validate success_url to prevent open redirect phishing.
+    # Only allow absolute HTTPS URLs to known-safe domains or relative paths.
+    from urllib.parse import urlparse
+    parsed = urlparse(base)
+    if not parsed.scheme and not parsed.netloc:
+        base = base.lstrip("/")
+    elif parsed.scheme not in ("https",) or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="success_url must be an HTTPS URL or relative path")
+    elif parsed.netloc not in ("aigenis.by", "www.aigenis.by", "invest.aigenis.by", "localhost"):
+        from scraper.config import get_settings
+        allowed_domains = {get_settings().web_url.rstrip("/").split("://")[-1].split("/")[0]} if get_settings().web_url else set()
+        if parsed.netloc not in allowed_domains:
+            raise HTTPException(status_code=400, detail="success_url domain is not allowed")
 
     result = await billing_service.create_payment(
         user=user,

@@ -1,5 +1,6 @@
 import { AlertTriangle, TrendingUp } from 'lucide-react';
 import { usePaywall } from '../lib/PaywallContext';
+import { useI18n } from '../i18n';
 import { tierLimits } from '../lib/tiers';
 
 interface UsageLimitsProps {
@@ -9,6 +10,7 @@ interface UsageLimitsProps {
 }
 
 export default function UsageLimits({ tier, bondsUsed, currenciesUsed }: UsageLimitsProps) {
+  const { t } = useI18n();
   const { openPaywall } = usePaywall();
   const limits = tierLimits(tier);
 
@@ -23,12 +25,12 @@ export default function UsageLimits({ tier, bondsUsed, currenciesUsed }: UsageLi
     <div className="rounded-xl bg-amber-900/20 border border-amber-500/20 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <AlertTriangle size={16} className="text-amber-400" />
-        <span className="text-sm font-medium text-amber-300">Лимиты Free-аккаунта</span>
+        <span className="text-sm font-medium text-amber-300">{t('usageLimits.title')}</span>
       </div>
 
       <div className="space-y-1">
         <div className="flex justify-between text-xs">
-          <span className="text-slate-400">Облигации</span>
+          <span className="text-slate-400">{t('usageLimits.bonds')}</span>
           <span className="text-amber-300">{bondsUsed} / {bondsLimit}</span>
         </div>
         <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
@@ -39,7 +41,7 @@ export default function UsageLimits({ tier, bondsUsed, currenciesUsed }: UsageLi
 
       <div className="space-y-1">
         <div className="flex justify-between text-xs">
-          <span className="text-slate-400">Валюты</span>
+          <span className="text-slate-400">{t('usageLimits.currencies')}</span>
           <span className="text-amber-300">{currenciesUsed} / {currenciesLimit}</span>
         </div>
         <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
@@ -50,7 +52,7 @@ export default function UsageLimits({ tier, bondsUsed, currenciesUsed }: UsageLi
 
       <button onClick={() => openPaywall('default')}
         className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium transition-colors">
-        <TrendingUp size={14} /> Обновить до Pro — безлимит
+        <TrendingUp size={14} /> {t('usageLimits.upgrade')}
       </button>
     </div>
   );

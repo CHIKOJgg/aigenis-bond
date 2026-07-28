@@ -132,8 +132,10 @@ services:
       SENTRY_DSN: ${SENTRY_DSN:-}
       AIGENIS_ENVIRONMENT: ${AIGENIS_ENVIRONMENT:-production}
       # --- Database ---
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
-      DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:-postgresql://aigenis:aigenis@postgres:5432/aigenis}
+      # Security: POSTGRES_PASSWORD is required (enforced in postgres service above).
+      # Do NOT use the old default "aigenis:aigenis" in production.
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-aigenis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aigenis}}
+      DATABASE_URL_SYNC: ${DATABASE_URL_SYNC:-postgresql://${POSTGRES_USER:-aigenis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aigenis}}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
       DB_POOL_OVERFLOW: ${DB_POOL_OVERFLOW:-20}
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30.0}
@@ -182,7 +184,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-aigenis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aigenis}}
       AIGENIS_HEADLESS: "true"
       AIGENIS_USE_STEALTH: "false"
       AIGENIS_WEB_URL: ${AIGENIS_WEB_URL:-}
@@ -247,7 +249,7 @@ services:
     # ports:
     #   - "${API_PORT:-8000}:8000"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://aigenis:aigenis@postgres:5432/aigenis}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-aigenis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aigenis}}
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
       DEMO_MODE: ${DEMO_MODE:-1}
       # API runs behind the nginx frontend; trust the last X-Forwarded-For hop

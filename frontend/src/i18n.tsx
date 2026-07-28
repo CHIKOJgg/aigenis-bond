@@ -215,6 +215,21 @@ const ru: Dict = {
   'maturity.>10y': 'более 10 л',
   'maturity.expired': 'погашена',
   'detail.couponRate': 'Ставка купона',
+  'detail.tabOverview': 'Обзор',
+  'detail.tabAnalytics': 'Аналитика',
+  'detail.tabSimilar': 'Похожие',
+  'detail.tabNews': 'Новости',
+  'detail.analyze': 'Анализ',
+  'detail.income': 'Доход',
+  'detail.loadAnalytics': 'Загрузить аналитику',
+  'detail.loadSimilar': 'Загрузить',
+  'detail.similarPrompt': 'Найдите похожие облигации',
+  'detail.analyticsDesc': 'Графики цены, доходности и скоринга за 6M/1Y/3Y',
+  'detail.newsEmpty': 'Новости по эмитенту',
+  'detail.annualIncome': 'Годовой доход',
+  'detail.yieldOnCost': 'Доходность',
+  'detail.upgradePrompt': 'Доступно по подписке Pro',
+  'detail.upgradeCta': 'Открыть Pro',
   'landing.features': 'Возможности',
   'landing.pricing': 'Тарифы',
   'landing.forBusiness': 'Для бизнеса',
@@ -501,6 +516,26 @@ const ru: Dict = {
   'pain.p5Title': 'Сложно оптимизировать портфель',
   'pain.p5Desc': 'Распределение активов вручную не учитывает корреляции и VaR. Это как строить дом без проекта.',
   'pain.noTools': 'Такие инструменты раньше были только у Уолл-стрит',
+  'portfolio.modelPortfolio': 'Модельный портфель',
+  'portfolio.myPositions': 'Мои позиции',
+  'portfolio.addPosition': 'Добавить позицию',
+  'portfolio.noPositions': 'Позиций пока нет',
+  'portfolio.totalInvested': 'Вложено всего',
+  'portfolio.annualIncome': 'Годовой доход',
+  'portfolio.yieldOnCost': 'Доходность на вложения',
+  'portfolio.nextPayment': 'Следующая выплата',
+  'portfolio.amount': 'Сумма',
+  'alerts.systemNotifications': 'Системные уведомления',
+  'alerts.myAlerts': 'Мои алерты',
+  'alerts.triggeredBadge': '{n} сработало',
+  'dash.topCompanies': 'Топ компаний-эмитентов',
+  'dash.viewAll': 'Смотреть всё',
+  'search.noResults': 'Ничего не найдено по запросу "{query}"',
+  'demo.banner': 'DEMO — ознакомительный режим. Данные могут быть неполными.',
+  'demo.fullVersion': 'Открыть полную версию →',
+  'settings.deleteConfirm': 'Вы уверены, что хотите удалить позицию {id}?',
+  'payment.tierUpdateFailed': 'Статус подписки не обновился. Попробуйте перезагрузить страницу или обратиться в поддержку.',
+  'calc.currency': 'Валюта',
 
   'feat.result1': 'Никаких упущенных данных',
   'feat.result1Desc': 'Автоматический сбор 100+ облигаций с MOEX: цены, доходности, купоны, история. Вы всегда видите полную картину.',
@@ -573,6 +608,14 @@ const ru: Dict = {
   'testimonials.author1': 'Дмитрий С., управляющий активами',
   'testimonials.q2': 'Telegram-алерты спасли от просадки — получил уведомление об изменении цены за минуты. Успел выйти до падения.',
   'testimonials.author2': 'Елена В., трейдер',
+
+  'usageLimits.title': 'Лимиты Free-аккаунта',
+  'usageLimits.bonds': 'Облигации',
+  'usageLimits.currencies': 'Валюты',
+  'usageLimits.upgrade': 'Обновить до Pro — безлимит',
+  'upgradeCta.title': 'Эта функция доступна в Pro',
+  'upgradeCta.description': 'Расблокируйте полный функционал для анализа облигаций',
+  'upgradeCta.unlock': 'Расблокировать',
 };
 
 const en: Dict = {
@@ -837,6 +880,21 @@ const en: Dict = {
   'maturity.>10y': 'over 10 y',
   'maturity.expired': 'matured',
   'detail.couponRate': 'Coupon Rate',
+  'detail.tabOverview': 'Overview',
+  'detail.tabAnalytics': 'Analytics',
+  'detail.tabSimilar': 'Similar',
+  'detail.tabNews': 'News',
+  'detail.analyze': 'Analyze',
+  'detail.income': 'Income',
+  'detail.loadAnalytics': 'Load analytics',
+  'detail.loadSimilar': 'Load',
+  'detail.similarPrompt': 'Find similar bonds',
+  'detail.analyticsDesc': 'Price, yield and scoring charts over 6M/1Y/3Y',
+  'detail.newsEmpty': 'News about the issuer',
+  'detail.annualIncome': 'Annual income',
+  'detail.yieldOnCost': 'Yield on cost',
+  'detail.upgradePrompt': 'Available on Pro plan',
+  'detail.upgradeCta': 'Open Pro',
   'landing.features': 'Features',
   'landing.pricing': 'Pricing',
   'landing.forBusiness': 'For business',
@@ -1069,6 +1127,26 @@ const en: Dict = {
   'pain.p5Title': 'Optimizing a portfolio is hard',
   'pain.p5Desc': 'Manual allocation ignores correlations and VaR. It\'s like building a house without a blueprint.',
   'pain.noTools': 'Such tools used to be available only on Wall Street',
+  'portfolio.modelPortfolio': 'Model Portfolio',
+  'portfolio.myPositions': 'My Positions',
+  'portfolio.addPosition': 'Add Position',
+  'portfolio.noPositions': 'No positions yet',
+  'portfolio.totalInvested': 'Total Invested',
+  'portfolio.annualIncome': 'Annual Income',
+  'portfolio.yieldOnCost': 'Yield on Cost',
+  'portfolio.nextPayment': 'Next Payment',
+  'portfolio.amount': 'Amount',
+  'alerts.systemNotifications': 'System Notifications',
+  'alerts.myAlerts': 'My Alerts',
+  'alerts.triggeredBadge': '{n} triggered',
+  'dash.topCompanies': 'Top Issuer Companies',
+  'dash.viewAll': 'View All',
+  'search.noResults': 'No results for "{query}"',
+  'demo.banner': 'DEMO — preview mode. Data may be incomplete.',
+  'demo.fullVersion': 'Open full version →',
+  'settings.deleteConfirm': 'Are you sure you want to delete position {id}?',
+  'payment.tierUpdateFailed': 'Subscription status did not update. Try refreshing the page or contact support.',
+  'calc.currency': 'Currency',
 
   'feat.result1': 'Never miss a data point',
   'feat.result1Desc': 'Automatic collection of 100+ bonds from MOEX: prices, yields, coupons, history. You always see the full picture.',
@@ -1141,6 +1219,14 @@ const en: Dict = {
   'testimonials.author1': 'Dmitry S., asset manager',
   'testimonials.q2': 'Telegram alerts saved me from a drawdown — got a price change notification within minutes. Exited before the drop.',
   'testimonials.author2': 'Elena V., trader',
+
+  'usageLimits.title': 'Free account limits',
+  'usageLimits.bonds': 'Bonds',
+  'usageLimits.currencies': 'Currencies',
+  'usageLimits.upgrade': 'Upgrade to Pro — unlimited',
+  'upgradeCta.title': 'This feature is available in Pro',
+  'upgradeCta.description': 'Unlock the full feature set for bond analysis',
+  'upgradeCta.unlock': 'Unlock',
 };
 
 const by: Dict = {
@@ -1252,16 +1338,24 @@ export function useI18n(): I18nValue {
 
 export function LanguageToggle() {
   const { lang, setLang } = useI18n();
+  const cycle = () => {
+    if (lang === 'ru') setLang('en');
+    else if (lang === 'en') setLang('by');
+    else setLang('ru');
+  };
+  const label = lang === 'ru' ? 'Switch to English' : lang === 'en' ? 'Switch to Belarusian' : 'Переключить на русский';
   return (
     <button
-      onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+      onClick={cycle}
       className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 whitespace-nowrap"
-      aria-label={lang === 'ru' ? 'Switch to English' : 'Переключить на русский'}
-      title={lang === 'ru' ? 'Switch to English' : 'Переключить на русский'}
+      aria-label={label}
+      title={label}
     >
       <span className={lang === 'ru' ? 'font-semibold text-white' : ''}>RU</span>
       <span className="text-gray-600">/</span>
       <span className={lang === 'en' ? 'font-semibold text-white' : ''}>EN</span>
+      <span className="text-gray-600">/</span>
+      <span className={lang === 'by' ? 'font-semibold text-white' : ''}>BY</span>
     </button>
   );
 }

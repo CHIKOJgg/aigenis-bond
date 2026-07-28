@@ -4,6 +4,7 @@ API docs: https://yookassa.ru/developers/api
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -15,6 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.logging import get_logger
 from scraper.orm import PartnerKeyORM, PartnerReferralORM, SubscriptionORM, UserORM
+
+# Per-payment lock to prevent TOCTOU race on concurrent webhook deliveries.
+_webhook_locks: dict[str, asyncio.Lock] = {}
 
 logger = get_logger("api.billing")
 
@@ -218,78 +222,82 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     if not user_id or not payment_id:
         return
 
-    if plan not in PLANS:
-        logger.warning("payment_unknown_plan", plan=plan, payment_id=payment_id)
-        return
-    plan_config = PLANS[plan]
-    duration = plan_config["duration_days"]
+    # TOCTOU guard: serialize concurrent webhook deliveries for the same payment
+    # to prevent double-granting subscription days under concurrent webhook calls.
+    lock = _webhook_locks.setdefault(payment_id, asyncio.Lock())
+    async with lock:
+        if plan not in PLANS:
+            logger.warning("payment_unknown_plan", plan=plan, payment_id=payment_id)
+            return
+        plan_config = PLANS[plan]
+        duration = plan_config["duration_days"]
 
-    # Verify the amount actually paid matches the plan price. This closes the
-    # gap where a crafted payment carries metadata for a more expensive plan
-    # than was actually paid for.
-    try:
-        paid = float(obj.get("amount", {}).get("value", 0))
-        expected = float(plan_config["price"])
-        paid_currency = obj.get("amount", {}).get("currency", CURRENCY)
-    except (TypeError, ValueError):
-        logger.warning("payment_amount_unparseable", payment_id=payment_id)
-        return
-    if paid + 1e-9 < expected or paid_currency != CURRENCY:
-        logger.warning(
-            "payment_amount_mismatch",
-            payment_id=payment_id,
-            plan=plan,
-            paid=paid,
-            expected=expected,
-            currency=paid_currency,
-        )
-        return
-
-    async with session_scope() as session:
-        # Find or create subscription record
-        sub_result = await session.execute(
-            select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
-        )
-        sub = sub_result.scalar_one_or_none()
-        if not sub:
-            sub = SubscriptionORM(user_id=user_id)
-            session.add(sub)
-
-        # Idempotency: skip if this payment was already processed
-        if sub.yookassa_payment_id == payment_id and sub.status == "active":
-            await session.commit()
+        # Verify the amount actually paid matches the plan price. This closes the
+        # gap where a crafted payment carries metadata for a more expensive plan
+        # than was actually paid for.
+        try:
+            paid = float(obj.get("amount", {}).get("value", 0))
+            expected = float(plan_config["price"])
+            paid_currency = obj.get("amount", {}).get("currency", CURRENCY)
+        except (TypeError, ValueError):
+            logger.warning("payment_amount_unparseable", payment_id=payment_id)
+            return
+        if paid + 1e-9 < expected or paid_currency != CURRENCY:
+            logger.warning(
+                "payment_amount_mismatch",
+                payment_id=payment_id,
+                plan=plan,
+                paid=paid,
+                expected=expected,
+                currency=paid_currency,
+            )
             return
 
-        # Update subscription. A repeat purchase extends from the later of the
-        # current expiry or now, so paying again never shortens access.
-        sub.yookassa_payment_id = payment_id
-        sub.plan = plan
-        sub.status = "active"
-        now = datetime.now(UTC)
-        base = sub.current_period_end
-        if base is not None and base.tzinfo is None:
-            base = base.replace(tzinfo=UTC)
-        start = max(base, now) if base and base > now else now
-        sub.current_period_start = now
-        sub.current_period_end = start + timedelta(days=duration)
-
-        # Sync to user (single source of truth for gating)
-        user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
-        user = user_result.scalar_one_or_none()
-        if user:
-            user.subscription_tier = plan
-            user.subscription_expires_at = sub.current_period_end
-
-        await session.commit()
-        logger.info("subscription_activated", user_id=user_id, plan=plan, payment_id=payment_id)
-
-        # Attribute the conversion to a partner/referrer, if any.
-        ref_code = (metadata.get("referral_code") or "").strip()
-        if ref_code:
-            await _attribute_referral(
-                session, ref_code, user_id, plan,
-                paid, paid_currency,
+        async with session_scope() as session:
+            # Find or create subscription record
+            sub_result = await session.execute(
+                select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
             )
+            sub = sub_result.scalar_one_or_none()
+            if not sub:
+                sub = SubscriptionORM(user_id=user_id)
+                session.add(sub)
+
+            # Idempotency: skip if this payment was already processed
+            if sub.yookassa_payment_id == payment_id and sub.status == "active":
+                await session.commit()
+                return
+
+            # Update subscription. A repeat purchase extends from the later of the
+            # current expiry or now, so paying again never shortens access.
+            sub.yookassa_payment_id = payment_id
+            sub.plan = plan
+            sub.status = "active"
+            now = datetime.now(UTC)
+            base = sub.current_period_end
+            if base is not None and base.tzinfo is None:
+                base = base.replace(tzinfo=UTC)
+            start = max(base, now) if base and base > now else now
+            sub.current_period_start = now
+            sub.current_period_end = start + timedelta(days=duration)
+
+            # Sync to user (single source of truth for gating)
+            user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
+            user = user_result.scalar_one_or_none()
+            if user:
+                user.subscription_tier = plan
+                user.subscription_expires_at = sub.current_period_end
+
+            await session.commit()
+            logger.info("subscription_activated", user_id=user_id, plan=plan, payment_id=payment_id)
+
+            # Attribute the conversion to a partner/referrer, if any.
+            ref_code = (metadata.get("referral_code") or "").strip()
+            if ref_code:
+                await _attribute_referral(
+                    session, ref_code, user_id, plan,
+                    paid, paid_currency,
+                )
 
 
 async def _attribute_referral(
@@ -347,6 +355,10 @@ async def _attribute_referral(
         referred_user_id=referred_user_id,
         plan=plan,
     )
+
+
+async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
+    """Handle a canceled YooKassa payment — cancel the subscription."""
     from scraper.db import session_scope
 
     user_id = int(metadata.get("user_id", 0))
@@ -365,7 +377,6 @@ async def _attribute_referral(
         user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
         user = user_result.scalar_one_or_none()
         if user and user.subscription_tier != "free" and sub and sub.yookassa_payment_id == payment_id:
-            # Only downgrade if this was their active payment
             user.subscription_tier = "free"
             user.subscription_expires_at = None
 

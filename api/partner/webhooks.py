@@ -14,9 +14,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
+import socket
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -95,8 +98,32 @@ async def delete_webhook(partner_key_id: int, webhook_id: int) -> bool:
         return True
 
 
+def _is_private_host(url: str) -> bool:
+    """Block SSRF by rejecting webhook URLs pointing to private/loopback IPs."""
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    # Reject obvious private hostnames
+    if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    if host.endswith(".local", ".internal", ".localhost"):
+        return True
+    # Resolve hostname and check its IP ranges
+    try:
+        addr = socket.getaddrinfo(host, 80, socket.AF_INET)
+        for family, _type, _proto, _canonname, sockaddr in addr:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+                return True
+    except (socket.gaierror, ValueError, OSError):
+        pass
+    return False
+
+
 async def deliver_webhook(wh: WebhookORM, event_type: str, payload: dict) -> bool:
     """POST a signed event to a single webhook. Returns True on 2xx."""
+    # SSRF guard: reject private/loopback IPs
+    if _is_private_host(wh.url):
+        return False
     body = json.dumps(
         {
             "event": event_type,

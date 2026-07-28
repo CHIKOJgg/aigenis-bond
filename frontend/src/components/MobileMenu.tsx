@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { X, Star, User, Lock } from 'lucide-react';
+import { useI18n } from '../i18n';
 
 interface NavItem {
   id: string;
@@ -30,6 +32,16 @@ export default function MobileMenu({
   onSubscribe,
   onSettings,
 }: MobileMenuProps) {
+  const { t } = useI18n();
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const mainPages = ['dashboard', 'bonds', 'scores', 'portfolio'];
@@ -44,7 +56,7 @@ export default function MobileMenu({
       <div className="fixed bottom-0 left-0 right-0 z-[61] md:hidden bg-gray-900 rounded-t-2xl max-h-[70vh] overflow-y-auto animate-slideUp">
         <div className="sticky top-0 bg-gray-900 px-4 pt-4 pb-2 border-b border-gray-800">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Навигация</h3>
+            <h3 className="text-sm font-semibold text-white">{t('nav.menuOpen')}</h3>
             <button
               onClick={onClose}
               className="p-2 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition-colors"
@@ -89,7 +101,7 @@ export default function MobileMenu({
               className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm text-amber-400 hover:bg-amber-600/20 transition-colors"
             >
               <Star size={18} />
-              <span className="flex-1 text-left">Подписка</span>
+              <span className="flex-1 text-left">{t('nav.subscribe')}</span>
             </button>
           )}
 
@@ -101,7 +113,7 @@ export default function MobileMenu({
             className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm text-gray-300 hover:bg-gray-800 transition-colors"
           >
             <User size={18} />
-            <span className="flex-1 text-left">{userName || 'Настройки'}</span>
+            <span className="flex-1 text-left">{userName || t('nav.settings')}</span>
           </button>
         </div>
       </div>

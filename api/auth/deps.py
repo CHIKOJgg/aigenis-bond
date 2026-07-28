@@ -20,7 +20,13 @@ async def _get_current_user(
     payload = decode_token(credentials.credentials)
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return int(payload["sub"])
+    try:
+        sub = payload.get("sub")
+        if sub is None:
+            raise HTTPException(status_code=401, detail="Invalid token: missing subject")
+        return int(sub)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token: malformed subject")
 
 
 async def _get_session() -> AsyncIterator[AsyncSession]:
