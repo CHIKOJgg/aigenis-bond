@@ -12,16 +12,14 @@ cp .env.example .env
 # In .env make sure:
 #   DATA_SOURCE=moex
 #   DEMO_MODE=1
+#   AIGENIS_ENVIRONMENT=demo        # REQUIRED: production + DEMO_MODE=1 refuses to start (fail-closed paywall guard)
 #   SEO_PUBLIC_BASE_URL=https://demo.yourdomain.com
 
 # 3. Run demo stack (no paid source needed)
 docker compose up -d postgres redis parser api frontend
 
-# 4. Run MOEX data fetch (public, no auth)
-docker compose run --rm parser moex --currency RUB,USD,EUR
-
-# 5. Health check
-curl -f http://localhost/health
+# 4. Health check
+curl -f http://localhost:8000/health
 ```
 
 ## Public demo with Cloudflare Tunnel (optional)
@@ -53,7 +51,8 @@ All public routes work without login when DEMO_MODE=1:
 
 1. Top bonds by Score with currency filter
 2. Click any bond → full detail (Score, YTM, coupon, maturity)
-3. Click "Get API Key" on /partners → test key issued in Telegram (if bot configured) or shown on screen
+3. Click "Get API Key" on /partners → test key issued in Telegram (if bot configured) or shown on screen.
+   Self-served keys are trial-tier: listing + detail work, premium analysis (RV/ML) requires a paid key
 4. Widget at /widget → iframe embeddable on any site
 5. Pricing page with currency auto-detection (BYN for BY IP, RUB for RU, USD for others)
 
@@ -63,3 +62,4 @@ All public routes work without login when DEMO_MODE=1:
 - No Telegram bot needed for demo (bot commands won't work, but web UI is complete)
 - No YooKassa needed (paywall returns 402 upgrade hint)
 - All data is real (from MOEX ISS API)
+- Version: 4.0.0 (Monte Carlo forecast, Calmar optimizer, walk-forward CV, webhook security)

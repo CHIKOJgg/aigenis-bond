@@ -1,24 +1,30 @@
-Subject: Fixed Income product for Aigenis ecosystem / strategic deal
+Subject: Fixed Income analytics product for the Aigenis ecosystem
 
 Hi,
 
-I built a production-ready Fixed Income analytics product on top of your API. Key points:
+I built a production-ready Fixed Income analytics product on open MOEX ISS data. Key points:
 
-- MOEX ISS parser (RUB corporates TQCB + USD/EUR eurobonds TQOB, public, no login needed)
-- Reward/Risk Score 0-100 + ML (YTM regression + buy/hold/wait/avoid classifier)
+- MOEX parser: 1,488 bonds (RUB corporates TQCB + USD/EUR eurobonds TQOB, public, no login needed)
+- Reward/Risk Score 0-100 with explanation + verdict
 - Full Fixed Income Desk (Duration, Nelson-Siegel curve, RV, Carry, Repo, 7 stress scenarios)
-- Telegram bot + React SPA + Partner API + embedded widget
-- 102 tests, Docker Compose (9 services), CI/CD, Prometheus+Grafana
-- ~44k lines of code (Python 3.13 / FastAPI / React 19 / TypeScript)
+- ML (YTM regression + buy/hold/wait/avoid classifier, walk-forward CV)
+- Telegram bot + React SPA + Partner API + embedded widget + billing (Stars + YooKassa)
+- 298 tests, Docker Compose (9 services), CI/CD, Prometheus+Grafana
+- Python 3.13 / FastAPI / React / TypeScript
+
+Why it matters for Aigenis: your MOEX FAQ currently sends clients looking for bond
+analytics to cbonds.ru / finam.ru. This product brings that analytics in-house —
+premium tier content, Fixed Income desk, and a B2B module (API, widget, webhooks)
+for corporate clients, live on day one.
 
 Options:
-1. Code sale (license / white-label)
-2. I stay on contract - support + development
-3. Strategic acquisition (M&A)
+1. Code sale (IP transfer / white-label)
+2. License with support + revenue-share
+3. Modular integration (desk / premium tier / bot)
 
-Price: negotiable (replacement cost: 6+ months and \+ budget).
+Price: negotiable (replacement cost: 6+ months and $150k+).
 
-Can show demo in 15 minutes. One of the most complete Fixed Income products on the CIS market.
+Can show a live demo in 15 minutes.
 
 Best regards,
 [Your name]

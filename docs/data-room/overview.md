@@ -1,57 +1,68 @@
-# Data Room — Bonds Engine
+# Data Room — Bonds Engine v4
 
-## Архитектура
+## Architecture
 
 ```
-MOEX ISS (публичный) → scraper/moex.py → PostgreSQL → FastAPI API → React SPA
-                                                              → Telegram bot
-                                                              → Partner API
-                                                              → Widget (iframe)
+MOEX ISS (public) + market-data adapters → scraper/pipeline.py → PostgreSQL 16 → FastAPI API → React SPA
+                                                                              → Telegram bot (aiogram 3)
+                                                                              → Partner API
+                                                                              → Widget (iframe)
+                                                                              → Monte Carlo forecast
+                                                                              → ML recommendations
 ```
 
-- **Backend:** Python 3.13, FastAPI (async), SQLAlchemy 2.0, PostgreSQL 16, Redis 7
-- **Frontend:** React 19, TypeScript 6, Vite 6, Tailwind CSS 4, Recharts
-- **ML:** scikit-learn (YTM regression + classifier), NumPy, SciPy (Nelson-Siegel)
-- **Infra:** Docker Compose (9 сервисов), nginx, Cloudflare Tunnel
+- **Backend:** Python 3.13, FastAPI (async), SQLAlchemy 2.0, asyncpg, PostgreSQL 16, Redis 7
+- **ML:** scikit-learn, NumPy, SciPy (Nelson-Siegel), Playwright (headless)
+- **Frontend:** React 19, Vite, nginx
+- **Infra:** Docker Compose (9+ services), nginx, Cloudflare Tunnel
 - **Monitoring:** Prometheus + Grafana, Sentry, Loguru
 
-## Кодовые метрики
+## Code Metrics
 
-| Категория | Значение |
-|-----------|----------|
-| Python строк кода | ~26,800 |
-| TypeScript строк | ~8,700 |
-| Тесты | 102 (pytest) |
-| Linting | ruff, oxlint |
-| Type checking | mypy (opt-in strict), tsc --strict |
-| CI | GitHub Actions (lint, typecheck, test, build) |
-| Миграции БД | 26 Alembic migrations |
+| Category | Value |
+|---|---|
+| Python lines | ~28,000 |
+| TypeScript lines | ~8,700 |
+| Tests | 298 (pytest, all green) |
+| Linting | ruff (blocking), mypy (non-blocking) |
+| Type checking | mypy (opt-in strict) |
+| CI | ruff + pytest + mypy + migrations |
+| DB migrations | 24 Alembic migrations |
+| Version | 4.0.0 |
 
 ## Security
 
 - **Auth:** JWT (HS256, 30min), bcrypt, refresh tokens
-- **Rate limiting:** nginx (100r/s) + app (60r/min) + per-key (120r/min)
+- **Rate limiting:** Redis-backed distributed (100r/s API, 10r/s auth)
 - **CSP:** Content-Security-Policy, X-Frame-Options DENY
-- **API keys:** SHA-256 hashed, one-time display
-- **Webhooks:** HMAC-SHA256 signed payloads
+- **API keys:** SHA-256 hashed, one-time display at creation
+- **Webhooks:** HMAC-SHA256 signed payloads + secret token header
 - **SQL:** SQLAlchemy ORM (parameterised queries)
-- **Payments:** YooKassa IP whitelist + double verification
+- **Payments:** YooKassa IP whitelist + double verification + full-amount refund check
+- **SSRF:** IP pinning + DNS-rebind defense + IPv6 support
+- **Admin:** XFF spoofing protection (TRUSTED_PROXY mode)
 
 ## Deployment
 
-- Docker Compose 🡒 `docker compose up -d`
-- Cloudflare Tunnel для HTTPS без белого IP
-- Makefile для всех операций (build, up, logs, backup)
+- Docker Compose → `docker compose up -d`
+- Cloudflare Tunnel for HTTPS without public IP (profiles: `tunnel`, `quick-tunnel`)
+- Let's Encrypt certbot (optional, requires domain + open ports 80/443)
+- Resource limits per service (configurable via `.env`)
 
-## Модули
+## Modules
 
-| Модуль | Описание |
-|--------|----------|
-| scraper/ | Парсер MOEX ISS (moex.py) + адаптер aigenis.by |
-| api/ | FastAPI (REST + Server-Rendered SEO + Billing + Partner API) |
-| frontend/ | React SPA + Widget + Landing Page |
-| telegram_bot/ | aiogram 3 бот |
-| desk/ | Fixed Income Desk (Duration, Curve, RV, Carry, Stress) |
-| ml/ | ML-модели (YTM, классификатор) |
-| scoring/ | Reward/Risk Score |
-| portfolio/ | Портфельный менеджер |
+| Module | Description |
+|---|---|
+| `scraper/` | MOEX ISS parser (moex.py) + fallback source + market-data adapters |
+| `api/` | FastAPI REST API + SEO (SSR) + Billing + Partner API |
+| `frontend/` | React SPA + Widget + Landing Page |
+| `telegram_bot/` | aiogram 3 bot (subscriptions, billing, alerts) |
+| `desk/` | Fixed Income Desk (Duration, Yield Curve, RV, Carry, Repo, Stress) |
+| `ml/` | ML models (YTM regression + buy/hold/wait/avoid classifier) |
+| `scoring/` | Reward/Risk scoring engine |
+| `portfolio/` | Portfolio manager (P&L, rebalance, optimizer) |
+| `forecast/` | Monte Carlo simulation with CVaR |
+| `recommendations/` | Explainable recommendations with issuer diversification |
+| `monitoring/` | Prometheus metrics + change detection |
+| `visualization/` | matplotlib charts |
+| `notifications/` | Email/SMS alert delivery

@@ -20,7 +20,7 @@ ML → Desk-аналитика → продажа подписки (B2C + B2B).
 - **Публичные SEO-страницы** `/bonds` и `/bonds/{internal_id}` —
   органический трафик без бюджета (индексируются краулерами).
 - **Биллинг**: ЮKassa (карты/SBP) + Telegram Stars, paywall 402.
-- **Observability**: Prometheus-метрики, 102 теста, CI, Alembic-миграции.
+- **Observability**: Prometheus-метрики, 298 тестов, CI, Alembic-миграции.
 
 ## Охват рынков (честно)
 - **Живые данные без платного логина:** RUB (корпоративные, MOEX TQCB) +
