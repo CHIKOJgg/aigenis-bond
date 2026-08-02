@@ -17,6 +17,7 @@ StrategyName = Literal[
     "Carry Trade",
     "Dollarization",
     "Maximum Reward/Risk",
+    "Metals++",
 ]
 
 ScenarioName = Literal["Bull USD", "Neutral", "Bull BYN", "Stress"]
@@ -93,6 +94,7 @@ class PortfolioAllocation(BaseModel):
     sortino: float
     max_drawdown: float
     var_95: float
+    calmar: float = 0.0
     strategy: StrategyName
 
 
@@ -109,6 +111,10 @@ class ForecastResult(BaseModel):
     optimistic_capital: Decimal
     expected_return: float
     assumptions: dict[str, str] = Field(default_factory=dict)
+    # Monte Carlo percentile distribution (p5/p25/p50/p75/p95) and the
+    # expected shortfall of the worst 5% of outcomes, when simulated.
+    mc_percentiles: dict[str, Decimal] = Field(default_factory=dict)
+    cvar_95: Decimal | None = None
 
 
 class ScenarioResult(BaseModel):

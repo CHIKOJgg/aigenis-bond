@@ -105,7 +105,7 @@ def _currency_detail(currency: str) -> str:
 
 
 def _duration_detail(points: float) -> str:
-    if points >= 20:
+    if points >= 15:
         return "Короткий срок до погашения — низкий процентный риск."
     if points >= 10:
         return "Средний срок до погашения — умеренный процентный риск."
@@ -115,7 +115,7 @@ def _duration_detail(points: float) -> str:
 
 
 def _liquidity_detail(points: float) -> str:
-    if points >= 10:
+    if points >= 8:
         return "Хорошая ликвидность: активный статус и есть рыночная цена."
     if points <= 0:
         return "Ограниченная ликвидность — возможны сложности с выходом."

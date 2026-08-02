@@ -6,8 +6,8 @@ rate limiting, CORS, security headers, and error visibility.
 from __future__ import annotations
 
 import pytest
-from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
 from api.main import app
 
 
@@ -50,8 +50,15 @@ async def test_security_headers_on_api_responses():
 @pytest.mark.asyncio
 async def test_rate_limit_returns_429_with_retry_after():
     """Rate-limited requests should include a Retry-After header."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        for _ in range(100):
-            resp = await client.get("/api/v1/bonds")
+    import api.main as main
+
+    old_limit = main._RATE_LIMIT
+    try:
+        main._RATE_LIMIT = 5
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            for _ in range(100):
+                resp = await client.get("/api/v1/bonds")
         assert resp.status_code == 429
         assert "retry_after" in resp.json() or "Retry-After" in resp.headers
+    finally:
+        main._RATE_LIMIT = old_limit

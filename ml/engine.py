@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from statistics import fmean
 from typing import Any
 
 import numpy as np
@@ -66,7 +67,7 @@ def _explanation(features: BondFeatures, predicted_ytm: float) -> list[str]:
         notes.append("доходность за месяц снизилась — возможно, рост цены")
     if features.yield_momentum_30d > 0.05:
         notes.append("доходность за месяц выросла — рынок переоценивает риск")
-    if predicted_ytm:
+    if predicted_ytm is not None:
         notes.append(f"прогноз YTM: {predicted_ytm:.2f}%")
     return notes
 
@@ -84,6 +85,48 @@ def _time_split(
     cut = int(len(ordered) * (1 - test_fraction))
     cut = max(1, min(cut, len(ordered) - 1))
     return ordered[:cut], ordered[cut:]
+
+
+def _rolling_windows(
+    samples: list[Any], n_folds: int = 5
+) -> list[tuple[list[Any], list[Any]]]:
+    """Expanding-window walk-forward folds: each fold trains on all samples up
+    to a boundary and validates on the next chunk — no future leakage."""
+    ordered = sorted(samples, key=lambda s: s.asof)
+    if len(ordered) < n_folds * 2:
+        return [_time_split(ordered)]
+    folds: list[tuple[list[Any], list[Any]]] = []
+    n = len(ordered)
+    step = n // n_folds
+    for i in range(1, n_folds):
+        cut = i * step
+        if n - cut < step // 2:
+            break
+        folds.append((ordered[:cut], ordered[cut:]))
+    if not folds:
+        folds.append(_time_split(ordered))
+    return folds
+
+
+def _cv_mae(samples: list[Any]) -> float:
+    """Mean out-of-time MAE of the YTM regressor across walk-forward folds."""
+    folds = _rolling_windows(samples, n_folds=5)
+    maes: list[float] = []
+    for train_s, test_s in folds:
+        if len(train_s) < 15 or not test_s:
+            continue
+        X_train, _names = features_to_matrix([s.features for s in train_s])
+        X_test, _ = features_to_matrix([s.features for s in test_s])
+        y_train = np.array([s.future_ytm for s in train_s], dtype=float)
+        y_test = np.array([s.future_ytm for s in test_s], dtype=float)
+        scaler = StandardScaler()
+        model = GradientBoostingRegressor(
+            n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42
+        )
+        model.fit(scaler.fit_transform(X_train), y_train)
+        preds = model.predict(scaler.transform(X_test))
+        maes.append(float(mean_absolute_error(y_test, preds)))
+    return float(fmean(maes)) if maes else 0.0
 
 
 def train_ytm_regressor(
@@ -131,6 +174,7 @@ def train_ytm_regressor(
     # must beat this; we record the comparison so degradation is visible.
     current_ytm_test = np.array([s.features.yield_to_maturity for s in test_s], dtype=float)
     baseline_mae = float(mean_absolute_error(y_test, current_ytm_test))
+    cv_mae = _cv_mae(samples)
 
     version = version or datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     artifact_path = ARTIFACTS_DIR / f"ytm_regressor_{version}.joblib"
@@ -144,6 +188,7 @@ def train_ytm_regressor(
             "r2": r2,
             "baseline_mae": baseline_mae,
             "beats_baseline": 1.0 if mae < baseline_mae else 0.0,
+            "cv_mae": cv_mae,
             "train_size": len(train_s),
             "test_size": len(test_s),
         },
@@ -293,6 +338,7 @@ def backtest_report(samples: list[Any], *, target_horizon_days: int = 90, top_n:
     baseline_mae = float(
         mean_absolute_error(y_test, np.array([s.features.yield_to_maturity for s in test_s], dtype=float))
     )
+    cv_mae = _cv_mae(samples)
 
     yc_train = np.array([_outcome_label(s.future_return_pct) for s in train_s], dtype=int)
     yc_test = np.array([_outcome_label(s.future_return_pct) for s in test_s], dtype=int)
@@ -320,6 +366,7 @@ def backtest_report(samples: list[Any], *, target_horizon_days: int = 90, top_n:
             "r2": round(r2, 4),
             "baseline_mae": round(baseline_mae, 4),
             "beats_baseline": bool(mae < baseline_mae),
+            "cv_mae": round(cv_mae, 4),
         },
         "classifier": {
             "accuracy": round(acc, 4),
@@ -386,16 +433,17 @@ def predict_one(
     # classifier supplied the decision).
     if used_reg and used_cls:
         model_kind: ModelKind = "combined"
+        reg_version = _version_from_path(regressor_path) or "latest"
+        clf_version = _version_from_path(classifier_path) or "latest"
+        model_version = f"{reg_version}+{clf_version}"
     elif used_cls:
         model_kind = "buy_classifier"
+        model_version = _version_from_path(classifier_path) or "latest"
     else:
         model_kind = "ytm_regression"
+        model_version = _version_from_path(regressor_path) or "latest"
 
-    model_version = _version_from_path(regressor_path) if used_reg else (
-        _version_from_path(classifier_path) or "combined"
-    )
-
-    explanation = _explanation(feature, predicted_ytm or 0.0)
+    explanation = _explanation(feature, predicted_ytm if predicted_ytm is not None else 0.0)
 
     return Prediction(
         internal_id=feature.internal_id,

@@ -6,6 +6,8 @@ proxy — otherwise the header cannot be used to spoof a fresh identity.
 """
 from __future__ import annotations
 
+import pytest
+
 import api.main as main
 from api.auth.service import create_access_token
 
@@ -34,26 +36,30 @@ def test_trusted_proxy_uses_last_forwarded_hop(monkeypatch):
     assert main._client_ip(req) == "5.6.7.8"
 
 
-def test_authenticated_caller_keyed_by_user(monkeypatch):
+@pytest.mark.asyncio
+async def test_authenticated_caller_keyed_by_user(monkeypatch):
     monkeypatch.setattr(main, "_TRUSTED_PROXY", False)
     token = create_access_token(4242)
     req = _FakeRequest({"Authorization": f"Bearer {token}"}, host="10.0.0.9")
-    key, limit = main._rate_identity_and_limit(req)
+    key, limit = await main._rate_identity_and_limit(req)
+    # Unknown user -> free budget.
     assert key == "user:4242"
     assert limit == main._RATE_LIMIT
 
 
-def test_anonymous_caller_keyed_by_ip(monkeypatch):
+@pytest.mark.asyncio
+async def test_anonymous_caller_keyed_by_ip(monkeypatch):
     monkeypatch.setattr(main, "_TRUSTED_PROXY", False)
     req = _FakeRequest({}, host="203.0.113.5")
-    key, _ = main._rate_identity_and_limit(req)
+    key, _ = await main._rate_identity_and_limit(req)
     assert key == "ip:203.0.113.5"
 
 
-def test_two_users_same_ip_get_separate_budgets(monkeypatch):
+@pytest.mark.asyncio
+async def test_two_users_same_ip_get_separate_budgets(monkeypatch):
     monkeypatch.setattr(main, "_TRUSTED_PROXY", False)
     req_a = _FakeRequest({"Authorization": f"Bearer {create_access_token(1)}"}, host="10.0.0.1")
     req_b = _FakeRequest({"Authorization": f"Bearer {create_access_token(2)}"}, host="10.0.0.1")
-    key_a, _ = main._rate_identity_and_limit(req_a)
-    key_b, _ = main._rate_identity_and_limit(req_b)
+    key_a, _ = await main._rate_identity_and_limit(req_a)
+    key_b, _ = await main._rate_identity_and_limit(req_b)
     assert key_a != key_b

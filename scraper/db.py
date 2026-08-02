@@ -5,19 +5,11 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import event
-from sqlalchemy.exc import OperationalError, TimeoutError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
-)
-from tenacity import (
-    AsyncRetrying,
-    before_sleep_log,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
 )
 
 from scraper.config import get_settings
@@ -94,22 +86,6 @@ async def session_scope(**kwargs: Any) -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
-
-
-@asynccontextmanager
-async def session_scope_with_retry(**kwargs: Any) -> AsyncIterator[AsyncSession]:
-    """Session scope with automatic retry on deadlock / serialization errors."""
-    db_settings = get_settings().database
-    async for attempt in AsyncRetrying(
-        stop=stop_after_attempt(db_settings.max_retries),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        retry=retry_if_exception_type((OperationalError, TimeoutError)),
-        before_sleep=before_sleep_log(logger, 30),
-        reraise=True,
-    ):
-        with attempt:
-            async with session_scope(**kwargs) as session:
-                yield session
 
 
 def _is_postgresql() -> bool:

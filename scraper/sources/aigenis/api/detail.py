@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from scraper.models import Bond
+
 from . import parse_bond_payload
-from ...models import Bond
 
 
 def parse_detail_payload(payload: Any, internal_id: str) -> Bond:

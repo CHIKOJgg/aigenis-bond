@@ -116,6 +116,15 @@ async def list_stocks(
     offset: int = Query(default=0, ge=0),
 ) -> list[StockResponse]:
     """Список акций MOEX с фильтрацией и сортировкой."""
+    # Validate sort_by against a whitelist of model columns — arbitrary
+    # strings could resolve to non-column attributes and 500 the endpoint.
+    sortable = {
+        "internal_id", "name", "board", "sector", "price", "pe_ratio",
+        "eps", "dividend_yield", "market_cap", "value_traded", "volume",
+        "status",
+    }
+    if sort_by not in sortable:
+        sort_by = "value_traded"
     async with session_scope() as session:
         stmt = select(StockORM)
         if board:
@@ -123,8 +132,6 @@ async def list_stocks(
         if sector:
             stmt = stmt.where(StockORM.sector == sector)
         sort_col = getattr(StockORM, sort_by, StockORM.value_traded)
-        if sort_col is None:
-            sort_col = StockORM.value_traded
         stmt = stmt.order_by(sort_col.desc()).limit(limit).offset(offset)
         result = await session.execute(stmt)
         stocks = list(result.scalars().all())

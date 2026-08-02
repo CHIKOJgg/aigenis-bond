@@ -7,6 +7,6 @@ from __future__ import annotations
 
 from scraper.sources.aigenis.client import (  # noqa: F401
     AigenisClient,
-    aigenis_client,
     _abs_url,
+    aigenis_client,
 )

@@ -5,7 +5,6 @@ class CreatePaymentRequest(BaseModel):
     """Create a YooKassa payment for a subscription plan."""
     plan: str  # "pro" | "enterprise"
     success_url: str = "/?billing=success"
-    cancel_url: str = "/subscribe"
     referral_code: str | None = None
 
 

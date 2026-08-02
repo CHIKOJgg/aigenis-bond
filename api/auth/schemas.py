@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    name: str
+    email: EmailStr
+    password: str = Field(min_length=8)
+    name: str = Field(min_length=1, max_length=100)
     referral_code: str | None = None
 
 
 class LoginRequest(BaseModel):
-    email: str
+    email: EmailStr
     password: str
 
 
@@ -26,7 +26,7 @@ class RefreshRequest(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: str
+    email: EmailStr
 
 
 class ResetPasswordRequest(BaseModel):

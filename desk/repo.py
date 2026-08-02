@@ -20,6 +20,10 @@ def repo_deal(
 ) -> RepoDeal:
     """Смоделировать сделку РЕПО: сколько кэша дадим под залог облигации."""
     asof = asof or date.today()
+    # A haircut outside [0, 100) would imply lending MORE than the collateral
+    # (or negative cash); clamp to sane repo practice.
+    if not (0.0 <= haircut_pct < 100.0):
+        haircut_pct = 0.0
     collateral_value = notional * (Decimal("1") - Decimal(str(haircut_pct)) / Decimal("100"))
     accrued = (
         collateral_value

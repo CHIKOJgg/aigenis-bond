@@ -68,7 +68,6 @@ def test_server_withstands_concurrent_load(tmp_path):
     # Create the schema in this process (same file the server will use).
     import asyncio
 
-    from scraper.db import get_engine
     from scraper.orm import Base
 
     async def _schema():

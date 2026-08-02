@@ -43,13 +43,27 @@ def _boards() -> list[str]:
     return list(_DEFAULT_BOARDS)
 
 
-def _freq_from_annual(per_year: Any) -> CouponFrequency | None:
+def _freq_from_coupon_period(value: Any) -> CouponFrequency | None:
+    """Coupon frequency from MOEX's COUPONPERIOD field.
+
+    MOEX ISS documents COUPONPERIOD in *days* (e.g. 182 = semi-annual).
+    Accept the per-year counts (1/2/4/12) for robustness, then map day
+    ranges to the nearest standard frequency.
+    """
     try:
-        n = int(per_year)  # type: ignore[arg-type]
+        n = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
     if n in (1, 2, 4, 12):
         return n  # type: ignore[return-value]
+    if 360 <= n <= 370:
+        return 1
+    if 180 <= n <= 185:
+        return 2
+    if 88 <= n <= 95:
+        return 4
+    if 28 <= n <= 32:
+        return 12
     return None
 
 
@@ -81,7 +95,6 @@ _CURRENCY_ALIASES = {
     "USD": "USD",
     "EUR": "EUR",
     "BYN": "BYN",
-    "GBP": "USD",  # treat as USD-denominated for storage simplicity
 }
 
 
@@ -180,19 +193,19 @@ class MoexClient:
                     currency=cur,  # type: ignore[arg-type]
                     nominal=_to_dec(sec.get("FACEVALUE")),
                     coupon_rate=_to_dec(sec.get("COUPONVALUE")),
-                    coupon_frequency=_freq_from_annual(sec.get("COUPONPERIOD")),
+                    coupon_frequency=_freq_from_coupon_period(sec.get("COUPONPERIOD")),
                     maturity_date=_to_date(sec.get("MATDATE")),
                     price=_to_dec(md.get("LAST")),
                     yield_to_maturity=_to_dec(md.get("YIELD")),
-            isin=sec.get("ISIN"),
-            status="active",
-            is_government=bool(
-                sec.get("ISIN")
-                and str(sec.get("ISIN")).startswith("RU")
-                and "GOV" in str(sec.get("SHORTNAME", "")).upper()
-            ),
-            fetched_at=datetime.now(UTC),
-        )
+                    isin=sec.get("ISIN"),
+                    status="active",
+                    is_government=bool(
+                        sec.get("ISIN")
+                        and str(sec.get("ISIN")).startswith("RU")
+                        and "GOV" in str(sec.get("SHORTNAME", "")).upper()
+                    ),
+                    fetched_at=datetime.now(UTC),
+                )
                 bonds.append(bond)
             except Exception as exc:
                 logger.warning("moex_bond_parse_failed", secid=secid, error=str(exc))
@@ -218,14 +231,18 @@ class MoexClient:
             resp.raise_for_status()
             payload = resp.json()
             securities = _parse_iss_rows(payload, "securities")
+            marketdata = {r.get("SECID"): r for r in _parse_iss_rows(payload, "marketdata")}
             if not securities:
+                # Eurobonds live on TQOB — retry there and take its marketdata,
+                # otherwise the price/YTM would silently be missing.
                 url2 = url.replace("/boards/TQCB/", "/boards/TQOB/")
                 resp2 = await client.get(url2)
                 resp2.raise_for_status()
-                securities = _parse_iss_rows(resp2.json(), "securities")
-            md = {r.get("SECID"): r for r in _parse_iss_rows(payload, "marketdata")}
+                payload2 = resp2.json()
+                securities = _parse_iss_rows(payload2, "securities")
+                marketdata = {r.get("SECID"): r for r in _parse_iss_rows(payload2, "marketdata")}
             sec = securities[0]
-            md_row = md.get(secid, {})
+            md_row = marketdata.get(secid, {})
             cur = _norm_currency(sec.get("FACEUNIT") or "RUB")
             return Bond(
                 internal_id=internal_id,
@@ -234,7 +251,7 @@ class MoexClient:
                 currency=cur,  # type: ignore[arg-type]
                 nominal=_to_dec(sec.get("FACEVALUE")),
                 coupon_rate=_to_dec(sec.get("COUPONVALUE")),
-                coupon_frequency=_freq_from_annual(sec.get("COUPONPERIOD")),
+                coupon_frequency=_freq_from_coupon_period(sec.get("COUPONPERIOD")),
                 maturity_date=_to_date(sec.get("MATDATE")),
                 price=_to_dec(md_row.get("LAST")),
                 yield_to_maturity=_to_dec(md_row.get("YIELD")),

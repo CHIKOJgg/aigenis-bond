@@ -26,6 +26,10 @@ def plot_yield_distribution(yields: list[tuple[str, float]]) -> bytes:
     """Гистограмма YTM по облигациям."""
     names = [n for n, _ in yields]
     values = [v for _, v in yields]
+    if not values:
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "Нет данных", ha="center", va="center")
+        return _to_png(fig)
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.barh(names[::-1], values[::-1], color="#3b82f6")
     ax.set_xlabel("Yield to maturity, %")

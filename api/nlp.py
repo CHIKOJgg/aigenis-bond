@@ -6,16 +6,16 @@ user questions about bonds using real market data as context.
 from __future__ import annotations
 
 import os
+from datetime import date, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from api.access_control import RequireFeature
 from scraper.db import session_scope
-from scraper.orm import BondORM, BondScoreORM, BondHistoryORM
-from sqlalchemy import select
-from datetime import date, timedelta
+from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
 
 router = APIRouter(prefix="/api/v1", tags=["nlp"])
 

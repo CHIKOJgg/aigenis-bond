@@ -7,13 +7,13 @@ duplicate email, inactive account, forged tokens).
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 
 from api.auth.service import (
     create_access_token,
+    create_email_verification_token,
     create_refresh_token,
     decode_token,
     hash_password,
@@ -82,7 +82,9 @@ def test_refresh_rejected_when_used_as_access():
         credentials = type("C", (), {"credentials": refresh})()
 
     async def run():
-        with pytest.raises(Exception):
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException):
             await _get_current_user(_Creds.credentials)
 
     _run(run)
@@ -97,7 +99,7 @@ def test_register_login_me_flow():
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
                 "/auth/register",
-                json={"email": "alice@example.com", "password": "hunter2", "name": "Alice"},
+                json={"email": "alice@example.com", "password": "Hunter22", "name": "Alice"},
             )
             assert resp.status_code == 200, resp.text
             body = resp.json()
@@ -115,7 +117,7 @@ def test_register_login_me_flow():
 
             login = await client.post(
                 "/auth/login",
-                json={"email": "alice@example.com", "password": "hunter2"},
+                json={"email": "alice@example.com", "password": "Hunter22"},
             )
             assert login.status_code == 200
 
@@ -130,7 +132,8 @@ def test_register_rejects_short_password():
                 "/auth/register",
                 json={"email": "bob@example.com", "password": "123", "name": "Bob"},
             )
-            assert resp.status_code == 400
+            # Password shorter than 8 chars is rejected by schema validation.
+            assert resp.status_code == 422
 
     _run(run)
 
@@ -139,7 +142,7 @@ def test_register_duplicate_email_conflict():
     async def run():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            payload = {"email": "dup@example.com", "password": "hunter2", "name": "D"}
+            payload = {"email": "dup@example.com", "password": "Hunter22", "name": "D"}
             assert (await client.post("/auth/register", json=payload)).status_code == 200
             again = await client.post("/auth/register", json=payload)
             assert again.status_code == 409
@@ -153,7 +156,7 @@ def test_login_wrong_password_unauthorized():
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             await client.post(
                 "/auth/register",
-                json={"email": "carol@example.com", "password": "hunter2", "name": "C"},
+                json={"email": "carol@example.com", "password": "Hunter22", "name": "C"},
             )
             bad = await client.post(
                 "/auth/login",
@@ -179,7 +182,7 @@ def test_refresh_rotates_tokens():
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             reg = await client.post(
                 "/auth/register",
-                json={"email": "dave@example.com", "password": "hunter2", "name": "D"},
+                json={"email": "dave@example.com", "password": "Hunter22", "name": "D"},
             )
             refresh = reg.json()["refresh_token"]
             new = await client.post("/auth/refresh", json={"refresh_token": refresh})
@@ -203,7 +206,7 @@ def test_forgot_and_reset_password():
                     id=701,
                     email="reset@example.com",
                     name="R",
-                    password_hash=hash_password("oldpass"),
+                    password_hash=hash_password("Oldpass1"),
                     is_active=True,
                 )
             )
@@ -221,20 +224,20 @@ def test_forgot_and_reset_password():
 
             reset = await client.post(
                 "/auth/reset-password",
-                json={"token": token, "new_password": "newpass123"},
+                json={"token": token, "new_password": "Newpass123"},
             )
             assert reset.status_code == 200
 
             login = await client.post(
                 "/auth/login",
-                json={"email": "reset@example.com", "password": "newpass123"},
+                json={"email": "reset@example.com", "password": "Newpass123"},
             )
             assert login.status_code == 200
 
             # Token is single-use.
             reuse = await client.post(
                 "/auth/reset-password",
-                json={"token": token, "new_password": "another456"},
+                json={"token": token, "new_password": "Another456"},
             )
             assert reuse.status_code == 400
 
@@ -267,7 +270,8 @@ def test_verify_email_marks_verified():
                     is_verified=False,
                 )
             )
-        token = create_access_token(702)
+        # Only email-verification tokens may confirm an email address.
+        token = create_email_verification_token(702)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/auth/verify-email", params={"token": token})
@@ -292,12 +296,12 @@ def test_login_inactive_account_blocked():
                     id=703,
                     email="inactive@example.com",
                     name="I",
-                    password_hash=hash_password("hunter2"),
+                    password_hash=hash_password("Hunter22"),
                     is_active=False,
                 )
             )
         async with session_scope() as s:
-            user, err = await login_user(s, "inactive@example.com", "hunter2")
+            user, err = await login_user(s, "inactive@example.com", "Hunter22")
         assert user is None
         assert err == "Account is disabled"
 

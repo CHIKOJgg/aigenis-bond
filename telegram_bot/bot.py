@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import signal
 import sys
@@ -42,6 +43,7 @@ from telegram_bot.handlers import (  # noqa: F401
     cmd_carry,
     cmd_curve,
     cmd_desk,
+    cmd_desk_spreads,
     cmd_desk_status,
     cmd_duration,
     cmd_forecast,
@@ -110,7 +112,10 @@ from visualization.charts import (  # noqa: F401
 
 async def _start_metrics_server() -> None:
     """Expose Prometheus /metrics and a /health endpoint for the bot process."""
-    port = int(os.getenv("BOT_METRICS_PORT", "9090"))
+    try:
+        port = int(os.getenv("BOT_METRICS_PORT", "9090"))
+    except ValueError:
+        port = 9090
     if port <= 0:
         return
     try:
@@ -143,7 +148,7 @@ async def main(token: str) -> None:
     from scraper.config import get_settings
     from scraper.observability import init_sentry
 
-    if init_sentry(get_settings().sentry_dsn, environment=get_settings().environment):
+    if init_sentry(get_settings().aigenis.sentry_dsn, environment=get_settings().aigenis.environment):
         try:
             import sentry_sdk
 
@@ -170,28 +175,57 @@ async def main(token: str) -> None:
     await _start_metrics_server()
     set_bot(bot)
 
-    try:
-        loop = asyncio.get_running_loop()
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, lambda: None)
-    except NotImplementedError:
-        pass
+    loop = asyncio.get_running_loop()
 
     webhook_url = os.getenv("WEBHOOK_URL")
     if webhook_url:
         webhook_path = os.getenv("WEBHOOK_PATH", "/webhook")
-        await bot.set_webhook(webhook_url + webhook_path)
+        # A random secret token signs every webhook request; Telegram sends it
+        # in ``X-Telegram-Bot-Api-Secret-Token`` and we reject requests without
+        # it. Without this any internet-reachable POST could forge a
+        # ``successful_payment`` update and grant free Pro access.
+        import secrets as _secrets
+
+        webhook_secret = os.getenv("WEBHOOK_SECRET_TOKEN", "") or _secrets.token_urlsafe(32)
+        await bot.set_webhook(webhook_url + webhook_path, secret_token=webhook_secret)
+        from aiogram.types import Update
         from aiohttp import web
 
+        async def _webhook_handler(request: web.Request) -> web.Response:
+            if request.headers.get("X-Telegram-Bot-Api-Secret-Token", "") != webhook_secret:
+                logger.warning("webhook_rejected_bad_secret", ip=request.remote)
+                return web.Response(text="Forbidden", status=403)
+            try:
+                raw = await request.json()
+            except Exception:
+                logger.warning("webhook_invalid_json")
+                return web.Response(text="Bad Request", status=400)
+            update = Update.model_validate(raw)
+            await dp.feed_update(bot, update)
+            return web.Response(text="OK", status=200)
+
         app = web.Application()
-        app.router.add_post(webhook_path, lambda r: dp.dispatch(r))
+        app.router.add_post(webhook_path, _webhook_handler)
         runner = web.AppRunner(app)
         await runner.setup()
-        port = int(os.getenv("WEBHOOK_PORT", "8080"))
+        try:
+            port = int(os.getenv("WEBHOOK_PORT", "8080"))
+        except ValueError:
+            port = 8080
         site = web.TCPSite(runner, "0.0.0.0", port)
         await site.start()
         logger.info("webhook_started", url=webhook_url, port=port)
-        await asyncio.Event().wait()
+        try:
+            # Block until SIGINT/SIGTERM, then shut the server down cleanly.
+            stop_event = asyncio.Event()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                with contextlib.suppress(NotImplementedError):
+                    loop.add_signal_handler(sig, stop_event.set)
+            await stop_event.wait()
+        finally:
+            await runner.cleanup()
+            await bot.close()
+            await bot.delete_webhook()
     else:
         try:
             await dp.start_polling(bot, handle_signals=True)

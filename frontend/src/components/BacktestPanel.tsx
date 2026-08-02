@@ -40,7 +40,7 @@ export default function BacktestPanel() {
   async function runBacktest() {
     setLoading(true);
     try {
-      const data = await api.request('/api/v1/backtest', {
+      const data = await api.request<BacktestResult>('/api/v1/backtest', {
         method: 'POST',
         body: JSON.stringify({
           strategy,

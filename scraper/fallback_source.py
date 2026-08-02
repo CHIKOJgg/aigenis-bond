@@ -53,11 +53,6 @@ _MOEX_TIMEOUT = float(os.getenv("FALLBACK_MOEX_TIMEOUT", "30"))
 _MOEX_CAP = int(os.getenv("FALLBACK_MOEX_CAP", "1000"))
 
 
-def fallback_source_name() -> str | None:
-    """Return the configured fallback source name, or None if disabled."""
-    return _FALLBACK_SOURCE or None
-
-
 async def fetch_fallback_bonds(currency: str | None = None) -> list[dict[str, Any]]:
     """Fetch bond quotes from the configured fallback source.
 
@@ -103,57 +98,68 @@ async def _fetch_moex_bonds(currency: str | None = None) -> list[dict[str, Any]]
     try:
         async with httpx.AsyncClient(timeout=_MOEX_TIMEOUT) as client:
             for board in _MOEX_BOARDS:
-                listing_url = (
-                    f"{MOEX_ISS_BASE}/engines/stock/markets/bonds/boards/{board}"
-                    f"/securities.json?iss.meta=off"
-                    f"&iss.only=securities,marketdata"
-                )
-                try:
-                    resp = await client.get(listing_url)
-                    resp.raise_for_status()
-                    payload = resp.json()
-                except Exception as exc:
-                    logger.warning("fallback_moex_board_failed", board=board, error=str(exc))
-                    continue
-                securities = _parse_iss_rows(payload, "securities")
-                marketdata = {
-                    row.get("SECID"): row
-                    for row in _parse_iss_rows(payload, "marketdata")
-                }
-                for sec in securities:
-                    secid = sec.get("SECID")
-                    if not secid:
-                        continue
-                    cur = str(sec.get("FACEUNIT") or "RUB").upper()
-                    if wanted and cur != wanted:
-                        continue
-                    md = marketdata.get(secid, {})
-                    last = md.get("LAST")
-                    ytm = md.get("YIELD")
-                    try:
-                        maturity = (
-                            datetime.strptime(sec["MATDATE"], "%Y-%m-%d").date()
-                            if sec.get("MATDATE")
-                            else None
-                        )
-                    except (ValueError, TypeError):
-                        maturity = None
-                    all_rows.append(
-                        {
-                            "internal_id": f"MOEX_{secid}",
-                            "name": sec.get("SECNAME") or secid,
-                            "currency": cur,
-                            "price": float(last) if last not in (None, "") else None,
-                            "yield_to_maturity": float(ytm) if ytm not in (None, "") else None,
-                            "maturity_date": maturity.isoformat() if maturity else None,
-                            "issuer": sec.get("ISSUER") or sec.get("SHORTNAME"),
-                            "status": "active",
-                        }
+                # MOEX ISS paginates at 100 rows per page by default; without
+                # explicit ``start`` paging we would silently drop most of the
+                # board. Page through until the cap is reached or pages end.
+                start = 0
+                page_size = 100
+                while start < _MOEX_CAP:
+                    listing_url = (
+                        f"{MOEX_ISS_BASE}/engines/stock/markets/bonds/boards/{board}"
+                        f"/securities.json?iss.meta=off&iss.start={start}&iss.limit={page_size}"
+                        f"&iss.only=securities,marketdata"
                     )
+                    try:
+                        resp = await client.get(listing_url)
+                        resp.raise_for_status()
+                        payload = resp.json()
+                    except Exception as exc:
+                        logger.warning("fallback_moex_board_failed", board=board, error=str(exc))
+                        break
+                    securities = _parse_iss_rows(payload, "securities")
+                    if not securities:
+                        break
+                    marketdata = {
+                        row.get("SECID"): row
+                        for row in _parse_iss_rows(payload, "marketdata")
+                    }
+                    for sec in securities:
+                        secid = sec.get("SECID")
+                        if not secid:
+                            continue
+                        cur = str(sec.get("FACEUNIT") or "RUB").upper()
+                        if wanted and cur != wanted:
+                            continue
+                        md = marketdata.get(secid, {})
+                        last = md.get("LAST")
+                        ytm = md.get("YIELD")
+                        try:
+                            maturity = (
+                                datetime.strptime(sec["MATDATE"], "%Y-%m-%d").date()
+                                if sec.get("MATDATE")
+                                else None
+                            )
+                        except (ValueError, TypeError):
+                            maturity = None
+                        all_rows.append(
+                            {
+                                "internal_id": f"MOEX_{secid}",
+                                "name": sec.get("SECNAME") or secid,
+                                "currency": cur,
+                                "price": float(last) if last not in (None, "") else None,
+                                "yield_to_maturity": float(ytm) if ytm not in (None, "") else None,
+                                "maturity_date": maturity.isoformat() if maturity else None,
+                                "issuer": sec.get("ISSUER") or sec.get("SHORTNAME"),
+                                "status": "active",
+                            }
+                        )
+                        if len(all_rows) >= _MOEX_CAP:
+                            break
                     if len(all_rows) >= _MOEX_CAP:
                         break
-                if len(all_rows) >= _MOEX_CAP:
-                    break
+                    if len(securities) < page_size:
+                        break
+                    start += page_size
     except Exception as exc:
         logger.warning("fallback_moex_fetch_failed", error=str(exc))
         return all_rows

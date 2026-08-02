@@ -264,6 +264,8 @@ def test_refund_revokes_after_verification(monkeypatch):
                     "id": rid,
                     "status": "succeeded",
                     "payment_id": "p-515",
+                    # Full refund — matches the original payment amount.
+                    "amount": {"value": "29.00", "currency": "BYN"},
                     "metadata": {},
                 }
 

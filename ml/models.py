@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Decision = Literal["buy", "hold", "wait", "avoid"]
-ModelKind = Literal["ytm_regression", "buy_classifier", "volatility"]
+ModelKind = Literal["ytm_regression", "buy_classifier", "volatility", "combined"]
 
 
 class BondFeatures(BaseModel):

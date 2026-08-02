@@ -142,7 +142,11 @@ async def maybe_auto_rebalance(
         if plan_id:
             for a in plan.actions:
                 if a.side == "buy":
-                    await upsert_position(session, user_id, a.internal_id, a.amount)
+                    # Delta is the ADDITIONAL money to invest — merge it into
+                    # any existing position instead of replacing it.
+                    pos = next((p for p in positions if p.internal_id == a.internal_id), None)
+                    new_amount = (pos.amount + a.amount) if pos is not None else a.amount
+                    await upsert_position(session, user_id, a.internal_id, new_amount)
                 elif a.side == "sell":
                     pos = next((p for p in positions if p.internal_id == a.internal_id), None)
                     if pos is not None:

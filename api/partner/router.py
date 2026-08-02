@@ -1,8 +1,9 @@
 """Partner API surface: key management, webhooks, and read-only analytics.
 
 Mounted at ``/api/v1/partner``. Key-management endpoints use the normal user
-JWT (so a Pro/Enterprise user can mint B2B keys); the data/webhook endpoints
-use the partner API key (``X-Aigenis-Api-Key``) and are quota-limited per key.
+JWT and require the ``public_api`` feature (B2B partner tiers — self-serve key
+minting is not available to free users); the data/webhook endpoints use the
+partner API key (``X-Aigenis-Api-Key``) and are quota-limited per key.
 """
 
 from __future__ import annotations
@@ -15,10 +16,13 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api import _helpers as _h
-from api.access_control import _get_current_user_from_request
+from api.access_control import (
+    RequireFeature,
+    _get_current_user_from_request,
+)
 from api.analytics import _get_bond_or_404, _score_for_bond
 from api.i18n import get_lang, tr
-from api.partner.security import generate_api_key, partner_rate_limit
+from api.partner.security import generate_api_key, partner_rate_limit, verify_api_key
 from api.partner.webhooks import (
     SUPPORTED_EVENTS,
     delete_webhook,
@@ -31,9 +35,11 @@ from ml.repository import predictions_for_bond
 from scoring.disclaimer import DISCLAIMER_FULL
 from scoring.explain import explain_score
 from scraper.db import session_scope
+from scraper.logging import get_logger
 from scraper.orm import BondORM, PartnerKeyORM, PartnerReferralORM, WebhookORM
 
 router = APIRouter(prefix="/api/v1/partner", tags=["partner"])
+logger = get_logger("api.partner")
 
 
 # --- Auth bridge for per-request localization --------------------------------
@@ -77,13 +83,15 @@ class KeyInfo(BaseModel):
 async def create_partner_key(
     body: CreateKeyRequest,
     user_id: int = Depends(_require_user),
+    _: str = Depends(RequireFeature("public_api")),
 ):
-    raw, key_hash = generate_api_key()
+    raw, key_hash, key_fp = generate_api_key()
     async with session_scope() as session:
         key = PartnerKeyORM(
             name=body.name,
             owner_user_id=user_id,
             key_hash=key_hash,
+            key_fp=key_fp,
             tier="partner",
             rate_limit=120,
             active=True,
@@ -193,6 +201,7 @@ class WebhookInfo(BaseModel):
     created_at: str | None
     last_error: str | None
     last_delivered_at: str | None
+    secret: str | None = None  # returned only on creation, for HMAC verification
     message: str | None = None
 
 
@@ -212,7 +221,9 @@ async def create_webhook(
     wh = await register_webhook(
         partner_key_id=key.id, url=body.url, events=body.events, secret=secret
     )
-    return _webhook_info(wh, tr(lang, "webhook_registered"))
+    info = WebhookInfo(**_webhook_info(wh, tr(lang, "webhook_registered")))
+    info.secret = secret  # shown once — receivers need it to verify signatures
+    return info
 
 
 @router.get("/webhooks", response_model=list[WebhookInfo])
@@ -278,7 +289,16 @@ async def partner_bond_detail(internal_id: str, _key: PartnerKeyORM = Depends(pa
 
 
 @router.get("/bonds/{internal_id}/analysis")
-async def partner_bond_analysis(internal_id: str, _key: PartnerKeyORM = Depends(partner_rate_limit)):
+async def partner_bond_analysis(
+    internal_id: str, key: PartnerKeyORM = Depends(partner_rate_limit)
+):
+    if key.tier == "trial":
+        # Self-served keys (public /partners form) are a free evaluation tier:
+        # listing + detail work, premium analysis requires a paid key tier.
+        raise HTTPException(
+            status_code=402,
+            detail="Полный анализ (RV + ML) доступен в платных тарифах Partner / API Pro.",
+        )
     bond = await _get_bond_or_404(internal_id)
     score = await _score_for_bond(bond)
     ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity else None
@@ -328,28 +348,21 @@ async def partner_bond_analysis(internal_id: str, _key: PartnerKeyORM = Depends(
 @router.get("/usage")
 async def partner_usage(request: Request):
     """Per-key usage analytics: request count, endpoints hit, last activity."""
-    import bcrypt as _bcrypt
     api_key = request.headers.get("X-Aigenis-Api-Key", "")
     if not api_key:
         raise HTTPException(status_code=401, detail="missing API key")
     async with session_scope() as session:
-        rows = (
-            await session.execute(select(PartnerKeyORM).where(PartnerKeyORM.active.is_(True)))
-        ).scalars().all()
-        for row in rows:
-            try:
-                if _bcrypt.checkpw(api_key.encode("utf-8"), row.key_hash.encode("utf-8")):
-                    return {
-                        "key_id": row.id,
-                        "name": row.name,
-                        "tier": row.tier,
-                        "rate_limit": row.rate_limit,
-                        "active": row.active,
-                        "created_at": row.created_at.isoformat() if row.created_at else None,
-                    }
-            except (ValueError, Exception):
-                continue
-        raise HTTPException(status_code=404, detail="key not found")
+        row = await verify_api_key(session, api_key)
+        if row is None:
+            raise HTTPException(status_code=404, detail="key not found")
+        return {
+            "key_id": row.id,
+            "name": row.name,
+            "tier": row.tier,
+            "rate_limit": row.rate_limit,
+            "active": row.active,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
 
 
 # --------------------------------------------------------------------------- #

@@ -13,7 +13,7 @@ WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ .
-RUN npm run build
+RUN npx vite build
 
 # ---- Stage 2: Python base ----
 FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy AS base

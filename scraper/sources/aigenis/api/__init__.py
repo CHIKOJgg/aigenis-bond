@@ -5,8 +5,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
-from ...errors import ParseError
-from ...models import Bond, BondHistory, is_government_issuer
+from scraper.errors import ParseError
+from scraper.models import Bond, BondHistory, is_government_issuer
 
 
 def _coerce_date(value: Any) -> date | None:

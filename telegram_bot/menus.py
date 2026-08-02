@@ -43,7 +43,7 @@ HELP_TEXT = (
 
 def _main_menu_kb() -> InlineKeyboardMarkup:
     settings = get_settings()
-    partners_url = f"{settings.web_url.rstrip('/')}/partners"
+    partners_url = f"{settings.aigenis.web_url.rstrip('/')}/partners"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💱 Курсы", callback_data="cmd_rates")],
@@ -106,7 +106,8 @@ _DESK_MENU = _submenu(
     [
         [("⚖️ Relative Value", "cmd_rv"), ("⏱ Duration", "cmd_duration")],
         [("💰 Carry", "cmd_carry"), ("⚠️ Стресс-тесты", "cmd_stress")],
-        [("🏛 Desk Status", "cmd_desk_status"), ("📈 Кривая доходности", "cmd_curve")],
+        [("🏛 Desk Status", "cmd_desk_status"), ("📐 Спреды (Z/G)", "cmd_desk_spreads")],
+        [("📈 Кривая доходности", "cmd_curve")],
         [("🔍 Выбрать облигацию (РЕПО / отчёты)", "bonds:menu")],
     ],
 )

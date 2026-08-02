@@ -95,8 +95,9 @@ def test_score_factor_impact_sign():
 def test_user_preferences_validation_bounds():
     # Shares must be within [0, 1].
     import pytest
+    from pydantic import ValidationError
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         UserPreferences(
             user_id=1,
             share_usd=1.5,  # out of range

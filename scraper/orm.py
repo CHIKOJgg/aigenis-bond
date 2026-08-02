@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -37,12 +38,12 @@ class BondORM(Base):
     currency: Mapped[str] = mapped_column(String(8), nullable=False)
     nominal: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
 
-    coupon_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    coupon_rate: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
     coupon_frequency: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     maturity_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
-    yield_to_maturity: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    yield_to_maturity: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
 
     amortization: Mapped[str | None] = mapped_column(String(16), nullable=True)
     offer_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -80,6 +81,7 @@ class BondORM(Base):
         Index("ix_bonds_status", "status"),
         Index("ix_bonds_yield_desc", "yield_to_maturity"),
         Index("ix_bonds_maturity", "maturity_date"),
+        Index("ix_bonds_is_government", "is_government"),
     )
 
 
@@ -152,6 +154,8 @@ class BondScoreORM(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
+    __table_args__ = (Index("ix_scores_score_desc", score.desc()),)
+
 
 class AlertORM(Base):
     __tablename__ = "alerts"
@@ -192,6 +196,9 @@ class UserORM(Base):
         DateTime(timezone=True), nullable=True
     )
     last_charge_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Payment channel that established the current paid window: "stars" | "yookassa" | None.
+    # A refund only revokes access when it matches the channel that actually paid.
+    payment_channel: Mapped[str | None] = mapped_column(String(16), nullable=True)
     trial_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_reset_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
@@ -201,9 +208,9 @@ class UserORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        Index("ix_users_email", "email"),
-        Index("ix_users_google_id", "google_id"),
-        Index("ix_users_telegram_id", "telegram_id"),
+        # email/google_id/telegram_id are already UNIQUE (see column defs);
+        # the unique constraint doubles as the lookup index, so no extra
+        # non-unique indexes are needed on those columns.
         Index("ix_users_role", "role"),
         Index("ix_users_subscription_tier", "subscription_tier"),
     )
@@ -225,7 +232,8 @@ class SubscriptionORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        Index("ix_subscriptions_user_id", "user_id"),
+        # user_id is already UNIQUE (one subscription row per user) — the
+        # unique constraint is the lookup index; keep the other useful ones.
         Index("ix_subscriptions_yookassa_payment", "yookassa_payment_id"),
         Index("ix_subscriptions_plan", "plan"),
     )
@@ -350,6 +358,10 @@ class PredictionORM(Base):
         Index("ix_predictions_internal_id", "internal_id"),
         Index("ix_predictions_asof", "asof_date"),
         Index("ix_predictions_decision", "decision"),
+        UniqueConstraint(
+            "internal_id", "asof_date", "model_version", "kind",
+            name="uq_predictions_key",
+        ),
     )
 
 
@@ -653,8 +665,10 @@ class AlertEventORM(Base):
 class PartnerKeyORM(Base):
     """API-ключи для партнёрской интеграции (B2B / вебхуки).
 
-    В БД хранится только хэш ключа (SHA-256). Сам секрет возвращается
-    единожды при создании и больше нигде не логируется.
+    В БД хранится только хэш ключа (bcrypt) плюс быстрый SHA-256
+    отпечаток ``key_fp`` для lookup без перебора всех ключей
+    (bcrypt-verify по одному ключу не даёт возможность CPU-DoS).
+    Сам секрет возвращается единожды при создании и больше нигде не логируется.
     """
 
     __tablename__ = "partner_api_keys"
@@ -663,6 +677,9 @@ class PartnerKeyORM(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     owner_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     key_hash: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    # unique=True already creates the lookup index for key_fp — no separate
+    # index=True (that would duplicate it).
+    key_fp: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     tier: Mapped[str] = mapped_column(String(16), nullable=False, server_default="partner")
     rate_limit: Mapped[int] = mapped_column(Integer, nullable=False, server_default="120")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
@@ -802,8 +819,9 @@ class PnLSnapshotORM(Base):
     daily_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
 
     __table_args__ = (
+        # The unique constraint on (user_id, date) already serves as the
+        # lookup index for the per-user daily query — no duplicate needed.
         UniqueConstraint("user_id", "date", name="uq_pnl_user_date"),
-        Index("ix_pnl_user_date", "user_id", "date"),
     )
 
 
@@ -835,4 +853,58 @@ class BacktestORM(Base):
 
     __table_args__ = (
         Index("ix_backtest_user_id", "user_id"),
+    )
+
+
+class DocumentAnalysisORM(Base):
+    """Uploaded bond prospectus analysis, persisted per user."""
+
+    __tablename__ = "document_analysis"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    filename: Mapped[str] = mapped_column(String(256), nullable=False)
+    internal_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ai_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_data: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
+    risk_flags: Mapped[list | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_documents_user_created", "user_id", "created_at"),
+    )
+
+
+class SpreadReportORM(Base):
+    """Z/G-spread and model-vs-market pricing signal per bond."""
+
+    __tablename__ = "spread_reports"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    internal_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    tenor_years: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    ytm_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    flat_yield_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    z_spread_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    g_spread_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    curve_rate_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    model_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    market_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    mispricing_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 6), nullable=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    asof_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_spread_internal_id", "internal_id"),
+        Index("ix_spread_asof", "asof_date"),
     )

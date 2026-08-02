@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from scraper.logging import get_logger
+from scraper.models import BondHistory
+
 from . import parse_history_items
-from ...logging import get_logger
-from ...models import BondHistory
 
 logger = get_logger("scraper.api.history")
 

@@ -77,8 +77,6 @@ def _ip_allowed(ip: str | None) -> bool:
     if ip is None:
         return False
     nets = _allowed_networks()
-    if any(str(n) == "*/0" for n in nets):  # never true, kept for clarity
-        return True
     if os.getenv("YOOKASSA_WEBHOOK_IPS", "").strip() == "*":
         return True
     try:
@@ -157,20 +155,30 @@ async def create_payment(
     from urllib.parse import urlparse
     parsed = urlparse(base)
     if not parsed.scheme and not parsed.netloc:
-        base = base.lstrip("/")
-    elif parsed.scheme not in ("https",) or not parsed.netloc:
+        # Relative path — make it absolute against the public base URL
+        # (YooKassa requires an absolute return URL).
+        from api.notifications.email import APP_BASE_URL
+        base = f"{APP_BASE_URL.rstrip('/')}/{base.lstrip('/')}"
+        parsed = urlparse(base)
+    if parsed.scheme not in ("https",) or not parsed.netloc:
         raise HTTPException(status_code=400, detail="success_url must be an HTTPS URL or relative path")
-    elif parsed.netloc not in ("aigenis.by", "www.aigenis.by", "invest.aigenis.by", "localhost"):
-        from scraper.config import get_settings
-        allowed_domains = {get_settings().web_url.rstrip("/").split("://")[-1].split("/")[0]} if get_settings().web_url else set()
-        if parsed.netloc not in allowed_domains:
-            raise HTTPException(status_code=400, detail="success_url domain is not allowed")
+    allowed_domains = {
+        "aigenis.by",
+        "www.aigenis.by",
+        "invest.aigenis.by",
+        "localhost",
+    }
+    from scraper.config import get_settings
+    web_url = get_settings().aigenis.web_url or ""
+    if web_url:
+        allowed_domains.add(web_url.rstrip("/").split("://")[-1].split("/")[0])
+    if parsed.netloc not in allowed_domains:
+        raise HTTPException(status_code=400, detail="success_url domain is not allowed")
 
     result = await billing_service.create_payment(
         user=user,
         plan=req.plan,
-        success_url=req.success_url,
-        cancel_url=req.cancel_url,
+        success_url=base,
         referral_code=req.referral_code,
     )
     if not result:
@@ -187,12 +195,18 @@ async def get_my_subscription(
     user_id: int = Depends(_get_current_user),
     session: AsyncSession = Depends(_get_session),
 ):
-    """Get current user's subscription status."""
+    """Get current user's subscription status (expiry-aware)."""
+    from telegram_bot.subscriptions import effective_tier
+
+    user = await get_user_by_id(session, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     sub = await billing_service.get_subscription(session, user_id)
     if not sub:
-        return SubscriptionResponse(plan="free", status="inactive")
+        plan = effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end)
+        return SubscriptionResponse(plan=plan, status="inactive")
     return SubscriptionResponse(
-        plan=sub.plan,
+        plan=effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end),
         status=sub.status,
         current_period_start=sub.current_period_start.isoformat() if sub.current_period_start else None,
         current_period_end=sub.current_period_end.isoformat() if sub.current_period_end else None,

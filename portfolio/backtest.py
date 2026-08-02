@@ -2,11 +2,15 @@
 
 Simulates buy/sell decisions based on strategy rules applied to historical
 bond data, tracks equity curve, and computes performance metrics.
+
+All decisions are made on information available at the decision date:
+prices/yields come from the history rows on or before that date, never from
+the bond's current (future) state, to avoid lookahead bias.
 """
 from __future__ import annotations
 
 import math
-from collections import defaultdict
+from bisect import bisect_right
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -15,20 +19,22 @@ from scraper.orm import BondHistoryORM
 
 _Q = Decimal("0.01")
 
+KNOWN_STRATEGIES = {"Balanced", "Conservative", "Aggressive", "Carry Trade", "Dollarization"}
+
 
 class BacktestResult:
     __slots__ = (
-        "strategy",
-        "start_date",
-        "end_date",
-        "initial_capital",
-        "final_value",
-        "total_return_pct",
         "annual_return_pct",
-        "sharpe_ratio",
-        "max_drawdown_pct",
+        "end_date",
         "equity_curve",
+        "final_value",
+        "initial_capital",
+        "max_drawdown_pct",
         "positions_history",
+        "sharpe_ratio",
+        "start_date",
+        "strategy",
+        "total_return_pct",
     )
 
     def __init__(self) -> None:
@@ -63,24 +69,60 @@ class BacktestResult:
 def _score_bond_for_strategy(
     bond: Bond,
     strategy: str,
-    price_history: list[tuple[date, Decimal, Decimal]] | None = None,
+    price: Decimal | None = None,
+    ytm: Decimal | None = None,
 ) -> float:
-    """Score a bond for a given strategy. Higher = better."""
-    ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity else 0.0
-    price = float(bond.price) if bond.price else 100.0
+    """Score a bond for a given strategy. Higher = better.
+
+    Uses the historical ``price``/``ytm`` observed at the decision date when
+    available; otherwise falls back to the bond's current catalog values.
+    """
+    ytm_f = float(ytm) if ytm else (float(bond.yield_to_maturity) if bond.yield_to_maturity else 0.0)
+    price_f = float(price) if price else (float(bond.price) if bond.price else 100.0)
 
     if strategy == "Conservative":
-        return ytm * 0.3 + (100.0 - price) * 0.01
+        return ytm_f * 0.3 + (100.0 - price_f) * 0.01
     elif strategy == "Aggressive":
-        return ytm * 0.8 + (100.0 - price) * 0.005
+        return ytm_f * 0.8 + (100.0 - price_f) * 0.005
     elif strategy == "Carry Trade":
         coupon = float(bond.coupon_rate) if bond.coupon_rate else 0.0
-        return coupon * 0.6 + ytm * 0.4
+        return coupon * 0.6 + ytm_f * 0.4
     elif strategy == "Dollarization":
         currency_bonus = 5.0 if str(bond.currency).upper() == "USD" else 0.0
-        return ytm * 0.5 + currency_bonus
+        return ytm_f * 0.5 + currency_bonus
     else:
-        return ytm * 0.5 + (100.0 - price) * 0.005
+        return ytm_f * 0.5 + (100.0 - price_f) * 0.005
+
+
+def _build_price_rows(
+    history_by_bond: dict[str, list[BondHistoryORM]],
+) -> dict[str, list[tuple[date, Decimal, Decimal]]]:
+    """Per-bond chronologically sorted ``[(date, price, ytm)]`` rows."""
+    rows: dict[str, list[tuple[date, Decimal, Decimal]]] = {}
+    for iid, history in history_by_bond.items():
+        cleaned = []
+        for h in history:
+            if h.price is not None:
+                cleaned.append((h.date, h.price, h.yield_ or Decimal("0")))
+        cleaned.sort(key=lambda r: r[0])
+        if cleaned:
+            rows[iid] = cleaned
+    return rows
+
+
+def _snapshot_on_or_before(
+    rows: dict[str, list[tuple[date, Decimal, Decimal]]],
+    iid: str,
+    day: date,
+) -> tuple[Decimal, Decimal] | None:
+    """Last known (price, ytm) for the bond at or before ``day``."""
+    series = rows.get(iid)
+    if not series:
+        return None
+    idx = bisect_right(series, day, key=lambda r: r[0])
+    if idx == 0:
+        return None
+    return series[idx - 1][1], series[idx - 1][2]
 
 
 def run_backtest(
@@ -105,42 +147,55 @@ def run_backtest(
         end_date: backtest end (defaults to latest history)
         top_n: number of bonds to hold
         rebalance_days: how often to rebalance (in calendar days)
+
+    Raises:
+        ValueError: if ``strategy`` is unknown, or ``start_date`` > ``end_date``.
     """
+    if strategy not in KNOWN_STRATEGIES:
+        raise ValueError(f"Unknown strategy: {strategy}")
+    if initial_capital <= 0:
+        raise ValueError("initial_capital must be positive")
+    if top_n < 1:
+        raise ValueError("top_n must be at least 1")
+    if rebalance_days < 1:
+        raise ValueError("rebalance_days must be at least 1")
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("start_date must not be after end_date")
+
     result = BacktestResult()
     result.strategy = strategy
     result.initial_capital = initial_capital
 
     # Collect all available dates
     all_dates: set[date] = set()
-    for iid, history in history_by_bond.items():
+    for history in history_by_bond.values():
         for h in history:
             all_dates.add(h.date)
 
     if not all_dates:
-        result.end_date = result.start_date
+        result.start_date = start_date or date.today()
+        result.end_date = end_date or date.today()
         result.final_value = initial_capital
         result.equity_curve = [{"date": date.today().isoformat(), "value": float(initial_capital)}]
         return result
 
     sorted_dates = sorted(all_dates)
-    if start_date:
-        result.start_date = start_date
-    else:
-        result.start_date = sorted_dates[0]
-    if end_date:
-        result.end_date = end_date
-    else:
-        result.end_date = sorted_dates[-1]
+    result.start_date = start_date if start_date else sorted_dates[0]
+    result.end_date = end_date if end_date else sorted_dates[-1]
 
-    # Build price lookup: (internal_id, date) -> (price, ytm)
-    price_lookup: dict[tuple[str, date], tuple[Decimal, Decimal]] = {}
-    for iid, history in history_by_bond.items():
-        for h in history:
-            if h.price is not None:
-                price_lookup[(iid, h.date)] = (h.price, h.yield_ or Decimal("0"))
+    price_rows = _build_price_rows(history_by_bond)
 
-    # Build bonds by id
-    bonds_by_id = {b.internal_id: b for b in bonds}
+    def mark_price(iid: str, day: date) -> Decimal | None:
+        """Price strictly at-or-before ``day``; None if unknown.
+
+        Never falls back to the bond's *current* catalog price — that would
+        leak future information into a historical simulation (lookahead bias).
+        A None price simply means the position cannot be marked on this date.
+        """
+        snap = _snapshot_on_or_before(price_rows, iid, day)
+        if snap:
+            return snap[0]
+        return None
 
     # Simulate
     capital = initial_capital
@@ -148,7 +203,6 @@ def run_backtest(
     equity_curve: list[dict] = []
     positions_history: list[dict] = []
     last_rebalance = result.start_date - timedelta(days=rebalance_days)
-    peak = capital
 
     for current_date in sorted_dates:
         if current_date < result.start_date:
@@ -156,14 +210,12 @@ def run_backtest(
         if current_date > result.end_date:
             break
 
-        # Update portfolio value
+        # Update portfolio value (last known prices only — no future data).
         total_value = capital
         for iid, amount in holdings.items():
-            price_data = price_lookup.get((iid, current_date))
-            if price_data and price_data[0] > 0:
-                total_value += amount * price_data[0]
-            elif iid in bonds_by_id and bonds_by_id[iid].price:
-                total_value += amount * bonds_by_id[iid].price
+            px = mark_price(iid, current_date)
+            if px and px > 0:
+                total_value += amount * px
 
         equity_curve.append({
             "date": current_date.isoformat(),
@@ -175,21 +227,28 @@ def run_backtest(
         if days_since >= rebalance_days:
             last_rebalance = current_date
 
-            # Score available bonds
+            # Score available bonds using data known at this date.
             scored = []
             for b in bonds:
-                if b.price and b.price > 0:
-                    s = _score_bond_for_strategy(b, strategy)
-                    scored.append((b.internal_id, s))
+                snap = _snapshot_on_or_before(price_rows, b.internal_id, current_date)
+                if snap is not None:
+                    score = _score_bond_for_strategy(
+                        b, strategy, price=snap[0], ytm=snap[1]
+                    )
+                elif b.price and b.price > 0:
+                    score = _score_bond_for_strategy(b, strategy)
+                else:
+                    continue
+                scored.append((b.internal_id, score))
             scored.sort(key=lambda x: x[1], reverse=True)
             selected = scored[:top_n]
 
-            # Sell everything
+            # Sell everything at the last known price (money must not vanish).
             capital_after_sell = capital
             for iid, amount in holdings.items():
-                price_data = price_lookup.get((iid, current_date))
-                if price_data:
-                    capital_after_sell += amount * price_data[0]
+                px = mark_price(iid, current_date)
+                if px and px > 0:
+                    capital_after_sell += amount * px
             holdings = {}
             capital = capital_after_sell
 
@@ -197,11 +256,11 @@ def run_backtest(
             if selected and capital > 0:
                 per_bond = capital / Decimal(len(selected))
                 for iid, _score in selected:
-                    price_data = price_lookup.get((iid, current_date))
-                    if price_data and price_data[0] > 0:
-                        amount = (per_bond / price_data[0]).quantize(_Q)
+                    px = mark_price(iid, current_date)
+                    if px and px > 0:
+                        amount = (per_bond / px).quantize(_Q)
                         holdings[iid] = amount
-                        capital -= amount * price_data[0]
+                        capital -= amount * px
 
             positions_history.append({
                 "date": current_date.isoformat(),
@@ -209,12 +268,12 @@ def run_backtest(
                 "capital": round(float(capital), 2),
             })
 
-    # Final value
+    # Final value at last known prices on/before end_date.
     final_value = capital
     for iid, amount in holdings.items():
-        price_data = price_lookup.get((iid, result.end_date))
-        if price_data and price_data[0] > 0:
-            final_value += amount * price_data[0]
+        px = mark_price(iid, result.end_date)
+        if px and px > 0:
+            final_value += amount * px
 
     result.final_value = final_value.quantize(_Q)
     if initial_capital > 0:
@@ -222,7 +281,7 @@ def run_backtest(
 
     # Annualized return
     years = (result.end_date - result.start_date).days / 365.25
-    if years > 0 and initial_capital > 0:
+    if years > 0 and initial_capital > 0 and final_value > 0:
         ann = ((float(final_value) / float(initial_capital)) ** (1 / years) - 1) * 100
         result.annual_return_pct = Decimal(str(round(ann, 2)))
 

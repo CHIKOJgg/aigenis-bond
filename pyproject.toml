@@ -35,6 +35,7 @@ dependencies = [
     "scikit-learn>=1.5.0",
     "pandas>=2.2.0",
     "fastapi>=0.115.0",
+    "python-multipart>=0.0.6",
     "uvicorn[standard]>=0.32.0",
     "aiohttp>=3.10.0",
     "python-jose[cryptography]>=3.3.0",
@@ -44,6 +45,8 @@ dependencies = [
     "aiofiles>=24.1.0",
     "prometheus-client>=0.21.0",
     "yookassa>=3.4.1",
+    "openpyxl>=3.1.2",
+    "email-validator>=2.2.0",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +56,11 @@ prod = [
 ]
 load = [
     "locust>=2.32.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
 ]
 
 [project.scripts]
@@ -88,8 +96,9 @@ ignore = ["E501", "RUF012", "RUF001", "RUF002", "RUF003", "B008"]
 [tool.ruff.lint.per-file-ignores]
 # scikit-learn convention: `X` holds the feature matrix.
 "ml/**" = ["N806"]
-# pytest fixtures are passed as test-function arguments but never referenced directly.
-"tests/**" = ["ARG001"]
+# pytest fixtures are passed as test-function arguments but never referenced directly;
+# mock callables in tests commonly have unused/unpacked parameters by design.
+"tests/**" = ["ARG001", "ARG002", "ARG005", "RUF059"]
 
 fixable = ["I", "UP", "W"]
 
@@ -128,4 +137,6 @@ addopts = "-q"
 markers = [
     "load: server load / stress tests (require a running API + locust)",
 ]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 

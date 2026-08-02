@@ -8,9 +8,18 @@ from typing import Any
 from scraper.models import BondDailyAccrual
 
 XLSX_URLS = {
-    "prices": "https://aigenis.by/wp-content/uploads/2026/06/tekushhaya_stoimost_obligaczij_ajgenis_byn_sajt.xlsx",
-    "calculator": "https://aigenis.by/wp-content/uploads/2026/04/kalkulyator_investora_obligaczii_aigenis_24.04.2026.xlsx",
-    "indexed": "https://aigenis.by/wp-content/uploads/2026/04/kalkulyator_investora_indeksiruemye_obligaczii_aigenis_24_04_2026.xlsx",
+    "prices": os.getenv(
+        "XLSX_URL_PRICES",
+        "https://aigenis.by/wp-content/uploads/2026/06/tekushhaya_stoimost_obligaczij_ajgenis_byn_sajt.xlsx",
+    ),
+    "calculator": os.getenv(
+        "XLSX_URL_CALCULATOR",
+        "https://aigenis.by/wp-content/uploads/2026/04/kalkulyator_investora_obligaczii_aigenis_24.04.2026.xlsx",
+    ),
+    "indexed": os.getenv(
+        "XLSX_URL_INDEXED",
+        "https://aigenis.by/wp-content/uploads/2026/04/kalkulyator_investora_indeksiruemye_obligaczii_aigenis_24_04_2026.xlsx",
+    ),
 }
 
 
@@ -207,13 +216,6 @@ def parse_indexed_xlsx(filepath: str) -> dict[str, BondXlsxEnrichment]:
 
     bonds: dict[str, BondXlsxEnrichment] = {}
 
-    for r in range(3, 12):
-        param_name = _serialize(master_ws.cell(r, 1).value)
-        if not param_name:
-            continue
-        for c in range(2, master_ws.max_column + 1):
-            master_ws.cell(c, r)
-
     # Better approach: read the master table more carefully
     bond_names = []
     for c in range(2, master_ws.max_column + 1, 2):
@@ -368,7 +370,11 @@ def download_xlsx_files(dest_dir: str | None = None) -> dict[str, str]:
     for key, url in XLSX_URLS.items():
         local_path = os.path.join(dest_dir, os.path.basename(url))
         if not os.path.exists(local_path):
-            urllib.request.urlretrieve(url, local_path)
+            # Timeout so a hung network never blocks the whole pipeline.
+            with urllib.request.urlopen(url, timeout=30) as resp, open(
+                local_path, "wb"
+            ) as out:
+                out.write(resp.read())
         result[key] = local_path
     return result
 

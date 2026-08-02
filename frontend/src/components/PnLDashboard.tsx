@@ -55,7 +55,7 @@ export default function PnLDashboard() {
   async function loadPnL() {
     setLoading(true);
     try {
-      const result = await api.request('/api/v1/pnl');
+      const result = await api.request<PnLData>('/api/v1/pnl');
       setData(result);
     } catch {
       console.error('Failed to load P&L');

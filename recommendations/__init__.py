@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from recommendations.engine import recommend_bonds, save_predictions_to_db
+from recommendations.engine import recommend_bonds, recommend_for_issuer
 
-__all__ = ["recommend_bonds", "save_predictions_to_db"]
+__all__ = ["recommend_bonds", "recommend_for_issuer"]

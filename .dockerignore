@@ -31,7 +31,9 @@ ml/artifacts
 
 # Secrets
 .env
+.env.bak
 *.env.local
+.env.example
 
 # Documentation
 *.md

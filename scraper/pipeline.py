@@ -5,7 +5,7 @@ import os
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 from tqdm.asyncio import tqdm
@@ -25,6 +25,9 @@ from scraper.models import Bond, BondDailyAccrual
 from scraper.moex import MoexClient
 from scraper.orm import BondORM
 from scraper.validation import validate_detail, validate_listing
+
+if TYPE_CHECKING:
+    from scraper.sources.aigenis.client import AigenisClient
 
 logger = get_logger("scraper.pipeline")
 
@@ -94,7 +97,7 @@ async def collect_details(
                 async with session_scope() as session:
                     await repositories.bonds.upsert_bond(
                         session,
-                        _delisted_placeholder(iid),
+                        await _delisted_placeholder(iid),
                     )
                 return iid, "delisted"
             except (TransientError, ParseError) as e:
@@ -123,11 +126,30 @@ async def collect_details(
     return ok, err
 
 
-def _delisted_placeholder(internal_id: str, currency: str = "unknown") -> Bond:
+async def _delisted_placeholder(iid: str) -> Bond:
+    """Mark a bond as delisted, preserving its last known currency/name.
+
+    A bare placeholder would wipe the currency to ``"unknown"``, which breaks
+    currency filters (API, bot /usd /byn, widget) for delisted bonds.
+    """
+    known_currency: str | None = None
+    known_name: str | None = None
+    try:
+        async with session_scope() as session:
+            existing = (
+                await session.execute(
+                    select(BondORM).where(BondORM.internal_id == iid)
+                )
+            ).scalar_one_or_none()
+            if existing:
+                known_currency = existing.currency
+                known_name = existing.name
+    except Exception:
+        logger.exception("delisted_lookup_failed", internal_id=iid)
     return Bond(
-        internal_id=internal_id,
-        name=internal_id,
-        currency=currency,
+        internal_id=iid,
+        name=known_name or iid,
+        currency=known_currency or "USD",
         status="delisted",
         fetched_at=datetime.now(UTC),
     )
@@ -181,7 +203,7 @@ async def backfill_history(
 
 
 async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
-    from scraper.parsers.xlsx import XlsxParseResult, parse_all
+    from scraper.parsers.xlsx import parse_all
 
     if xlsx_data is None:
         try:

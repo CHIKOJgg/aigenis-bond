@@ -36,9 +36,18 @@ def _ns_rate(t: float, beta0: float, beta1: float, beta2: float, tau: float) -> 
 
 
 def fit_nelson_siegel(points: list[CurvePoint]) -> NelsonSiegelParams:
-    """Подобрать параметры NS по точкам кривой (минимизация MSE)."""
+    """Подобрать параметры NS по точкам кривой (минимизация MSE).
+
+    Bounds keep the fit stable on sparse/noisy input: ``tau`` is restricted to
+    [0.1, 20] (it decays factors by tenor, so extreme values collapse the curve
+    into a constant) and the betas are bounded to plausible rate ranges.
+    """
     if len(points) < 3:
-        return NelsonSiegelParams(beta0=0.0, beta1=0.0, beta2=0.0, tau=1.5)
+        # A 1-2 point curve carries no shape information: report the average
+        # as a flat curve (beta0 = mean) instead of a degenerate zero curve,
+        # so spreads against it are not absurd.
+        avg = fmean(p.rate_pct for p in points)
+        return NelsonSiegelParams(beta0=round(avg, 4), beta1=0.0, beta2=0.0, tau=1.5)
 
     ts = [p.years for p in points]
     ys = [p.rate_pct for p in points]
@@ -50,14 +59,21 @@ def fit_nelson_siegel(points: list[CurvePoint]) -> NelsonSiegelParams:
         err = sum((_ns_rate(t, b0, b1, b2, tau) - y) ** 2 for t, y in zip(ts, ys, strict=True))
         return err
 
+    lo_rate, hi_rate = max(min(ys) - 20.0, -50.0), max(ys) + 20.0
+    bounds = [
+        (lo_rate, hi_rate),  # beta0 (long end)
+        (-hi_rate, hi_rate),  # beta1 (short-end spread)
+        (-hi_rate, hi_rate),  # beta2 (curvature)
+        (0.1, 20.0),  # tau (decay)
+    ]
     init = [fmean(ys), ys[0] - ys[-1] if len(ys) > 1 else 0.0, 0.0, 1.5]
-    res = minimize(_loss, init, method="Nelder-Mead")
+    res = minimize(_loss, init, method="Nelder-Mead", bounds=bounds)
     b0, b1, b2, tau = res.x
     return NelsonSiegelParams(
         beta0=round(float(b0), 4),
         beta1=round(float(b1), 4),
         beta2=round(float(b2), 4),
-        tau=round(float(max(tau, 0.01)), 4),
+        tau=round(float(max(tau, 0.1)), 4),
     )
 
 

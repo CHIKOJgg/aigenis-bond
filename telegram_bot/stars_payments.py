@@ -52,7 +52,7 @@ def _subscribe_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-@stars_router.message(F.text == "/subscribe")
+@stars_router.message(F.text.func(lambda t: (t or "").split()[0].lstrip("/").split("@")[0] == "subscribe"))
 async def cmd_subscribe(message) -> None:
     await _show_subscribe(message)
 
@@ -81,9 +81,15 @@ async def cb_stars_pay(callback_query) -> None:
         await callback_query.answer("Неизвестный тариф", show_alert=True)
         return
     await callback_query.answer()
+    chat_id = getattr(getattr(callback_query, "message", None), "chat", None)
+    if chat_id is None:
+        # Callback from a notification, not a message — nothing to send the
+        # invoice to; tell the user to run /subscribe instead.
+        await callback_query.answer("Отправьте /subscribe, чтобы оплатить", show_alert=True)
+        return
     try:
         await callback_query.bot.send_invoice(
-            chat_id=callback_query.message.chat.id,
+            chat_id=chat_id.id,
             title=f"Подписка {plan.name}",
             description=plan.blurb,
             payload=f"stars_sub:{plan.tier}",

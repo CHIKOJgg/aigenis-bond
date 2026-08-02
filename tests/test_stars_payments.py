@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
+
 from scraper.db import dispose, get_engine, session_scope
 from scraper.orm import Base, UserORM
 from telegram_bot import stars_payments
@@ -80,10 +82,23 @@ def test_expiry_downgrades_effective_tier():
         tg = 100_002
         async with session_scope() as s:
             user = await subs.get_or_create_user_by_telegram(s, tg)
+            # Trial already consumed: access must come from the paid window only.
+            user.trial_end = datetime.now(UTC) - timedelta(days=1)
             user.subscription_tier = "pro"
             user.subscription_expires_at = datetime.now(UTC) - timedelta(days=1)
         # Stored tier is "pro" but it lapsed -> effective is "free".
         assert await subs.get_tier_by_telegram(tg) == "free"
+
+        # An ACTIVE trial still grants Pro even after the paid window lapsed
+        # (referral-extended trials must not be lost).
+        async with session_scope() as s:
+            user = (
+                await s.execute(
+                    select(UserORM).where(UserORM.telegram_id == tg)
+                )
+            ).scalar_one()
+            user.trial_end = datetime.now(UTC) + timedelta(days=2)
+        assert await subs.get_tier_by_telegram(tg) == "pro"
 
     _run(run)
 
@@ -92,7 +107,9 @@ def test_refund_revokes_subscription():
     async def run():
         tg = 100_003
         async with session_scope() as s:
-            await subs.get_or_create_user_by_telegram(s, tg)
+            user = await subs.get_or_create_user_by_telegram(s, tg)
+            # Trial already consumed: access must come from the paid window.
+            user.trial_end = datetime.now(UTC) - timedelta(days=1)
         await subs.set_tier_by_telegram(tg, "pro", duration_days=30, charge_id="chg-refund")
         assert await subs.get_tier_by_telegram(tg) == "pro"
 

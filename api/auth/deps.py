@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.service import decode_token, get_user_by_id
+from api.auth.service import decode_token
 from scraper.db import session_scope
 
 _bearer = HTTPBearer(auto_error=False)
@@ -25,20 +25,10 @@ async def _get_current_user(
         if sub is None:
             raise HTTPException(status_code=401, detail="Invalid token: missing subject")
         return int(sub)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid token: malformed subject")
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid token: malformed subject") from exc
 
 
 async def _get_session() -> AsyncIterator[AsyncSession]:
     async with session_scope() as session:
         yield session
-
-
-async def get_current_user_db(
-    user_id: int = Depends(_get_current_user),
-    session: AsyncSession = Depends(_get_session),
-) -> object:
-    user = await get_user_by_id(session, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user

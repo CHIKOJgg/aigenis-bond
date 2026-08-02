@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Currency = Literal["USD", "BYN", "EUR", "XAU", "XAG", "XPT"]
+Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY"]
 
 
 class Settings(BaseSettings):
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     @property
     def currencies(self) -> list[Currency]:
         if not self.currencies_raw.strip():
-            return ["USD", "BYN", "EUR", "XAU", "XAG", "XPT"]
+            return ["USD", "BYN", "EUR", "XAU", "XAG", "XPT", "CNY"]
         import json as _json
 
         try:
@@ -79,6 +79,43 @@ class Settings(BaseSettings):
     def _validate_delay(cls, v: float) -> float:
         if v < 0:
             return 0.0
+        return v
+
+    @field_validator("max_concurrency")
+    @classmethod
+    def _validate_concurrency(cls, v: int) -> int:
+        # A 0/negative value would create an asyncio.Semaphore that blocks every
+        # pipeline task forever — clamp to a sane minimum instead of failing.
+        return max(v, 1)
+
+    @field_validator("max_retries")
+    @classmethod
+    def _validate_retries(cls, v: int) -> int:
+        # 0 retries means tenacity fails instantly on the first transient error.
+        return max(v, 1)
+
+    @field_validator("currencies_raw")
+    @classmethod
+    def _validate_currencies_raw(cls, v: str) -> str:
+        # Unknown currency strings from env would silently flow into the
+        # pipeline and pollute the currency column — fail fast instead.
+        allowed = {"USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY"}
+        import json as _json
+
+        try:
+            parsed = _json.loads(v) if v.strip() else []
+            if isinstance(parsed, list):
+                raw_items = [str(x).strip().upper() for x in parsed]
+            else:
+                raw_items = [x.strip().upper() for x in v.split(",") if x.strip()]
+        except (_json.JSONDecodeError, TypeError):
+            raw_items = [x.strip().upper() for x in v.split(",") if x.strip()]
+        bad = [c for c in raw_items if c not in allowed]
+        if bad:
+            raise ValueError(
+                f"Unknown currencies in AIGENIS_CURRENCIES: {', '.join(bad)}. "
+                f"Allowed: {', '.join(sorted(allowed))}"
+            )
         return v
 
     @field_validator("history_backfill_days")
@@ -155,10 +192,23 @@ class TelegramSettings(BaseSettings):
             return []
         import json as _json
         try:
-            return _json.loads(self.admin_ids_raw)
-        except (_json.JSONDecodeError, TypeError):
+            parsed = _json.loads(self.admin_ids_raw)
+            if isinstance(parsed, list):
+                return [int(x) for x in parsed]
+        except (_json.JSONDecodeError, TypeError, ValueError):
             pass
-        return [int(x.strip()) for x in self.admin_ids_raw.split(",") if x.strip()]
+        # Fall back to comma-separated ints; a garbage value must not crash
+        # startup, so non-numeric entries are skipped.
+        out: list[int] = []
+        for x in self.admin_ids_raw.split(","):
+            x = x.strip()
+            if not x:
+                continue
+            try:
+                out.append(int(x))
+            except ValueError:
+                continue
+        return out
 
     webhook_url: str = Field(default="", validation_alias="WEBHOOK_URL")
     webhook_path: str = Field(default="/webhook", validation_alias="WEBHOOK_PATH")

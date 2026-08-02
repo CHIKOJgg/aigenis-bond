@@ -48,22 +48,6 @@ def _stdout_sink():
     return sys.stdout
 
 
-def _serialize_record(record):
-    subset = {
-        "timestamp": record["time"].isoformat(),
-        "level": record["level"].name,
-        "module": record["name"],
-        "function": record["function"],
-        "line": record["line"],
-        "message": record["message"],
-    }
-    if record.get("extra"):
-        subset.update(record["extra"])
-    if record["exception"]:
-        subset["exception"] = str(record["exception"])
-    return subset
-
-
 def configure_logging() -> None:
     global _configured
     if _configured:

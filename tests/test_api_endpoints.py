@@ -9,7 +9,6 @@ import asyncio
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
-import pytest
 
 from api.auth.service import create_access_token
 from api.main import app
@@ -84,7 +83,7 @@ def test_health_ok():
             assert resp.status_code == 200
             body = resp.json()
             assert body["status"] in {"ok", "degraded"}
-            assert body["version"] == "3.0.0"
+            assert body["version"] == "4.0.0"
             assert "uptime_seconds" in body
 
     _run(run)
@@ -92,7 +91,7 @@ def test_health_ok():
 
 def test_readiness_ok_and_unavailable():
     async def run():
-        async with session_scope() as s:
+        async with session_scope() as _s:
             pass  # DB reachable in-memory
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

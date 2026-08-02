@@ -15,7 +15,10 @@ from scraper.logging import get_logger
 logger = get_logger("api.email")
 
 SMTP_HOST: str = os.getenv("SMTP_HOST", "")
-SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+try:
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+except ValueError:
+    SMTP_PORT = 587
 SMTP_USER: str = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@aigenis.by")
@@ -74,7 +77,9 @@ def _esc_html(s: str) -> str:
 
 
 def send_verification_email(to: str, token: str) -> bool:
-    url = f"{APP_BASE_URL}/auth/verify?token={token}"
+    from urllib.parse import quote
+
+    url = f"{APP_BASE_URL}/auth/verify?token={quote(token, safe='')}"
     html = _base_html(f"""
         <p>Welcome to Aigenis Bonds! Please verify your email address to activate your account.</p>
         <p style="text-align:center"><a href="{url}" class="btn">Verify Email</a></p>
@@ -84,7 +89,9 @@ def send_verification_email(to: str, token: str) -> bool:
 
 
 def send_password_reset_email(to: str, token: str) -> bool:
-    url = f"{APP_BASE_URL}/auth/reset-password?token={token}"
+    from urllib.parse import quote
+
+    url = f"{APP_BASE_URL}/auth/reset-password?token={quote(token, safe='')}"
     html = _base_html(f"""
         <p>We received a request to reset your password. Click the button below to set a new one.</p>
         <p style="text-align:center"><a href="{url}" class="btn">Reset Password</a></p>

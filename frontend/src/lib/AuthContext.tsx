@@ -17,21 +17,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshUser = async () => {
-    try {
-      const u = await api.auth.me();
-      setUser(u);
-    } catch {
-      setUser(null);
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-    }
+    // Throws on failure so login/register surfaces a real error instead of
+    // silently clearing tokens (which looked like "nothing happened").
+    const u = await api.auth.me();
+    setUser(u);
   };
 
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
       const timeout = setTimeout(() => setLoading(false), 5000);
-      refreshUser().finally(() => {
+      refreshUser().catch(() => {
+        setUser(null);
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }).finally(() => {
         clearTimeout(timeout);
         setLoading(false);
       });

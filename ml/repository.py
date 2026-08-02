@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ml.models import ModelVersion, Prediction, TrainingRun
+from scraper.db import upsert_row
 from scraper.orm import ModelVersionORM, PredictionORM, TrainingRunORM
 
 
@@ -81,25 +82,22 @@ async def insert_training_run(session: AsyncSession, run: TrainingRun) -> None:
 
 
 async def upsert_predictions(session: AsyncSession, preds: Iterable[Prediction]) -> int:
+    """Upsert predictions keyed on (internal_id, asof_date, model_version, kind).
+
+    Uses the dialect-agnostic ``upsert_row`` (PG: ON CONFLICT; SQLite:
+    select-then-update/insert) so the path is testable and identical on both.
+    """
     rows = [_to_pred(p) for p in preds]
     if not rows:
         return 0
-    stmt = pg_insert(PredictionORM).values(rows)
-    update_cols = {
-        c: stmt.excluded[c]
-        for c in rows[0]
-        if c not in {"internal_id", "asof_date", "model_version", "kind"}
-    }
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[
-            PredictionORM.internal_id,
-            PredictionORM.asof_date,
-            PredictionORM.model_version,
-            PredictionORM.kind,
-        ],
-        set_=update_cols,
-    )
-    await session.execute(stmt)
+    index_elements = ["internal_id", "asof_date", "model_version", "kind"]
+    for row in rows:
+        await upsert_row(
+            session,
+            PredictionORM,
+            index_elements=index_elements,
+            values=row,
+        )
     return len(rows)
 
 

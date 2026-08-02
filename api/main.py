@@ -24,8 +24,8 @@ from api.billing.router import router as billing_router
 from api.document_analysis import router as document_router
 from api.nlp import router as nlp_router
 from api.partner.router import router as partner_router
-from api.pricing.router import router as pricing_router
 from api.portfolio_api import router as portfolio_advanced_router
+from api.pricing.router import router as pricing_router
 from api.reports import router as reports_router
 from api.seo import router as seo_router
 from api.stocks import router as stocks_router
@@ -52,7 +52,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="Aigenis Bonds API",
     description="Production-grade REST API for bond fixed income data",
-    version="3.0.0",
+    version="4.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -128,7 +128,8 @@ async def security_headers(request: Request, call_next):
             "base-uri 'self'; script-src 'self'"
         )
         # Explicitly drop the DENY that would otherwise block the iframe.
-        response.headers.pop("X-Frame-Options", None)
+        if "X-Frame-Options" in response.headers:
+            del response.headers["X-Frame-Options"]
         return response
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -162,6 +163,7 @@ _RATE_LIMIT = int(os.environ.get("API_RATE_LIMIT", "60"))
 _RATE_WINDOW = int(os.environ.get("API_RATE_WINDOW", "60"))
 _RATE_BACKEND = os.environ.get("RATE_LIMIT_BACKEND", "memory").strip().lower()
 _TRUSTED_PROXY = os.environ.get("TRUSTED_PROXY", "").strip() in ("1", "true", "yes")
+_MAX_TRACKED_RATE_CLIENTS = 100_000  # bound memory: evict stale entries
 _redis_client: Any = None
 
 
@@ -187,25 +189,34 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _rate_identity_and_limit(request: Request) -> tuple[str, int]:
+async def _rate_identity_and_limit(request: Request) -> tuple[str, int]:
     """Return the limiter key and the request budget for this caller.
 
     Authenticated callers are limited per user id so that many users sharing a
-    NAT/proxy IP do not exhaust one another's quota. Anonymous callers are
-    limited per (trusted) client IP. Per-tier feature access is enforced
-    separately by the RequireFeature dependency on each endpoint.
+    NAT/proxy IP do not exhaust one another's quota, and get a higher budget
+    based on their *effective* subscription tier. Anonymous callers are limited
+    per (trusted) client IP with the base budget. Per-tier feature access is
+    enforced separately by the RequireFeature dependency on each endpoint.
     """
-    from api.access_control import _get_current_user_from_request
-    from telegram_bot.subscriptions import _TIER_RANK
+    from api.access_control import _get_current_user_from_request, _get_user_tier
 
     user_id = _get_current_user_from_request(request)
+    tier = "free"
     if user_id:
-        tier = getattr(request.user, "subscription_tier", "free") if hasattr(request, "user") else "free"
-    else:
-        tier = "free"
-    # Tier-aware rate limits: free=60, pro=120, enterprise=300
-    _TIER_LIMITS = {"free": _RATE_LIMIT, "pro": _RATE_LIMIT * 2, "enterprise": _RATE_LIMIT * 5}
-    limit = _TIER_LIMITS.get(tier, _RATE_LIMIT)
+        try:
+            async with session_scope() as session:
+                tier = (await _get_user_tier(session, user_id)) or "free"
+        except Exception:
+            tier = "free"
+    # Tier-aware rate limits: free = base, higher tiers get a multiplier.
+    tier_limits = {
+        "free": _RATE_LIMIT,
+        "pro": _RATE_LIMIT * 2,
+        "enterprise": _RATE_LIMIT * 5,
+        "api_pro": _RATE_LIMIT * 10,
+        "whitelabel": _RATE_LIMIT * 20,
+    }
+    limit = tier_limits.get(tier, _RATE_LIMIT)
     if user_id:
         return f"user:{user_id}", limit
     return f"ip:{_client_ip(request)}", _RATE_LIMIT
@@ -229,6 +240,11 @@ def _memory_allow(client: str, limit: int) -> bool:
     now = time.monotonic()
     cutoff = now - _RATE_WINDOW
     with _rate_limit_lock:
+        # Evict stale keys so the store is bounded by distinct clients seen
+        # within one window (plus retained entries), not total unique IPs ever.
+        if len(_rate_limit_store) > _MAX_TRACKED_RATE_CLIENTS:
+            for key in [k for k in _rate_limit_store if not _rate_limit_store[k] or _rate_limit_store[k][-1] <= cutoff]:
+                _rate_limit_store.pop(key, None)
         timestamps = _rate_limit_store[client]
         timestamps[:] = [t for t in timestamps if t > cutoff]
         if len(timestamps) >= limit:
@@ -244,7 +260,7 @@ async def rate_limit(request: Request, call_next):
     # Public SEO pages must stay crawlable — never rate-limit crawlers away.
     if request.url.path.startswith(("/bonds", "/partners", "/sitemap.xml", "/robots.txt", "/calculator", "/guides")):
         return await call_next(request)
-    client, limit = _rate_identity_and_limit(request)
+    client, limit = await _rate_identity_and_limit(request)
     allowed = (
         await _redis_allow(client, limit)
         if _RATE_BACKEND == "redis"
@@ -296,7 +312,7 @@ class HealthResponse(BaseModel):
     status: str
     db: str
     uptime_seconds: float | None = None
-    version: str = "3.0.0"
+    version: str = "4.0.0"
 
 
 class ErrorResponse(BaseModel):
@@ -517,6 +533,18 @@ def _validate_production_config() -> None:
         raise RuntimeError(
             "SECURITY: DATABASE_URL contains the default credentials 'aigenis:aigenis'. "
             "Change POSTGRES_PASSWORD and update DATABASE_URL accordingly."
+        )
+    # Fail closed: DEMO_MODE grants anonymous callers full Pro feature access
+    # (api/access_control.get_current_tier). Running it in a production
+    # environment silently opens the paywall — refuse to start. Deploy the demo
+    # with AIGENIS_ENVIRONMENT=demo instead.
+    if os.environ.get("DEMO_MODE", "").strip() in ("1", "true", "yes") and (
+        os.environ.get("AIGENIS_ENVIRONMENT", "development").strip() == "production"
+    ):
+        raise RuntimeError(
+            "SECURITY: DEMO_MODE=1 with AIGENIS_ENVIRONMENT=production opens the "
+            "paywall to anonymous users. Set AIGENIS_ENVIRONMENT=demo for demo "
+            "deployments, or disable DEMO_MODE for production."
         )
 
 

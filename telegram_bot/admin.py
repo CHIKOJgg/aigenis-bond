@@ -1,6 +1,8 @@
 """Admin commands and the global error handler for the Telegram bot."""
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 
 from aiogram import Router
@@ -12,7 +14,7 @@ from sqlalchemy import select as sa_select
 
 from scraper import repositories
 from scraper.db import session_scope
-from scraper.orm import UserPreferencesORM
+from scraper.orm import UserORM
 
 router = Router()
 
@@ -45,8 +47,12 @@ async def cmd_broadcast(message: Message) -> None:
     if len(args) < 2:
         await message.answer("Использование: /broadcast <text>")
         return
+    # Every user who ever registered with the bot (not only those who opened
+    # portfolio settings — that would silently exclude most recipients).
     async with session_scope() as session:
-        result = await session.execute(sa_select(UserPreferencesORM.user_id).distinct())
+        result = await session.execute(
+            sa_select(UserORM.telegram_id).where(UserORM.telegram_id.is_not(None))
+        )
         user_ids = [row[0] for row in result.fetchall()]
     if not user_ids:
         await message.answer("Нет пользователей для рассылки.")
@@ -61,11 +67,16 @@ async def cmd_broadcast(message: Message) -> None:
         except Exception as exc:
             logger.warning("broadcast_failed", user_id=uid, error=str(exc))
             failed += 1
+        # Be gentle with Telegram's rate limits on large user bases.
+        if sent % 20 == 0:
+            await asyncio.sleep(1)
     await message.answer(f"📢 Разослано: {sent} успешно, {failed} с ошибками.")
 
 
 @router.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
+    if not _is_admin(message):
+        return
     async with session_scope() as session:
         count = await repositories.bonds.count_bonds(session)
         latest = await repositories.bonds.latest_fetched_at(session)
@@ -84,3 +95,7 @@ async def global_error_handler(event: ErrorEvent):
         await event.update.message.answer(
             "❌ Внутренняя ошибка. Попробуйте позже или напишите /help.",
         )
+    if event.update.callback_query:
+        # Answer the callback so Telegram stops showing the loading spinner.
+        with contextlib.suppress(Exception):
+            await event.update.callback_query.answer("❌ Ошибка", show_alert=False)

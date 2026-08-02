@@ -31,7 +31,7 @@ def run_scenario(
     """
     delta = SCENARIO_DELTA[scenario]
     fx_end = current_usd_byn * (Decimal("1") + Decimal(str(delta)))
-    fx_change = float((fx_end - current_usd_byn) / current_usd_byn)
+    fx_change = 0.0 if current_usd_byn == 0 else float((fx_end - current_usd_byn) / current_usd_byn)
 
     usd_impact = usd_share * fx_change
     byn_impact = byn_share * (-fx_change)

@@ -27,10 +27,10 @@ class _FakeMessage:
         self.answers: list[str] = []
         self.last_text: str | None = None
 
-    async def edit_text(self, text, parse_mode=None, reply_markup=None):  # noqa: ARG002
+    async def edit_text(self, text, parse_mode=None, reply_markup=None):
         self.last_text = text
 
-    async def answer(self, text, parse_mode=None, reply_markup=None):  # noqa: ARG002
+    async def answer(self, text, parse_mode=None, reply_markup=None):
         self.answers.append(text)
         self.last_text = text
 
@@ -42,7 +42,7 @@ class _FakeCallback:
         self.message = _FakeMessage(uid)
         self.alerts: list[str] = []
 
-    async def answer(self, text=None, show_alert=False):  # noqa: ARG002
+    async def answer(self, text=None, show_alert=False):
         if text:
             self.alerts.append(text)
 

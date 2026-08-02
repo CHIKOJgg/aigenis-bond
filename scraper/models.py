@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT"]
+Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY"]
 CouponFrequency = Literal[1, 2, 4, 12]
 Amortization = Literal["none", "partial", "full"]
 BondStatus = Literal["active", "delisted", "matured", "offer", "unknown"]
@@ -195,7 +195,15 @@ class Bond(BaseModel):
             return v
         if isinstance(v, float):
             return int(v)
-        s = str(v).strip()
+        # Strip thousand separators ("1 000 000", "1,000") so the first number
+        # group is the real magnitude, not just the leading digit.
+        s = (
+            str(v)
+            .strip()
+            .replace("\xa0", "")
+            .replace(",", "")
+            .replace(" ", "")
+        )
         m = re.search(r"(\d+)", s)
         if m:
             return int(m.group(1))

@@ -7,8 +7,7 @@ via ``telegram_bot._bot_instance``.
 """
 from __future__ import annotations
 
-import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -38,7 +37,6 @@ async def notify_expiring_trials() -> int:
 
     Returns the number of reminders sent.
     """
-    now = datetime.now(UTC)
     sent = 0
     async with session_scope() as session:
         users = (
@@ -60,12 +58,14 @@ async def notify_expiring_trials() -> int:
                     reminders.append((u, dleft, tier_label))
 
         for u, dleft, tier_label in reminders:
+            delivered = False
             # Email reminder.
             if u.email:
                 try:
                     from api.notifications.email import send_subscription_expiring_email
 
                     send_subscription_expiring_email(u.email, tier_label, dleft)
+                    delivered = True
                 except Exception as exc:
                     logger.warning("reminder_email_failed", user=u.id, error=str(exc))
             # Telegram reminder.
@@ -80,9 +80,11 @@ async def notify_expiring_trials() -> int:
                             f"аналитику:\n/subscribe"
                         ),
                     )
+                    delivered = True
                 except Exception as exc:
                     logger.warning("reminder_tg_failed", user=u.id, error=str(exc))
-            sent += 1
+            if delivered:
+                sent += 1
     logger.info("reminders_sent", count=sent)
     return sent
 

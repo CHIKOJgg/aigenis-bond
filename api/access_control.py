@@ -283,6 +283,22 @@ async def get_optional_user_id(request: Request) -> int | None:
     return _get_current_user_from_request(request)
 
 
+async def require_user_id(request: Request) -> int:
+    """Dependency for personal-data endpoints: anonymous callers get 401.
+
+    Prevents the ``user_id or 0`` fallback from letting anonymous (including
+    DEMO_MODE) callers read/write the shared user-0 rows.
+    """
+    user_id = _get_current_user_from_request(request)
+    if user_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user_id
+
+
 class RequireFeature:
     """FastAPI dependency: allow only tiers that have `flag` enabled."""
 

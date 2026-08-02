@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scoring.engine import score_bond
@@ -50,6 +50,11 @@ async def top_scores(session: AsyncSession, limit: int = 20, offset: int = 0) ->
         select(BondScoreORM).order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
     )
     return list(result.scalars().all())
+
+
+async def count_scores(session: AsyncSession) -> int:
+    result = await session.execute(select(func.count()).select_from(BondScoreORM))
+    return int(result.scalar_one())
 
 
 async def recompute_all(session: AsyncSession) -> int:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
@@ -32,13 +32,13 @@ class _FakeClient:
     def __init__(self, payload: dict) -> None:
         self._payload = payload
 
-    async def __aenter__(self) -> "_FakeClient":
+    async def __aenter__(self) -> _FakeClient:
         return self
 
     async def __aexit__(self, *exc: object) -> None:
         return None
 
-    async def get(self, url: str):  # noqa: ANN001 - test double
+    async def get(self, url: str):
         return _FakeResp(self._payload)
 
 
@@ -65,7 +65,7 @@ _PAYLOAD = {
 
 @pytest.mark.asyncio
 async def test_fetch_bonds_parses_and_normalizes(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    async def _fake_get(*args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+    async def _fake_get(*args, **kwargs):
         return _FakeResp(_PAYLOAD)
 
     monkeypatch.setenv("MOEX_BOARDS", "TQCB")

@@ -15,6 +15,23 @@ interface WidgetBond {
 
 const BASE = '';
 
+// The widget CTA points back at the embedding site (?origin=...). Only accept
+// well-formed http(s) origins — anything else (javascript:, data:, garbage)
+// falls back to the widget's own origin to prevent open-redirect phishing.
+function safeWidgetOrigin(raw: string | null): string {
+  if (raw) {
+    try {
+      const u = new URL(raw);
+      if (u.protocol === 'https:' || u.protocol === 'http:') {
+        return `${u.protocol}//${u.host}`;
+      }
+    } catch {
+      /* invalid URL — fall through to default */
+    }
+  }
+  return window.location.origin;
+}
+
 async function loadWidget(currency: string | null, limit: number): Promise<WidgetBond[]> {
   const q = new URLSearchParams();
   q.set('limit', String(limit));
@@ -32,7 +49,7 @@ function WidgetPageInner() {
   const [error, setError] = useState<string | null>(null);
 
   const params = new URLSearchParams(window.location.search);
-  const origin = params.get('origin') || window.location.origin;
+  const origin = safeWidgetOrigin(params.get('origin'));
   const appUrl = `${origin}/?ref=widget`;
 
   useEffect(() => {

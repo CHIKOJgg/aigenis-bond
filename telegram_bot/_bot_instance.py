@@ -6,8 +6,6 @@ reference set at startup and cleared on shutdown.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 _bot = None
 
 

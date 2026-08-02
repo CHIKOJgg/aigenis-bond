@@ -23,7 +23,7 @@ class _FakeMessage:
     def __init__(self) -> None:
         self.last_text: str | None = None
 
-    async def edit_text(self, text, parse_mode=None, reply_markup=None):  # noqa: ARG002
+    async def edit_text(self, text, parse_mode=None, reply_markup=None):
         self.last_text = text
 
 
@@ -34,7 +34,7 @@ class _FakeCallback:
         self.message = _FakeMessage()
         self.answered = False
 
-    async def answer(self, *args, **kwargs):  # noqa: ARG002
+    async def answer(self, *args, **kwargs):
         self.answered = True
 
 

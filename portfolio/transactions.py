@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.orm import TransactionORM

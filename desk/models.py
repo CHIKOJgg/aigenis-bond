@@ -144,3 +144,34 @@ class StressResult(BaseModel):
     by_position: dict[str, Decimal] = Field(default_factory=dict)
     by_tenor: dict[str, Decimal] = Field(default_factory=dict)
     asof_date: date
+
+
+SpreadSide = Literal["rich", "cheap", "fair"]
+
+
+class SpreadReport(BaseModel):
+    """Z/G-spread и сигнал «модельная цена vs рынок» для облигации.
+
+    Упрощения (доступны только кривые из рыночных YTM):
+    - z_spread = flat yield (решение PV=cena) минус NS-ставка кривой на тенор;
+    - g_spread = YTM минус NS-ставка кривой на тенор;
+    - mispricing_pct = (model_price − market_price) / market_price * 100,
+      где model_price — PV денежных потоков по NS-ставке кривой.
+      Положительный → bond дешевле модели (cheap/buy); отрицательный → rich/sell.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    internal_id: str
+    currency: str
+    tenor_years: float
+    ytm_pct: float | None = None
+    flat_yield_pct: float | None = None
+    z_spread_pct: float | None = None
+    g_spread_pct: float | None = None
+    curve_rate_pct: float | None = None
+    model_price: float | None = None
+    market_price: float | None = None
+    mispricing_pct: float | None = None
+    side: SpreadSide = "fair"
+    asof_date: date

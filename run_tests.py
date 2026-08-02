@@ -1,9 +1,13 @@
+import os
 import subprocess
 import sys
 
+# Resolve the repo root relative to this file, not a developer's machine.
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 result = subprocess.run(
     [sys.executable, "-m", "pytest", "--tb=short", "-q"],
-    cwd=r"C:\Users\Honor\Desktop\aigenis-parser",
+    cwd=REPO_ROOT,
     capture_output=True,
     text=True,
 )

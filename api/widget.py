@@ -8,7 +8,7 @@ a free acquisition magnet with a clear upgrade path.
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -16,10 +16,6 @@ from scraper.db import session_scope
 from scraper.orm import BondORM, BondScoreORM
 
 router = APIRouter(prefix="/widget", tags=["widget"])
-
-# Framing is enabled only for this router (see api.main where the global
-# CSP sets frame-ancestors 'none'). Keep the payloads public-only.
-_ALLOWED_FRAMING = True
 
 
 class WidgetBond(BaseModel):
@@ -35,18 +31,29 @@ class WidgetBond(BaseModel):
 
 @router.get("/top", response_model=list[WidgetBond])
 async def widget_top(limit: int = 10, currency: str | None = None) -> list[WidgetBond]:
-    """Top bonds by score, public and unauthenticated (free acquisition magnet)."""
+    """Top bonds by score, public and unauthenticated (free acquisition magnet).
+
+    When a ``currency`` filter is requested the top-N must be selected *within*
+    that currency — otherwise filtering after the score cutoff yields a
+    short/empty list even when qualifying bonds exist.
+    """
     if limit < 1 or limit > 50:
         limit = 10
     async with session_scope() as session:
         score_stmt = select(BondScoreORM).order_by(BondScoreORM.score.desc()).limit(limit)
+        if currency:
+            score_stmt = (
+                select(BondScoreORM)
+                .join(BondORM, BondORM.internal_id == BondScoreORM.internal_id)
+                .where(BondORM.currency == currency.upper())
+                .order_by(BondScoreORM.score.desc())
+                .limit(limit)
+            )
         scores = list((await session.execute(score_stmt)).scalars().all())
         if not scores:
             return []
         ids = [s.internal_id for s in scores]
         bond_stmt = select(BondORM).where(BondORM.internal_id.in_(ids))
-        if currency:
-            bond_stmt = bond_stmt.where(BondORM.currency == currency.upper())
         bonds = {b.internal_id: b for b in (await session.execute(bond_stmt)).scalars().all()}
         score_map = {s.internal_id: s for s in scores}
         out: list[WidgetBond] = []
@@ -65,7 +72,7 @@ async def widget_top(limit: int = 10, currency: str | None = None) -> list[Widge
                     ),
                     maturity_date=bond.maturity_date.isoformat() if bond.maturity_date else None,
                     issuer=bond.issuer,
-                    score=float(sc.score) if sc and sc.score else None,
+                    score=float(sc.score) if sc and sc.score is not None else None,
                     tier=sc.tier if sc else None,
                 )
             )
@@ -88,7 +95,7 @@ async def widget_embed_js(request: Request):
         "var p=s&&s.parentNode;if(p){p.insertBefore(frame,s);}else{document.body.appendChild(frame);}"
         "})();"
     )
-    return JSONResponse(
+    return Response(
         content=script,
         media_type="application/javascript",
         headers={"Cache-Control": "public, max-age=3600"},

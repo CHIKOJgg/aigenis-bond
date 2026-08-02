@@ -10,12 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from desk.models import CarryTrade, RepoDeal, RVSignal, StressResult
+from desk.models import CarryTrade, RepoDeal, RVSignal, SpreadReport, StressResult
 from scraper.orm import (
     CarryTradeORM,
     CurvePointORM,
     RepoDealORM,
     RVSignalORM,
+    SpreadReportORM,
     StressRunORM,
 )
 
@@ -135,5 +136,44 @@ async def save_stress_run(session: AsyncSession, result: StressResult) -> int:
 async def latest_stress_runs(session: AsyncSession, limit: int = 10) -> list[StressRunORM]:
     result = await session.execute(
         select(StressRunORM).order_by(StressRunORM.created_at.desc()).limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def save_spread_reports(session: AsyncSession, reports: Iterable[SpreadReport]) -> int:
+    rows = [
+        {
+            "internal_id": r.internal_id,
+            "currency": r.currency,
+            "tenor_years": Decimal(str(r.tenor_years)),
+            "ytm_pct": Decimal(str(r.ytm_pct)) if r.ytm_pct is not None else None,
+            "flat_yield_pct": Decimal(str(r.flat_yield_pct))
+            if r.flat_yield_pct is not None
+            else None,
+            "z_spread_pct": Decimal(str(r.z_spread_pct)) if r.z_spread_pct is not None else None,
+            "g_spread_pct": Decimal(str(r.g_spread_pct)) if r.g_spread_pct is not None else None,
+            "curve_rate_pct": Decimal(str(r.curve_rate_pct))
+            if r.curve_rate_pct is not None
+            else None,
+            "model_price": Decimal(str(r.model_price)) if r.model_price is not None else None,
+            "market_price": Decimal(str(r.market_price)) if r.market_price is not None else None,
+            "mispricing_pct": Decimal(str(r.mispricing_pct))
+            if r.mispricing_pct is not None
+            else None,
+            "side": r.side,
+            "asof_date": r.asof_date,
+        }
+        for r in reports
+    ]
+    if not rows:
+        return 0
+    stmt = pg_insert(SpreadReportORM).values(rows)
+    await session.execute(stmt)
+    return len(rows)
+
+
+async def latest_spread_reports(session: AsyncSession, limit: int = 50) -> list[SpreadReportORM]:
+    result = await session.execute(
+        select(SpreadReportORM).order_by(SpreadReportORM.created_at.desc()).limit(limit)
     )
     return list(result.scalars().all())

@@ -9,7 +9,7 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+RUN npx vite build
 
 # ---- Stage 2: Production nginx ----
 FROM nginx:alpine AS production
@@ -25,6 +25,7 @@ RUN mkdir -p /etc/nginx/ssl && \
 
 # Copy nginx config
 COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx-spa.conf /etc/nginx/nginx-spa.conf
 
 # Copy built frontend from builder
 COPY --from=builder /build/dist /usr/share/nginx/html
@@ -35,8 +36,9 @@ RUN chmod +x /entrypoint.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+  CMD curl -fk --max-time 5 https://localhost/health || exit 1
 
 EXPOSE 80 443
 
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["nginx", "-g", "daemon off;"]

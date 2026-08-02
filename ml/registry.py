@@ -108,7 +108,8 @@ def latest_artifact(kind: ModelKind) -> str | None:
             ARTIFACTS_DIR.glob(f"{_KIND_PREFIX[kind]}*{_SUFFIX_JOBLIB}"),
             ARTIFACTS_DIR.glob(f"{_KIND_PREFIX[kind]}*{_SUFFIX_PICKLE}"),
         ),
-        key=lambda p: p.stat().st_mtime,
+        # (mtime, name) — deterministic tie-break for same-second writes.
+        key=lambda p: (p.stat().st_mtime, p.name),
     )
     if not files:
         return None
@@ -129,7 +130,8 @@ def prune_artifacts(keep: int = 5) -> list[str]:
                 ARTIFACTS_DIR.glob(f"{_KIND_PREFIX[kind]}*{_SUFFIX_JOBLIB}"),
                 ARTIFACTS_DIR.glob(f"{_KIND_PREFIX[kind]}*{_SUFFIX_PICKLE}"),
             ),
-            key=lambda p: p.stat().st_mtime,
+            # (mtime, name) — deterministic tie-break for same-second writes.
+            key=lambda p: (p.stat().st_mtime, p.name),
             reverse=True,
         )
         champ = champions[kind]

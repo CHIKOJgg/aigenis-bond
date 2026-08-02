@@ -1,0 +1,11 @@
+# =============================================================================
+# Demo override: собирает frontend через vite build (без tsc --no-typecheck)
+# Использование: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+# =============================================================================
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.demo
+    image: aigenis-frontend-demo:latest

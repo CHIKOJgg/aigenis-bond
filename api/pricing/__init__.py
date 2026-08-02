@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from api.access_control import FEATURE_FLAGS
+from api.billing.service import ENTERPRISE_PRICE, PRO_PRICE
 
 _PLAN_PRICES = {
     "free": 0,
-    "pro": 2900,
-    "enterprise": 9900,
+    "pro": int(float(PRO_PRICE) * 100),
+    "enterprise": int(float(ENTERPRISE_PRICE) * 100),
 }
 
 PLANS = {

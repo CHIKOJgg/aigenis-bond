@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from datetime import date, timedelta
 from decimal import Decimal
 
 from scraper.models import Bond
-
 
 _Q = Decimal("0.01")
 
@@ -20,12 +18,12 @@ class PositionPnL:
     """Per-bond P&L breakdown."""
 
     __slots__ = (
+        "cost_basis",
+        "coupon_income",
+        "current_value",
         "internal_id",
         "realized_pnl",
         "unrealized_pnl",
-        "coupon_income",
-        "current_value",
-        "cost_basis",
         "weight",
     )
 
@@ -67,15 +65,15 @@ class PortfolioPnL:
     """Aggregate portfolio P&L."""
 
     __slots__ = (
+        "daily_returns",
+        "max_drawdown",
+        "per_bond",
+        "sharpe",
+        "total_coupon_income",
         "total_invested",
         "total_realized",
         "total_unrealized",
-        "total_coupon_income",
         "total_value",
-        "per_bond",
-        "daily_returns",
-        "max_drawdown",
-        "sharpe",
     )
 
     def __init__(self) -> None:
@@ -122,6 +120,11 @@ def compute_pnl(
 ) -> PortfolioPnL:
     """Compute full P&L from transaction history and current positions.
 
+    Unit conventions (must match the API and Telegram bot): ``amount`` is
+    money invested (e.g. 1000 BYN), ``price`` is the bond price as a
+    percentage of face (e.g. 98.5). Converting between the two requires the
+    ``/100`` factor — a position of 1000 at price 98 buys ~1020 of face.
+
     Args:
         transactions: list of TransactionORM objects, ordered by executed_at
         positions: list of PortfolioPositionORM objects
@@ -135,50 +138,72 @@ def compute_pnl(
     for tx in transactions:
         txs_by_bond[tx.internal_id].append(tx)
 
-    # Compute per-bond realized P&L using FIFO
+    # Positions that have no transaction history still hold money: show them
+    # with the current price as their mark, cost basis = invested money.
+    pos_by_id: dict[str, object] = {p.internal_id: p for p in positions}
+    for iid in pos_by_id:
+        txs_by_bond.setdefault(iid, [])
+
+    # Compute per-bond realized P&L using FIFO (lots tracked in face units)
     for iid, txs in txs_by_bond.items():
-        buys: list[tuple[Decimal, Decimal]] = []  # (amount, price)
+        buys: list[tuple[Decimal, Decimal]] = []  # (face_amount, price)
         realized = Decimal("0")
         total_invested = Decimal("0")
 
         for tx in sorted(txs, key=lambda t: t.executed_at):
+            price = tx.price or Decimal("100")
             if tx.side == "buy":
-                buys.append((tx.amount, tx.price))
+                face = tx.amount * Decimal("100") / price
+                buys.append((face, price))
                 total_invested += tx.amount
             elif tx.side == "sell" and buys:
                 sell_amount = tx.amount
-                sell_price = tx.price
-                remaining = sell_amount
+                sell_price = price
+                face_sold = sell_amount * Decimal("100") / sell_price
+                remaining = face_sold
+                cost_of_sold = Decimal("0")
                 while remaining > 0 and buys:
-                    buy_amount, buy_price = buys[0]
-                    matched = min(remaining, buy_amount)
-                    realized += matched * (sell_price - buy_price)
+                    buy_face, buy_price = buys[0]
+                    matched = min(remaining, buy_face)
+                    # P&L in money: matched face * price diff / 100.
+                    realized += matched * (sell_price - buy_price) / Decimal("100")
+                    cost_of_sold += matched * buy_price / Decimal("100")
                     remaining -= matched
-                    if matched >= buy_amount:
+                    if matched >= buy_face:
                         buys.pop(0)
                     else:
-                        buys[0] = (buy_amount - matched, buy_price)
-                total_invested -= (sell_amount - remaining)
+                        buys[0] = (buy_face - matched, buy_price)
+                total_invested -= cost_of_sold
 
-        # Unrealized P&L for remaining position
-        pos = next((p for p in positions if p.internal_id == iid), None)
-        current_price = bonds_by_id.get(iid, None)
-        current_price_val = current_price.price if current_price and current_price.price else Decimal("0")
+        # Unrealized P&L for the remaining position (money at market price).
+        pos = pos_by_id.get(iid)
+        bond = bonds_by_id.get(iid)
+        current_price_val = (
+            bond.price if bond and bond.price and bond.price > 0 else Decimal("0")
+        )
         unrealized = Decimal("0")
         current_value = Decimal("0")
 
-        if pos and current_price_val > 0:
-            remaining_amount = pos.amount
-            avg_cost = Decimal("0")
-            total_remaining_value = Decimal("0")
-            for buy_amt, buy_prc in buys:
-                matched = min(remaining_amount, buy_amt)
-                avg_cost += matched * buy_prc
-                remaining_amount -= matched
-            if pos.amount > 0:
-                avg_cost /= pos.amount
-            current_value = pos.amount * current_price_val
-            unrealized = pos.amount * (current_price_val - avg_cost)
+        if pos is not None:
+            if txs:
+                # Mark the remaining FIFO lots at market: face is tracked in
+                # the lots, money value = face * price / 100. (The /100 factor
+                # is required — amount is money, price is % of face.)
+                remaining_face = sum(lot_face for lot_face, _ in buys)
+                current_value = (
+                    remaining_face * current_price_val / Decimal("100")
+                    if current_price_val > 0
+                    else Decimal("0")
+                )
+                cost_basis = total_invested
+            else:
+                # No transaction history: only the invested money is known.
+                # Mark it at market with a par entry assumption (documented).
+                if current_price_val > 0:
+                    current_value = pos.amount * current_price_val / Decimal("100")
+                cost_basis = pos.amount
+                total_invested = pos.amount
+            unrealized = current_value - cost_basis
 
         coupon_inc = coupon_data.get(iid, Decimal("0")) if coupon_data else Decimal("0")
 
@@ -216,10 +241,7 @@ def compute_daily_returns(equity_curve: list[dict]) -> list[dict]:
     for i in range(1, len(equity_curve)):
         prev = equity_curve[i - 1]["value"]
         curr = equity_curve[i]["value"]
-        if prev > 0:
-            ret = (curr - prev) / prev * 100
-        else:
-            ret = 0.0
+        ret = (curr - prev) / prev * 100 if prev > 0 else 0.0
         returns.append({
             "date": equity_curve[i]["date"],
             "return_pct": round(ret, 4),

@@ -19,6 +19,7 @@ from scraper.orm import PartnerKeyORM, PartnerReferralORM, SubscriptionORM, User
 
 # Per-payment lock to prevent TOCTOU race on concurrent webhook deliveries.
 _webhook_locks: dict[str, asyncio.Lock] = {}
+_WEBHOOK_LOCK_MAX_KEYS = 10_000  # bound memory: evict locks for stale payments
 
 logger = get_logger("api.billing")
 
@@ -42,6 +43,23 @@ PLANS: dict[str, dict] = {
 
 def is_yookassa_configured() -> bool:
     return bool(YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY)
+
+
+def _metadata_user_id(metadata: dict) -> int:
+    """Parse ``user_id`` from webhook metadata, tolerating dirty input.
+
+    Webhook metadata arrives from third parties: the value can be an int,
+    a string with surrounding whitespace, a float-formatted string
+    (``"123.0"``), or missing entirely — none of which may 500 the handler.
+    """
+    raw = metadata.get("user_id", 0)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        try:
+            return int(float(str(raw).strip()))
+        except (TypeError, ValueError, ArithmeticError):
+            return 0
 
 
 def _auth() -> tuple[str, str]:
@@ -105,7 +123,7 @@ def _idempotency_key() -> str:
 
 
 async def create_payment(
-    user: UserORM, plan: str, success_url: str, cancel_url: str, referral_code: str | None = None  # noqa: ARG001  # accepted for API symmetry
+    user: UserORM, plan: str, success_url: str, referral_code: str | None = None
 ) -> dict | None:
     """Create a YooKassa payment for subscription and return payment info."""
     plan_config = PLANS.get(plan)
@@ -216,7 +234,7 @@ async def handle_webhook(body: bytes) -> str | None:
 async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     from scraper.db import session_scope
 
-    user_id = int(metadata.get("user_id", 0))
+    user_id = _metadata_user_id(metadata)
     plan = metadata.get("plan", "pro")
     payment_id = obj.get("id")
     if not user_id or not payment_id:
@@ -225,6 +243,8 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     # TOCTOU guard: serialize concurrent webhook deliveries for the same payment
     # to prevent double-granting subscription days under concurrent webhook calls.
     lock = _webhook_locks.setdefault(payment_id, asyncio.Lock())
+    if len(_webhook_locks) > _WEBHOOK_LOCK_MAX_KEYS:
+        _webhook_locks.clear()
     async with lock:
         if plan not in PLANS:
             logger.warning("payment_unknown_plan", plan=plan, payment_id=payment_id)
@@ -263,10 +283,20 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
                 sub = SubscriptionORM(user_id=user_id)
                 session.add(sub)
 
-            # Idempotency: skip if this payment was already processed
-            if sub.yookassa_payment_id == payment_id and sub.status == "active":
+            # Idempotency: skip if this payment was already processed. A
+            # refunded/canceled payment must NOT be re-activated by a redelivered
+            # ``payment.succeeded`` webhook (YooKassa retries webhooks).
+            if sub.yookassa_payment_id == payment_id and sub.status in {
+                "active",
+                "refunded",
+                "canceled",
+            }:
                 await session.commit()
                 return
+
+            # Sync to user (single source of truth for gating)
+            user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
+            user = user_result.scalar_one_or_none()
 
             # Update subscription. A repeat purchase extends from the later of the
             # current expiry or now, so paying again never shortens access.
@@ -274,19 +304,19 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             sub.plan = plan
             sub.status = "active"
             now = datetime.now(UTC)
-            base = sub.current_period_end
+            # Extend from the later of the user's current effective expiry (which
+            # may come from a Stars purchase) or now.
+            base = user.subscription_expires_at if user else None
             if base is not None and base.tzinfo is None:
                 base = base.replace(tzinfo=UTC)
             start = max(base, now) if base and base > now else now
             sub.current_period_start = now
             sub.current_period_end = start + timedelta(days=duration)
 
-            # Sync to user (single source of truth for gating)
-            user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
-            user = user_result.scalar_one_or_none()
             if user:
                 user.subscription_tier = plan
                 user.subscription_expires_at = sub.current_period_end
+                user.payment_channel = "yookassa"
 
             await session.commit()
             logger.info("subscription_activated", user_id=user_id, plan=plan, payment_id=payment_id)
@@ -358,12 +388,16 @@ async def _attribute_referral(
 
 
 async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
-    """Handle a canceled YooKassa payment — cancel the subscription."""
+    """Handle a canceled YooKassa payment.
+
+    Only the currently-active YooKassa payment can cancel the subscription;
+    a stale cancellation for an older payment must not corrupt the record.
+    """
     from scraper.db import session_scope
 
-    user_id = int(metadata.get("user_id", 0))
+    user_id = _metadata_user_id(metadata)
     payment_id = obj.get("id")
-    if not user_id:
+    if not user_id or not payment_id:
         return
 
     async with session_scope() as session:
@@ -371,14 +405,21 @@ async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
             select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
         )
         sub = sub_result.scalar_one_or_none()
-        if sub:
-            sub.status = "canceled"
+        if not sub or sub.yookassa_payment_id != payment_id:
+            return
+        sub.status = "canceled"
 
         user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
         user = user_result.scalar_one_or_none()
-        if user and user.subscription_tier != "free" and sub and sub.yookassa_payment_id == payment_id:
+        # Only revoke when YooKassa is the channel that established access.
+        if (
+            user
+            and user.subscription_tier != "free"
+            and user.payment_channel == "yookassa"
+        ):
             user.subscription_tier = "free"
             user.subscription_expires_at = None
+            user.payment_channel = None
 
         await session.commit()
         logger.info("payment_canceled", user_id=user_id, payment_id=payment_id)
@@ -391,18 +432,38 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
     if not payment_id:
         return
 
+    # Only a FULL refund revokes access; partial refunds (e.g. a discount
+    # adjustment) must not cut an active subscription.
+    try:
+        refund_amount = float(obj.get("amount", {}).get("value", 0))
+    except (TypeError, ValueError):
+        refund_amount = 0.0
+
     async with session_scope() as session:
         sub_result = await session.execute(
             select(SubscriptionORM).where(SubscriptionORM.yookassa_payment_id == payment_id)
         )
         sub = sub_result.scalar_one_or_none()
         if sub:
+            plan_config = PLANS.get(sub.plan or "") or {"price": 0.0}
+            expected = float(plan_config.get("price", 0.0))
+            if refund_amount + 1e-9 < expected:
+                logger.warning(
+                    "refund_partial_ignored",
+                    payment_id=payment_id,
+                    refunded=refund_amount,
+                    expected=expected,
+                )
+                return
             sub.status = "refunded"
             user_result = await session.execute(select(UserORM).where(UserORM.id == sub.user_id))
             user = user_result.scalar_one_or_none()
-            if user:
+            # Cross-channel protection: a YooKassa refund must not revoke access
+            # that was paid for via Telegram Stars.
+            if user and user.payment_channel == "yookassa":
                 user.subscription_tier = "free"
                 user.subscription_expires_at = None
+                user.payment_channel = None
             await session.commit()
             logger.info("subscription_refunded", user_id=sub.user_id, payment_id=payment_id)
 

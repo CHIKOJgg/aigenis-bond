@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from datetime import date
 
 from ml.engine import latest_artifact, predict_batch
 from ml.features import build_features
 from ml.models import Decision, Recommendation
-from ml.repository import upsert_predictions
 from scoring.engine import score_bond
 from scoring.models import UserPreferences
-from scraper.db import session_scope
 
 _DECISION_RANK: dict[Decision, int] = {"buy": 4, "hold": 3, "wait": 2, "avoid": 1}
 
@@ -29,8 +26,14 @@ def recommend_bonds(
     asof: date | None = None,
     top_k: int = 10,
     history_by_bond: dict[str, list[dict]] | None = None,
+    max_per_issuer: int = 2,
 ) -> list[Recommendation]:
-    """Сформировать список рекомендаций с объяснениями."""
+    """Сформировать список рекомендаций с объяснениями.
+
+    ``max_per_issuer`` caps how many bonds of the same issuer make the final
+    list — a diversified basket beats five bonds of one company. Set to 0 to
+    disable the cap.
+    """
     asof = asof or date.today()
     history_by_bond = history_by_bond or {}
 
@@ -50,6 +53,10 @@ def recommend_bonds(
         regressor_path=reg_path,
         classifier_path=clf_path,
     )
+
+    bonds_by_issuer: dict[str, str | None] = {
+        b["internal_id"]: b.get("issuer") for b in bonds
+    }
 
     out: list[Recommendation] = []
     for bond, feature, pred in zip(bonds, features, predictions, strict=True):
@@ -104,15 +111,21 @@ def recommend_bonds(
         key=lambda r: (_DECISION_RANK[r.decision], r.confidence, r.score),
         reverse=True,
     )
+    if max_per_issuer > 0:
+        # Diversify the final basket: walk the ranked list and keep at most
+        # ``max_per_issuer`` bonds per issuer.
+        issuer_count: dict[str, int] = {}
+        diversified: list[Recommendation] = []
+        for r in out:
+            issuer = str(bonds_by_issuer.get(r.internal_id) or "")
+            if issuer and issuer_count.get(issuer, 0) >= max_per_issuer:
+                continue
+            issuer_count[issuer] = issuer_count.get(issuer, 0) + 1
+            diversified.append(r)
+        out = diversified
     for i, r in enumerate(out[:top_k], 1):
         r.rank = i
     return out[:top_k]
-
-
-async def save_predictions_to_db(predictions: Iterable) -> int:
-    """Сохранить прогнозы в БД для аудита."""
-    async with session_scope() as session:
-        return await upsert_predictions(session, list(predictions))
 
 
 _DECISION_BY_RANK: dict[int, Decision] = {4: "buy", 3: "hold", 2: "wait", 1: "avoid"}

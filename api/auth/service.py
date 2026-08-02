@@ -68,6 +68,16 @@ def create_refresh_token(user_id: int) -> str:
     return jwt.encode({"sub": str(user_id), "exp": expire, "type": "refresh"}, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def create_email_verification_token(user_id: int) -> str:
+    """Token used only for email verification (distinct from access tokens)."""
+    expire = datetime.now(UTC) + timedelta(hours=48)
+    return jwt.encode(
+        {"sub": str(user_id), "exp": expire, "type": "email_verification"},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+
+
 def decode_token(token: str) -> dict | None:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -94,13 +104,14 @@ async def register_user(
         name=name,
         trial_end=datetime.now(UTC) + timedelta(days=TRIAL_DAYS),
     )
+    session.add(user)
+    await session.flush()  # assign user.id so the self-referral check is real
     if referral_code:
         referrer = await _resolve_referrer(session, referral_code)
-        if referrer is not None and referrer.id != user.id:
+        if referrer is not None and referrer.id != user.id and referrer.is_active:
             user.referred_by = referrer.id
             # Reward the referrer with bonus trial days (no-op if expired/paid window logic below).
-            await _grant_referral_bonus(session, referrer)
-    session.add(user)
+            await _grant_referral_bonus(referrer)
     await session.commit()
     await session.refresh(user)
     # Send welcome + verification emails if SMTP is configured (non-blocking).
@@ -108,7 +119,7 @@ async def register_user(
         from api.notifications.email import send_verification_email, send_welcome_email
 
         send_welcome_email(email, name)
-        verify_token = create_access_token(user.id)
+        verify_token = create_email_verification_token(user.id)
         send_verification_email(email, verify_token)
     except Exception as exc:
         logger.warning("welcome_email_failed", email=email, error=str(exc))
@@ -116,24 +127,14 @@ async def register_user(
 
 
 async def _resolve_referrer(session: AsyncSession, referral_code: str) -> UserORM | None:
-    """Resolve a referrer from a user id, telegram id, or partner referral code."""
+    """Resolve a referrer from an issued partner referral code.
+
+    Raw numeric user ids are deliberately NOT accepted here — accepting them
+    would let anyone farm trial extensions by passing arbitrary user ids.
+    """
     code = referral_code.strip()
     if not code:
         return None
-    # Try user id / telegram id (numeric) first.
-    if code.isdigit():
-        uid = int(code)
-        user = (
-            await session.execute(select(UserORM).where(UserORM.id == uid))
-        ).scalar_one_or_none()
-        if user:
-            return user
-        user = (
-            await session.execute(select(UserORM).where(UserORM.telegram_id == uid))
-        ).scalar_one_or_none()
-        if user:
-            return user
-    # Try partner referral code.
     partner = (
         await session.execute(
             select(PartnerKeyORM).where(PartnerKeyORM.referral_code == code, PartnerKeyORM.active.is_(True))
@@ -146,23 +147,18 @@ async def _resolve_referrer(session: AsyncSession, referral_code: str) -> UserOR
     return None
 
 
-async def _grant_referral_bonus(session: AsyncSession, referrer: UserORM) -> None:
+async def _grant_referral_bonus(referrer: UserORM) -> None:
     bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "3"))
     if bonus_days <= 0:
         return
     now = datetime.now(UTC)
-    # Extend trial if still in trial; otherwise extend paid window if present.
-    base = referrer.trial_end
-    if base is None or base <= now:
-        base = referrer.subscription_expires_at
-    if base is None or base <= now:
-        base = now
+    # Only extend an ALREADY-ACTIVE trial or paid window. Never (re)arm a
+    # trial from scratch — otherwise throwaway registrations would farm
+    # unlimited Pro access for the referrer (monetization bypass).
     if referrer.trial_end and referrer.trial_end > now:
         referrer.trial_end = referrer.trial_end + timedelta(days=bonus_days)
     elif referrer.subscription_expires_at and referrer.subscription_expires_at > now:
         referrer.subscription_expires_at = referrer.subscription_expires_at + timedelta(days=bonus_days)
-    else:
-        referrer.trial_end = now + timedelta(days=bonus_days)
 
 
 async def login_user(session: AsyncSession, email: str, password: str) -> tuple[UserORM | None, str | None]:

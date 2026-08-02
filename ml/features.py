@@ -253,24 +253,6 @@ def _nearest_future_row(
     return best
 
 
-def _nearest_yield_asof(
-    hist_sorted: list[tuple[date, float]], cursor: date, tol: int = 30
-) -> float | None:
-    """Nearest historical yield to ``cursor`` within ``tol`` days (None if none)."""
-    if not hist_sorted:
-        return None
-    dates = [d for d, _ in hist_sorted]
-    i = bisect.bisect_left(dates, cursor)
-    best = None
-    best_gap = tol + 1
-    for j in (i - 1, i):
-        if 0 <= j < len(dates):
-            gap = abs((dates[j] - cursor).days)
-            if gap <= tol and gap < best_gap:
-                best, best_gap = j, gap
-    return _safe_float(hist_sorted[best][1]) if best is not None else None
-
-
 def build_training_samples(
     bonds: list[dict],
     history_by_bond: dict[str, list[dict]],
@@ -309,14 +291,47 @@ def build_training_samples(
         hist.sort(key=lambda x: x[0])
         bond_hist_sorted[iid] = hist
 
-    def avg_asof(cursor: date) -> dict[str, float]:
-        by_cur: dict[str, list[float]] = {}
-        for b in bonds:
-            cur = str(b.get("currency", "USD")).upper()
-            y = _nearest_yield_asof(bond_hist_sorted.get(b.get("internal_id"), []), cursor)
-            if y is not None:
-                by_cur.setdefault(cur, []).append(y)
-        return {k: fmean(v) for k, v in by_cur.items()}
+    # Merged per-currency (bond_index, date, yield) series across ALL bonds,
+    # sorted once. ``avg_asof`` then finds the window around a cursor with two
+    # bisects instead of scanning every bond — O(log N + window) per cursor
+    # instead of O(N) per bond per cursor.
+    currency_series: dict[str, list[tuple[int, date, float]]] = {}
+    for idx, b in enumerate(bonds):
+        cur = str(b.get("currency", "USD")).upper()
+        series = currency_series.setdefault(cur, [])
+        for d, y in bond_hist_sorted.get(b.get("internal_id"), []):
+            series.append((idx, d, y))
+    for cur in currency_series:
+        currency_series[cur].sort(key=lambda x: x[1])
+
+    def avg_asof(cursor: date, tol: int = 30) -> dict[str, float]:
+        """Cross-sectional mean yield per currency as-of ``cursor``.
+
+        Keeps the original semantics (nearest point per bond within the
+        tolerance window) while being far cheaper: per currency we locate the
+        window with two bisects, keep the closest observation of each bond,
+        then average.
+        """
+        out: dict[str, float] = {}
+        lo_day = cursor - timedelta(days=tol)
+        hi_day = cursor + timedelta(days=tol)
+        for cur, series in currency_series.items():
+            if not series:
+                continue
+            dates = [x[1] for x in series]
+            left = bisect.bisect_left(dates, lo_day)
+            right = bisect.bisect_right(dates, hi_day)
+            if right <= left:
+                continue
+            best_by_bond: dict[int, tuple[int, float]] = {}
+            for idx, d, y in series[left:right]:
+                gap = abs((d - cursor).days)
+                prev = best_by_bond.get(idx)
+                if prev is None or gap < prev[0]:
+                    best_by_bond[idx] = (gap, y)
+            if best_by_bond:
+                out[cur] = fmean(v for _, v in best_by_bond.values())
+        return out
 
     samples: list[TrainingSample] = []
     for b in bonds:

@@ -101,8 +101,11 @@ def effective_tier(tier: str | None, expires_at: datetime | None, trial_end: dat
     if is_paid(tier):
         exp = _as_aware(expires_at)
         if exp is not None and exp <= _now():
-            return FREE_TIER
-        return tier
+            # Paid window lapsed — fall through to the trial check below so an
+            # active (e.g. referrer-extended) trial still grants Pro access.
+            tier = FREE_TIER
+        else:
+            return tier
     # Free or expired — check for active trial
     trial = _as_aware(trial_end)
     if trial is not None and trial > _now():
@@ -211,11 +214,25 @@ async def set_tier_by_telegram(
         user.subscription_tier = tier
         if is_paid(tier) and duration_days:
             base = _as_aware(user.subscription_expires_at)
-            # Extend from the later of "now" or an existing unexpired window.
+            # Extend from the later of "now" or an existing unexpired window,
+            # regardless of which channel (Stars/YooKassa) established it.
             start = base if base and base > _now() else _now()
-            user.subscription_expires_at = start + timedelta(days=duration_days)
+            new_expiry = start + timedelta(days=duration_days)
+            # The channel that governs the LATER expiry owns the record: a
+            # Stars purchase must not overwrite a YooKassa-paid window that
+            # still runs past the new one — otherwise a Stars refund would
+            # revoke YooKassa-paid days. Keep both the channel AND the expiry
+            # of the longer window intact.
+            if user.payment_channel and user.payment_channel != "stars" and (
+                base is None or base >= new_expiry
+            ):
+                pass  # keep the existing (longer) channel and its expiry
+            else:
+                user.payment_channel = "stars"
+                user.subscription_expires_at = new_expiry
         elif not is_paid(tier):
             user.subscription_expires_at = None
+            user.payment_channel = None
         if charge_id:
             user.last_charge_id = charge_id
         await session.flush()
@@ -231,8 +248,10 @@ async def set_tier_by_telegram(
 async def attach_referrer(telegram_id: int, referrer_user_id: int) -> bool:
     """Record a referrer (by `users.id`) for a Telegram user from a deep link.
 
-    The referrer gets a bonus trial extension (``REFERRAL_BONUS_DAYS``). Returns
-    ``True`` if a referrer was attached (no-op if self/alredy set/invalid).
+    Both sides get a bonus trial extension (``REFERRAL_BONUS_DAYS``) — the
+    invitee for joining, the referrer for bringing a friend — matching what
+    /refer promises. Returns ``True`` if a referrer was attached (no-op if
+    self/already set/invalid).
     """
     if referrer_user_id <= 0:
         return False
@@ -253,19 +272,33 @@ async def attach_referrer(telegram_id: int, referrer_user_id: int) -> bool:
         bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "3"))
         if bonus_days > 0:
             now = _now()
-            if referrer.trial_end and referrer.trial_end > now:
-                referrer.trial_end = referrer.trial_end + timedelta(days=bonus_days)
-            elif referrer.subscription_expires_at and referrer.subscription_expires_at > now:
-                referrer.subscription_expires_at = referrer.subscription_expires_at + timedelta(days=bonus_days)
+            # Referrer's bonus: extend whichever access window is still active.
+            trial_end = _as_aware(referrer.trial_end)
+            paid_end = _as_aware(referrer.subscription_expires_at)
+            if trial_end and trial_end > now:
+                referrer.trial_end = trial_end + timedelta(days=bonus_days)
+            elif paid_end and paid_end > now:
+                referrer.subscription_expires_at = paid_end + timedelta(days=bonus_days)
             else:
                 referrer.trial_end = now + timedelta(days=bonus_days)
+            # Invitee's bonus: extend their (just-created) trial as promised.
+            invitee_trial = _as_aware(user.trial_end)
+            if invitee_trial and invitee_trial > now:
+                user.trial_end = invitee_trial + timedelta(days=bonus_days)
+            else:
+                user.trial_end = now + timedelta(days=bonus_days)
         await session.flush()
     logger.info("referrer_attached", telegram_id=telegram_id, referrer=referrer_user_id)
     return True
 
 
 async def clear_subscription_by_telegram(telegram_id: int, charge_id: str | None = None) -> None:
-    """Revoke a paid subscription (e.g. after a Stars refund)."""
+    """Revoke a paid subscription (e.g. after a Stars refund).
+
+    A refund only revokes access when it matches the channel that actually
+    established the current paid window — a Stars refund must not cancel a
+    separate YooKassa-paid subscription (and vice versa).
+    """
     async with session_scope() as session:
         user = (
             await session.execute(select(UserORM).where(UserORM.telegram_id == telegram_id))
@@ -275,11 +308,18 @@ async def clear_subscription_by_telegram(telegram_id: int, charge_id: str | None
         # Only revoke if the refunded charge matches the active one (or no id given).
         if charge_id and user.last_charge_id and user.last_charge_id != charge_id:
             return
+        # Cross-channel protection: the current window was paid via YooKassa —
+        # a Stars refund must not revoke it.
+        if user.payment_channel and user.payment_channel != "stars":
+            logger.info(
+                "stars_refund_skipped_other_channel",
+                telegram_id=telegram_id,
+                channel=user.payment_channel,
+            )
+            return
         user.subscription_tier = FREE_TIER
         user.subscription_expires_at = None
         user.last_charge_id = None
-        # A refund fully revokes access — also drop any promotional trial so the
-        # user does not silently keep `pro` via the trial window.
-        user.trial_end = None
+        user.payment_channel = None
         await session.flush()
     logger.info("subscription_revoked", telegram_id=telegram_id, charge_id=charge_id)

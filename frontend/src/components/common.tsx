@@ -9,6 +9,7 @@ export function CurrencyBadge({ currency }: { currency: string }) {
     XAU: 'bg-amber-900 text-amber-300',
     XAG: 'bg-gray-700 text-gray-300',
     XPT: 'bg-slate-700 text-slate-300',
+    CNY: 'bg-rose-900 text-rose-300',
   };
   return (
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[currency] || 'bg-gray-800 text-gray-400'}`}>

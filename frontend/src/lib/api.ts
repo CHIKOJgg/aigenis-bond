@@ -18,6 +18,10 @@ function getToken(): string | null {
 async function request<T>(path: string, options: RequestInit = {}, _isRetry = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
+    // ngrok free shows an interstitial "You are about to visit..." page for
+    // requests without its bypass cookie, which breaks JSON API responses
+    // (e.g. GET /auth/me after login). This header tells ngrok to skip it.
+    'ngrok-skip-browser-warning': '1',
     ...(options.headers as Record<string, string> || {}),
   };
   if (token) {
@@ -33,7 +37,7 @@ async function request<T>(path: string, options: RequestInit = {}, _isRetry = fa
       try {
         const refreshRes = await fetch(`${BASE}/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
         if (refreshRes.ok) {
@@ -62,6 +66,12 @@ async function get<T>(path: string): Promise<T> {
 
 async function post<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+}
+
+// Generic request wrapper exposed for components that need full control
+// (custom methods/bodies). Same auth/refresh/error handling as get/post.
+async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return request<T>(path, options);
 }
 
 export interface Bond {
@@ -448,6 +458,10 @@ export interface BondHistoryData {
 }
 
 export const api = {
+  // Generic request helper: full control over method/body with the same
+  // auth/refresh/error handling as get/post. (ReferralProgram, PnL, etc.)
+  request: apiRequest,
+
   health: () => get<Health>('/health'),
 
   bonds: {
@@ -550,6 +564,10 @@ export const api = {
       post<TokenResponse>('/auth/refresh', { refresh_token }),
     google: (id_token: string, name?: string) =>
       post<TokenResponse>('/auth/google', { id_token, name }),
+    forgotPassword: (email: string) =>
+      post<{ message: string }>('/auth/forgot-password', { email }),
+    resetPassword: (token: string, new_password: string) =>
+      post<{ message: string }>('/auth/reset-password', { token, new_password }),
     me: () => get<User>('/auth/me'),
   },
 

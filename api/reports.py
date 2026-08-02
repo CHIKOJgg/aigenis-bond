@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import io
 from datetime import date
-from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from api.access_control import RequireFeature, get_optional_user_id
 from api import _helpers as _h
+from api.access_control import RequireFeature, require_user_id
 from portfolio.pnl import compute_pnl
 from portfolio.positions_repository import list_positions
 from portfolio.transactions import list_transactions
@@ -23,7 +22,6 @@ router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
 def _generate_portfolio_pdf(
     pnl_data: dict,
-    positions: list,
     bonds_by_id: dict,
 ) -> bytes:
     """Generate a simple HTML report that can be saved as PDF via browser."""
@@ -38,7 +36,7 @@ def _generate_portfolio_pdf(
             <td style="padding:8px;border-bottom:1px solid #334155">{name}</td>
             <td style="padding:8px;border-bottom:1px solid #334155;text-align:right">{p['weight']*100:.1f}%</td>
             <td style="padding:8px;border-bottom:1px solid #334155;text-align:right">{p['current_value']:,.2f}</td>
-            <td style="padding:8px;border-bottom:1px solid #334155;text-align:right" style="{pnl_class}">{p['total_pnl']:+,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #334155;text-align:right;{pnl_class}">{p['total_pnl']:+,.2f}</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>
@@ -95,10 +93,10 @@ def _generate_portfolio_pdf(
 
 @router.get("/portfolio", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def export_portfolio_report(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
     """Generate an HTML portfolio report for browser print/save as PDF."""
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         positions = await list_positions(session, uid)
         txs = await list_transactions(session, uid, limit=1000)
@@ -116,7 +114,6 @@ async def export_portfolio_report(
 
     html_bytes = _generate_portfolio_pdf(
         pnl_data=pnl.as_dict(),
-        positions=positions,
         bonds_by_id=bonds_by_id,
     )
 

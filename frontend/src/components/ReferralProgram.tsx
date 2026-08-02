@@ -2,18 +2,29 @@ import { useState } from 'react';
 import { Gift, Copy, Check, Share2 } from 'lucide-react';
 import { api } from '../lib/api';
 
+interface ReferralStats {
+  referral_code: string | null;
+  total_referrals: number;
+  conversions: number;
+  pending_payouts: number;
+  paid_payouts: number;
+  total_commission: number;
+}
+
 export default function ReferralProgram() {
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [noCode, setNoCode] = useState(false);
   const [stats, setStats] = useState<{ referrals: number; rewards: number } | null>(null);
 
   async function loadReferral() {
     setLoading(true);
     try {
-      const data = await api.request('/api/v1/referral/code');
-      setReferralCode(data.code);
-      setStats({ referrals: data.referral_count || 0, rewards: data.reward_days || 0 });
+      const data = await api.request<ReferralStats>('/api/v1/partner/referrals');
+      setReferralCode(data.referral_code);
+      setNoCode(!data.referral_code);
+      setStats({ referrals: data.total_referrals, rewards: data.total_commission });
     } catch {
       console.error('Failed to load referral');
     }
@@ -46,17 +57,24 @@ export default function ReferralProgram() {
         </div>
         <div>
           <h3 className="text-sm font-semibold text-white">Пригласи друга</h3>
-          <p className="text-xs text-slate-400">Получи 7 дней Pro за каждого приглашённого</p>
+          <p className="text-xs text-slate-400">Получи комиссию с подписок за каждого приглашённого</p>
         </div>
       </div>
 
-      {!referralCode && !loading && (
+      {!referralCode && !loading && !noCode && (
         <button
           onClick={loadReferral}
           className="w-full py-2.5 rounded-lg bg-pink-600/20 border border-pink-500/30 text-pink-300 text-sm font-medium hover:bg-pink-600/30 transition-colors"
         >
           Получить реферальный код
         </button>
+      )}
+
+      {noCode && !loading && (
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Реферальная программа привязана к Partner-ключу. Создайте ключ в разделе
+          «Для бизнеса» (доступно в Pro/Enterprise), и реферальный код появится здесь.
+        </p>
       )}
 
       {loading && (
@@ -82,8 +100,8 @@ export default function ReferralProgram() {
                 <div className="text-[10px] text-slate-400">Приглашено</div>
               </div>
               <div className="bg-slate-700/30 rounded-lg p-2 text-center">
-                <div className="text-lg font-bold text-emerald-400">+{stats.rewards}</div>
-                <div className="text-[10px] text-slate-400">Дней Pro</div>
+                <div className="text-lg font-bold text-emerald-400">+{stats.rewards.toFixed(2)}</div>
+                <div className="text-[10px] text-slate-400">Комиссия BYN</div>
               </div>
             </div>
           )}

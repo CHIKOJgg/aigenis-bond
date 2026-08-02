@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -33,18 +34,28 @@ class MonitoringResult:
 
 
 def _pct_change(old: float, new: float) -> float:
-    if old == 0:
-        return float("inf") if new != 0 else 0.0
-    return (new - old) / abs(old) * 100
+    if old <= 0:
+        # A non-positive baseline is data garbage, not a signal; avoid +inf%.
+        return 0.0
+    return (new - old) / old * 100
 
 
-async def _latest_history(
-    session: AsyncSession, internal_id: str
+async def _previous_snapshot(
+    session: AsyncSession, internal_id: str, asof: date | None = None
 ) -> BondHistoryORM | None:
-    """Most recent historical snapshot for a bond (used for change detection)."""
+    """Most recent historical snapshot strictly *before* ``asof`` (today by default).
+
+    The pipeline writes today's snapshot during scraping, so comparing against
+    the latest row would always show zero change. Comparing against the
+    previous trading day surfaces real yield/coupon/price moves.
+    """
+    asof = asof or date.today()
     result = await session.execute(
         select(BondHistoryORM)
-        .where(BondHistoryORM.internal_id == internal_id)
+        .where(
+            BondHistoryORM.internal_id == internal_id,
+            BondHistoryORM.date < asof,
+        )
         .order_by(BondHistoryORM.date.desc())
         .limit(1)
     )
@@ -106,9 +117,7 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
     counts: dict[str, int] = {}
     total_new = 0
 
-    seen_ids: set[str] = set()
     for b in bonds:
-        seen_ids.add(b.internal_id)
         if b.status == "delisted" or b.status == "matured":
             alert_id = await _add_and_publish(
                 session,
@@ -145,7 +154,7 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
         # of ``detect_bond_changes`` — without it yield/coupon/price moves are
         # never surfaced (the THRESHOLDS below were previously dead).
         if b.status == "active":
-            prev = await _latest_history(session, b.internal_id)
+            prev = await _previous_snapshot(session, b.internal_id)
             if prev is not None:
                 if b.yield_to_maturity is not None and prev.yield_ is not None:
                     dy = float(b.yield_to_maturity) - float(prev.yield_)
@@ -383,13 +392,17 @@ async def detect_data_quality(session: AsyncSession) -> MonitoringResult:
     counts: dict[str, int] = {}
     total = 0
     for issue in report.issues:
+        # Stable digest: Python's builtin hash() is randomized per process, so
+        # the 24h dedup in notifications/repository.py would never match across
+        # scheduler restarts and the same alert would fire every run.
+        issue_key = hashlib.sha256(issue.encode("utf-8")).hexdigest()[:16]
         alert_id = await _add_and_publish(
             session,
             {
                 "kind": "data_quality",
                 "title": "⚠️ Качество данных",
                 "message": issue,
-                "dedup_key": f"data_quality:{hash(issue) % 10**8}:{date.today().isoformat()}",
+                "dedup_key": f"data_quality:{issue_key}:{date.today().isoformat()}",
             },
         )
         if alert_id:

@@ -22,6 +22,7 @@ STRATEGY_WEIGHTS: dict[str, dict[str, float]] = {
     "Carry Trade": {"score": 0.3, "yield": 0.6, "safety": 0.1},
     "Dollarization": {"score": 0.3, "yield": 0.2, "safety": 0.5},
     "Maximum Reward/Risk": {"score": 1.0, "yield": 0.0, "safety": 0.0},
+    "Metals++": {"score": 0.3, "yield": 0.1, "safety": 0.6},
 }
 
 
@@ -83,6 +84,12 @@ def _sortino(return_pct: float, downside: float, rf: float = 4.0) -> float:
     return (return_pct - rf) / downside
 
 
+def _calmar(return_pct: float, max_drawdown_pct: float) -> float:
+    if max_drawdown_pct <= 0:
+        return 0.0
+    return return_pct / max_drawdown_pct
+
+
 def _max_drawdown(scores: list[BondScore]) -> float:
     if not scores:
         return 0.0
@@ -96,6 +103,42 @@ def _var_95(scores: list[BondScore]) -> float:
     sorted_ytm = sorted(s.breakdown.yield_component for s in scores)
     idx = max(int(len(sorted_ytm) * 0.05), 0)
     return abs(sorted_ytm[idx])
+
+
+def _weighted_stats(
+    selected: list[BondScore],
+    weights: dict[str, float],
+    bonds_by_id: dict[str, Bond],
+) -> tuple[float, float, float, float, float]:
+    """Realized/expected portfolio stats from actual yields-to-maturity.
+
+    ``expected_return`` is the allocation-weighted mean YTM of the selected
+    bonds (a genuine annual-return estimate); ``volatility`` is the weighted
+    dispersion of those YTMs; ``max_drawdown_pct`` is the deepest markdown
+    among the selected bonds; ``var_95`` is the 5th-percentile YTM shortfall.
+    Falls back to score components when YTM data is missing.
+    """
+    ytms: list[float] = []
+    wsum = 0.0
+    for s in selected:
+        bond = bonds_by_id.get(s.internal_id)
+        ytm = float(bond.yield_to_maturity) if bond and bond.yield_to_maturity is not None else None
+        w = max(weights.get(s.internal_id, 0.0), 0.0)
+        if ytm is not None and ytm > 0:
+            ytms.append(ytm)
+            wsum += w
+    if not ytms:
+        exp = _expected_return(selected)
+        vol = _volatility(selected)
+        mdd = _max_drawdown(selected)
+        return exp, vol, exp, mdd, _var_95(selected)
+
+    avg = sum(ytms) / len(ytms)
+    var = sum((y - avg) ** 2 for y in ytms) / len(ytms)
+    vol = math.sqrt(var)
+    mdd = max(max(avg - y for y in ytms), 0.0)
+    var95 = abs(sorted(ytms)[max(int(len(ytms) * 0.05), 0)])
+    return avg, vol, avg, mdd, var95
 
 
 def allocate(
@@ -116,24 +159,26 @@ def allocate(
             sortino=0.0,
             max_drawdown=0.0,
             var_95=0.0,
+            calmar=0.0,
             strategy=prefs.strategy,
         )
 
+    bonds_by_id = {b.internal_id: b for b in bonds}
     total = prefs.initial_capital
     weights = [s.score for s in selected]
     w_sum = sum(max(w, 0.01) for w in weights)
+    share_by_id: dict[str, float] = {}
     items: dict[str, Decimal] = {}
     for s, w in zip(selected, weights, strict=True):
-        share = Decimal(str(max(w, 0.01) / w_sum))
-        items[s.internal_id] = (total * share).quantize(Decimal("0.01"))
+        share = max(w, 0.01) / w_sum
+        share_by_id[s.internal_id] = share
+        items[s.internal_id] = (total * Decimal(str(share))).quantize(Decimal("0.01"))
 
-    exp_ret = _expected_return(selected)
-    vol = _volatility(selected)
+    exp_ret, vol, _ret2, mdd, var95 = _weighted_stats(selected, share_by_id, bonds_by_id)
     sharpe = _sharpe(exp_ret, vol)
     downside = max(vol * 0.7, 0.1)
     sortino = _sortino(exp_ret, downside)
-    mdd = _max_drawdown(selected)
-    var95 = _var_95(selected)
+    calmar = _calmar(exp_ret, mdd)
 
     return PortfolioAllocation(
         items=items,
@@ -143,6 +188,7 @@ def allocate(
         sortino=round(sortino, 2),
         max_drawdown=round(mdd, 2),
         var_95=round(var95, 2),
+        calmar=round(calmar, 2),
         strategy=prefs.strategy,
     )
 

@@ -7,7 +7,7 @@ Covers both alert pipelines that were previously silent:
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -93,10 +93,13 @@ async def test_monitoring_emits_webhook_on_yield_drop(db: AsyncSession, monkeypa
             fetched_at=now,
         )
     )
+    # Change detection compares against the PREVIOUS trading day: the pipeline
+    # writes today's snapshot during scraping, so a same-day row would show
+    # zero change.
     db.add(
         BondHistoryORM(
             internal_id="X",
-            date=date.today(),
+            date=date.today() - timedelta(days=1),
             price=Decimal("100"),
             yield_=Decimal("12.0"),
             coupon=Decimal("5.0"),

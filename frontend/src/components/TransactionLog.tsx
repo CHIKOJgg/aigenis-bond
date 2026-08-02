@@ -33,7 +33,7 @@ export default function TransactionLog() {
   async function loadTransactions() {
     setLoading(true);
     try {
-      const data = await api.request('/api/v1/transactions?limit=100');
+      const data = await api.request<Transaction[]>('/api/v1/transactions?limit=100');
       setTransactions(data);
     } catch {
       console.error('Failed to load transactions');

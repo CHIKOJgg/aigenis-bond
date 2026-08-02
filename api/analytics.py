@@ -1,4 +1,4 @@
-"""Analytics API mirroring the Telegram bot's capabilities.
+﻿"""Analytics API mirroring the Telegram bot's capabilities.
 
 Every endpoint returns the same data the bot shows, as JSON, so the website
 can replicate the bot 1:1. Pro/Enterprise endpoints are gated by subscription
@@ -19,16 +19,22 @@ from api import _helpers as _h
 from api.access_control import (
     RequireFeature,
     get_current_tier,
-    get_optional_user_id,
+    require_user_id,
 )
 from desk import carry as desk_carry
 from desk import duration as desk_duration
 from desk import relative_value as desk_rv
 from desk import repo as desk_repo
+from desk import spreads as desk_spreads
 from desk import stress as desk_stress
 from desk import yield_curve as desk_curve
 from desk.cashflow import accrued_interest as dc_accrued
-from desk.repository import latest_rv_signals, latest_stress_runs
+from desk.repository import (
+    latest_rv_signals,
+    latest_spread_reports,
+    latest_stress_runs,
+    save_spread_reports,
+)
 from forecast.engine import forecast_capital, forecast_horizons
 from ml.repository import latest_model_version, predictions_for_bond
 from notifications.alerts_repository import (
@@ -185,15 +191,17 @@ async def api_bond_card(
     internal_id: str,
     tier: str = Depends(get_current_tier),
 ):
-    """Карточка облигации: факты + Score + вердикт.
+    """РљР°СЂС‚РѕС‡РєР° РѕР±Р»РёРіР°С†РёРё: С„Р°РєС‚С‹ + Score + РІРµСЂРґРёРєС‚.
 
-    Free-пользователь видит факты, число Score и тир, но полный разбор
-    («почему») скрыт. Pro получает объяснение сразу внутри карточки —
-    это и есть точка апселла.
+    Free-РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІРёРґРёС‚ С„Р°РєС‚С‹, С‡РёСЃР»Рѕ Score Рё С‚РёСЂ, РЅРѕ РїРѕР»РЅС‹Р№ СЂР°Р·Р±РѕСЂ
+    (В«РїРѕС‡РµРјСѓВ») СЃРєСЂС‹С‚. Pro РїРѕР»СѓС‡Р°РµС‚ РѕР±СЉСЏСЃРЅРµРЅРёРµ СЃСЂР°Р·Сѓ РІРЅСѓС‚СЂРё РєР°СЂС‚РѕС‡РєРё вЂ”
+    СЌС‚Рѕ Рё РµСЃС‚СЊ С‚РѕС‡РєР° Р°РїСЃРµР»Р»Р°.
     """
     bond = await _get_bond_or_404(internal_id)
     score = await _score_for_bond(bond)
-    is_pro = tier in {"pro", "enterprise"}
+    # Paid tiers include B2B tiers (affiliate/api_pro/whitelabel), which
+    # FEATURE_FLAGS grants access_bond_analysis but the old check excluded.
+    is_pro = tier in {"pro", "enterprise", "api_pro", "whitelabel", "affiliate"}
     payload: dict = {
         "bond": _h.bond_facts(bond),
         "score": round(float(score.score), 2),
@@ -206,7 +214,7 @@ async def api_bond_card(
     else:
         payload["analysis"] = None
         payload["analysis_locked"] = True
-        payload["upgrade_hint"] = "Полный разбор и вердикт доступны в подписке Pro."
+        payload["upgrade_hint"] = "РџРѕР»РЅС‹Р№ СЂР°Р·Р±РѕСЂ Рё РІРµСЂРґРёРєС‚ РґРѕСЃС‚СѓРїРЅС‹ РІ РїРѕРґРїРёСЃРєРµ Pro."
     return payload
 
 
@@ -215,9 +223,9 @@ async def api_bond_card(
     dependencies=[Depends(RequireFeature("access_bond_analysis"))],
 )
 async def api_bond_analysis(internal_id: str):
-    """Полный разбор одной облигации: объяснение Score, ML-прогноз, RV-сигнал.
+    """РџРѕР»РЅС‹Р№ СЂР°Р·Р±РѕСЂ РѕРґРЅРѕР№ РѕР±Р»РёРіР°С†РёРё: РѕР±СЉСЏСЃРЅРµРЅРёРµ Score, ML-РїСЂРѕРіРЅРѕР·, RV-СЃРёРіРЅР°Р».
 
-    Единый ответ на вопрос «покупать или нет и почему» — ключевая ценность Pro.
+    Р•РґРёРЅС‹Р№ РѕС‚РІРµС‚ РЅР° РІРѕРїСЂРѕСЃ В«РїРѕРєСѓРїР°С‚СЊ РёР»Рё РЅРµС‚ Рё РїРѕС‡РµРјСѓВ» вЂ” РєР»СЋС‡РµРІР°СЏ С†РµРЅРЅРѕСЃС‚СЊ Pro.
     """
     bond = await _get_bond_or_404(internal_id)
     score = await _score_for_bond(bond)
@@ -267,11 +275,11 @@ async def api_bond_cashflow(
     internal_id: str,
     amount: float = Query(1000.0, gt=0),
 ):
-    """График купонных выплат при вложении ``amount`` в облигацию.
+    """Р“СЂР°С„РёРє РєСѓРїРѕРЅРЅС‹С… РІС‹РїР»Р°С‚ РїСЂРё РІР»РѕР¶РµРЅРёРё ``amount`` РІ РѕР±Р»РёРіР°С†РёСЋ.
 
-    «Сколько денег и когда я получу» — суть fixed income. Возвращает даты и
-    суммы купонов + возврат номинала при погашении, годовой доход и доходность
-    на вложенные средства (yield-on-cost).
+    В«РЎРєРѕР»СЊРєРѕ РґРµРЅРµРі Рё РєРѕРіРґР° СЏ РїРѕР»СѓС‡СѓВ» вЂ” СЃСѓС‚СЊ fixed income. Р’РѕР·РІСЂР°С‰Р°РµС‚ РґР°С‚С‹ Рё
+    СЃСѓРјРјС‹ РєСѓРїРѕРЅРѕРІ + РІРѕР·РІСЂР°С‚ РЅРѕРјРёРЅР°Р»Р° РїСЂРё РїРѕРіР°С€РµРЅРёРё, РіРѕРґРѕРІРѕР№ РґРѕС…РѕРґ Рё РґРѕС…РѕРґРЅРѕСЃС‚СЊ
+    РЅР° РІР»РѕР¶РµРЅРЅС‹Рµ СЃСЂРµРґСЃС‚РІР° (yield-on-cost).
     """
     bond = await _get_bond_or_404(internal_id)
     settlement = date.today()
@@ -325,8 +333,9 @@ async def api_bond_cashflow(
     dependencies=[Depends(RequireFeature("access_bond_analysis"))],
 )
 async def api_bond_history(internal_id: str, months: int = Query(12, ge=1, le=120)):
-    """История цены и YTM для графика."""
+    """РСЃС‚РѕСЂРёСЏ С†РµРЅС‹ Рё YTM РґР»СЏ РіСЂР°С„РёРєР°."""
     from datetime import timedelta
+
     from scraper.orm import BondHistoryORM
 
     cutoff = date.today() - timedelta(days=months * 30)
@@ -483,11 +492,35 @@ async def api_curve():
     return out
 
 
+@router.get("/desk/spreads", dependencies=[Depends(RequireFeature("access_desk_rv"))])
+async def api_desk_spreads():
+    """Z/G-spreads Рё СЃРёРіРЅР°Р» mispricing (РјРѕРґРµР»СЊРЅР°СЏ С†РµРЅР° vs СЂС‹РЅРѕРє) РїРѕ РІР°Р»СЋС‚Р°Рј."""
+    bonds = await _all_bonds()
+    by_cur: dict[str, list] = {}
+    for b in bonds:
+        by_cur.setdefault(str(b.currency), []).append(b)
+
+    curves: dict[str, desk_curve.NelsonSiegelParams] = {}
+    for cur, bs in by_cur.items():
+        curve = desk_curve.curve_from_bonds(bs)
+        if len(curve.points) >= 3:
+            curves[cur] = desk_curve.fit_nelson_siegel(curve.points)
+
+    reports = desk_spreads.compute_spreads(bonds, curves)
+    if reports:
+        async with session_scope() as session:
+            await save_spread_reports(session, reports)
+            await session.commit()
+
+    return [r.model_dump() for r in reports[:100]]
+
+
 @router.get("/desk/status", dependencies=[Depends(RequireFeature("access_desk_rv"))])
 async def api_desk_status():
     async with session_scope() as session:
         rv = await latest_rv_signals(session, limit=5)
         stress_runs = await latest_stress_runs(session, limit=3)
+        spreads = await latest_spread_reports(session, limit=5)
     return {
         "rv": [
             {"internal_id": s.internal_id, "z_score": round(float(s.z_score), 3), "side": s.side}
@@ -496,6 +529,16 @@ async def api_desk_status():
         "stress": [
             {"scenario_name": r.scenario_name, "pnl_pct": round(float(r.pnl_pct), 4)}
             for r in stress_runs
+        ],
+        "spreads": [
+            {
+                "internal_id": s.internal_id,
+                "g_spread_pct": round(float(s.g_spread_pct), 4)
+                if s.g_spread_pct is not None
+                else None,
+                "side": s.side,
+            }
+            for s in spreads
         ],
     }
 
@@ -547,10 +590,10 @@ async def api_companies(
     sector: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """Топ эмитентов (компаний) с агрегатами по их облигациям.
+    """РўРѕРї СЌРјРёС‚РµРЅС‚РѕРІ (РєРѕРјРїР°РЅРёР№) СЃ Р°РіСЂРµРіР°С‚Р°РјРё РїРѕ РёС… РѕР±Р»РёРіР°С†РёСЏРј.
 
-    Бесплатно: базовая детализация рынка. Агрегаты (число выпусков, средний
-    YTM, средний тир) считаются на лету из ``bonds`` и ``bond_scores``.
+    Р‘РµСЃРїР»Р°С‚РЅРѕ: Р±Р°Р·РѕРІР°СЏ РґРµС‚Р°Р»РёР·Р°С†РёСЏ СЂС‹РЅРєР°. РђРіСЂРµРіР°С‚С‹ (С‡РёСЃР»Рѕ РІС‹РїСѓСЃРєРѕРІ, СЃСЂРµРґРЅРёР№
+    YTM, СЃСЂРµРґРЅРёР№ С‚РёСЂ) СЃС‡РёС‚Р°СЋС‚СЃСЏ РЅР° Р»РµС‚Сѓ РёР· ``bonds`` Рё ``bond_scores``.
     """
     async with session_scope() as session:
         comp_rows = (
@@ -601,10 +644,10 @@ async def api_companies(
 
 @router.get("/companies/{issuer}")
 async def api_company_detail(issuer: str):
-    """Карточка компании-эмитента: описание, агрегаты, облигации, рекомендация.
+    """РљР°СЂС‚РѕС‡РєР° РєРѕРјРїР°РЅРёРё-СЌРјРёС‚РµРЅС‚Р°: РѕРїРёСЃР°РЅРёРµ, Р°РіСЂРµРіР°С‚С‹, РѕР±Р»РёРіР°С†РёРё, СЂРµРєРѕРјРµРЅРґР°С†РёСЏ.
 
-    Бесплатно. Рекомендация по компании собирается из рекомендаций по её
-    выпускам (``recommend_for_issuer``).
+    Р‘РµСЃРїР»Р°С‚РЅРѕ. Р РµРєРѕРјРµРЅРґР°С†РёСЏ РїРѕ РєРѕРјРїР°РЅРёРё СЃРѕР±РёСЂР°РµС‚СЃСЏ РёР· СЂРµРєРѕРјРµРЅРґР°С†РёР№ РїРѕ РµС‘
+    РІС‹РїСѓСЃРєР°Рј (``recommend_for_issuer``).
     """
     async with session_scope() as session:
         comp = (
@@ -621,7 +664,7 @@ async def api_company_detail(issuer: str):
         scores_by_id = {s.internal_id: s for s in score_rows}
 
     if not bond_rows and not comp:
-        raise HTTPException(status_code=404, detail=f"Компания '{issuer}' не найдена")
+        raise HTTPException(status_code=404, detail=f"РљРѕРјРїР°РЅРёСЏ '{issuer}' РЅРµ РЅР°Р№РґРµРЅР°")
 
     bonds = [_h.orm_to_bond(b) for b in bond_rows]
     bond_dicts = [
@@ -687,10 +730,10 @@ async def api_company_detail(issuer: str):
 
 @router.get("/search")
 async def api_search(q: str = Query(..., min_length=1)):
-    """Поиск по облигациям и компаниям (бесплатно).
+    """РџРѕРёСЃРє РїРѕ РѕР±Р»РёРіР°С†РёСЏРј Рё РєРѕРјРїР°РЅРёСЏРј (Р±РµСЃРїР»Р°С‚РЅРѕ).
 
-    Ищет по имени/ISIN/внутреннему ID облигации и по названию/эмитенту/сектору
-    компании. Возвращает два списка: ``bonds`` и ``companies``.
+    РС‰РµС‚ РїРѕ РёРјРµРЅРё/ISIN/РІРЅСѓС‚СЂРµРЅРЅРµРјСѓ ID РѕР±Р»РёРіР°С†РёРё Рё РїРѕ РЅР°Р·РІР°РЅРёСЋ/СЌРјРёС‚РµРЅС‚Сѓ/СЃРµРєС‚РѕСЂСѓ
+    РєРѕРјРїР°РЅРёРё. Р’РѕР·РІСЂР°С‰Р°РµС‚ РґРІР° СЃРїРёСЃРєР°: ``bonds`` Рё ``companies``.
     """
     q_lower = q.lower().strip()
     async with session_scope() as session:
@@ -775,9 +818,9 @@ async def api_ml_predict(bond_id: str):
 # Pro: Portfolio / Forecast / Scenarios
 # --------------------------------------------------------------------------- #
 @router.get("/forecast", dependencies=[Depends(RequireFeature("access_forecast"))])
-async def api_forecast(user_id: int | None = Depends(get_optional_user_id)):
+async def api_forecast(user_id: int = Depends(require_user_id)):
     async with session_scope() as session:
-        prefs = await get_preferences(session, user_id or 0)
+        prefs = await get_preferences(session, user_id)
     forecasts = forecast_horizons(
         initial_capital=prefs.initial_capital,
         monthly_contribution=prefs.monthly_contribution,
@@ -790,15 +833,18 @@ async def api_forecast(user_id: int | None = Depends(get_optional_user_id)):
             "expected_capital": f.expected_capital,
             "pessimistic_capital": f.pessimistic_capital,
             "optimistic_capital": f.optimistic_capital,
+            "mc_percentiles": f.mc_percentiles,
+            "cvar_95": f.cvar_95,
+            "method": f.assumptions.get("method", "deterministic"),
         }
         for f in forecasts
     ]
 
 
 @router.get("/scenarios", dependencies=[Depends(RequireFeature("access_portfolio"))])
-async def api_scenarios(user_id: int | None = Depends(get_optional_user_id)):
+async def api_scenarios(user_id: int = Depends(require_user_id)):
     async with session_scope() as session:
-        prefs = await get_preferences(session, user_id or 0)
+        prefs = await get_preferences(session, user_id)
         from notifications.fx_repository import latest_fx
 
         fx = await latest_fx(session, "USD/BYN")
@@ -835,7 +881,7 @@ async def api_alerts(limit: int = Query(10, ge=1, le=50)):
 # Free (authenticated): Watchlist
 # --------------------------------------------------------------------------- #
 @router.get("/watchlist")
-async def api_watchlist(user_id: int | None = Depends(get_optional_user_id)):
+async def api_watchlist(user_id: int = Depends(require_user_id)):
     if user_id is None:
         return []
     async with session_scope() as session:
@@ -874,6 +920,8 @@ def _build_forecast(prefs: UserPreferences, expected_return: float, volatility: 
             "expected_capital": f.expected_capital,
             "pessimistic_capital": f.pessimistic_capital,
             "optimistic_capital": f.optimistic_capital,
+            "mc_percentiles": f.mc_percentiles,
+            "cvar_95": f.cvar_95,
         }
         for f in forecast_horizons(
             initial_capital=prefs.initial_capital,
@@ -885,8 +933,8 @@ def _build_forecast(prefs: UserPreferences, expected_return: float, volatility: 
 
 
 @router.get("/positions", dependencies=[Depends(RequireFeature("access_portfolio"))])
-async def api_list_positions(user_id: int | None = Depends(get_optional_user_id)):
-    uid = user_id or 0
+async def api_list_positions(user_id: int = Depends(require_user_id)):
+    uid = user_id
     async with session_scope() as session:
         positions = await list_positions(session, uid)
     bonds = {b.internal_id: b for b in await _all_bonds()}
@@ -911,11 +959,11 @@ async def api_list_positions(user_id: int | None = Depends(get_optional_user_id)
 @router.post("/positions", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_add_position(
     req: PositionRequest,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
     if req.amount <= 0:
         raise HTTPException(status_code=400, detail="amount must be positive")
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         bond = (
             await session.execute(select(BondORM).where(BondORM.internal_id == req.internal_id))
@@ -929,18 +977,18 @@ async def api_add_position(
 @router.delete("/positions/{internal_id}", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_remove_position(
     internal_id: str,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         await remove_position(session, uid, internal_id)
     return {"status": "ok", "internal_id": internal_id}
 
 
 @router.get("/portfolio/plan", dependencies=[Depends(RequireFeature("access_portfolio"))])
-async def api_portfolio_plan(user_id: int | None = Depends(get_optional_user_id)):
+async def api_portfolio_plan(user_id: int = Depends(require_user_id)):
     """Rebalance plan: target allocation vs the user's actual holdings."""
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
         positions = await list_positions(session, uid)
@@ -974,16 +1022,16 @@ async def api_portfolio_plan(user_id: int | None = Depends(get_optional_user_id)
 
 @router.get("/portfolio/income", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_portfolio_income(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
     horizon_months: int = Query(12, ge=1, le=120),
 ):
-    """Календарь купонного дохода по фактическим позициям пользователя.
+    """РљР°Р»РµРЅРґР°СЂСЊ РєСѓРїРѕРЅРЅРѕРіРѕ РґРѕС…РѕРґР° РїРѕ С„Р°РєС‚РёС‡РµСЃРєРёРј РїРѕР·РёС†РёСЏРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.
 
-    Отвечает на главный вопрос держателя облигаций: сколько денег в год я
-    получаю, какая доходность на вложенное, когда следующая выплата и как
-    доход распределён по месяцам.
+    РћС‚РІРµС‡Р°РµС‚ РЅР° РіР»Р°РІРЅС‹Р№ РІРѕРїСЂРѕСЃ РґРµСЂР¶Р°С‚РµР»СЏ РѕР±Р»РёРіР°С†РёР№: СЃРєРѕР»СЊРєРѕ РґРµРЅРµРі РІ РіРѕРґ СЏ
+    РїРѕР»СѓС‡Р°СЋ, РєР°РєР°СЏ РґРѕС…РѕРґРЅРѕСЃС‚СЊ РЅР° РІР»РѕР¶РµРЅРЅРѕРµ, РєРѕРіРґР° СЃР»РµРґСѓСЋС‰Р°СЏ РІС‹РїР»Р°С‚Р° Рё РєР°Рє
+    РґРѕС…РѕРґ СЂР°СЃРїСЂРµРґРµР»С‘РЅ РїРѕ РјРµСЃСЏС†Р°Рј.
     """
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         positions = await list_positions(session, uid)
     if not positions:
@@ -1018,14 +1066,14 @@ async def api_portfolio_income(
 
 
 @router.get("/portfolio", dependencies=[Depends(RequireFeature("access_portfolio"))])
-async def api_portfolio(user_id: int | None = Depends(get_optional_user_id)):
+async def api_portfolio(user_id: int = Depends(require_user_id)):
     """Personalized portfolio: real holdings + metrics, or a starter basket.
 
     Unlike the previous implementation (which always assumed a default
     10 000 / 500 capital), this uses the authenticated user's actual positions
-    and saved preferences — so the website now matches the Telegram bot.
+    and saved preferences вЂ” so the website now matches the Telegram bot.
     """
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
         positions = await list_positions(session, uid)
@@ -1044,6 +1092,7 @@ async def api_portfolio(user_id: int | None = Depends(get_optional_user_id)):
             "sortino": round(float(alloc.sortino), 3),
             "max_drawdown": round(float(alloc.max_drawdown), 3),
             "var_95": round(float(alloc.var_95), 3),
+            "calmar": round(float(alloc.calmar), 3),
             "forecast": _build_forecast(prefs, alloc.expected_return, alloc.volatility),
         }
 
@@ -1076,13 +1125,14 @@ async def api_portfolio(user_id: int | None = Depends(get_optional_user_id)):
         "sortino": round(float(alloc.sortino), 3),
         "max_drawdown": round(float(alloc.max_drawdown), 3),
         "var_95": round(float(alloc.var_95), 3),
+        "calmar": round(float(alloc.calmar), 3),
         "holdings": sorted(holdings, key=lambda h: h["amount"], reverse=True),
         "forecast": _build_forecast(prefs, alloc.expected_return, alloc.volatility),
     }
 
 
 # --------------------------------------------------------------------------- #
-# Pro: Goal-based allocation ("подобрать под мою цель")
+# Pro: Goal-based allocation ("РїРѕРґРѕР±СЂР°С‚СЊ РїРѕРґ РјРѕСЋ С†РµР»СЊ")
 # --------------------------------------------------------------------------- #
 class AllocateRequest(BaseModel):
     amount: float = Field(10000.0, gt=0)
@@ -1102,24 +1152,25 @@ _VALID_STRATEGIES = {
     "Carry Trade",
     "Dollarization",
     "Maximum Reward/Risk",
+    "Metals++",
 }
 
 
 @router.post("/allocate", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_allocate(
     req: AllocateRequest,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    """Подобрать конкретную корзину облигаций под сумму, срок и риск-профиль.
+    """РџРѕРґРѕР±СЂР°С‚СЊ РєРѕРЅРєСЂРµС‚РЅСѓСЋ РєРѕСЂР·РёРЅСѓ РѕР±Р»РёРіР°С†РёР№ РїРѕРґ СЃСѓРјРјСѓ, СЃСЂРѕРє Рё СЂРёСЃРє-РїСЂРѕС„РёР»СЊ.
 
-    Это самая понятная ценность для пользователя: «у меня X, горизонт Y лет,
-    риск Z — что купить прямо сейчас». Возвращает доли, ожидаемую доходность и
-    проекцию капитала. Не требует наличия сохранённого портфеля.
+    Р­С‚Рѕ СЃР°РјР°СЏ РїРѕРЅСЏС‚РЅР°СЏ С†РµРЅРЅРѕСЃС‚СЊ РґР»СЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ: В«Сѓ РјРµРЅСЏ X, РіРѕСЂРёР·РѕРЅС‚ Y Р»РµС‚,
+    СЂРёСЃРє Z вЂ” С‡С‚Рѕ РєСѓРїРёС‚СЊ РїСЂСЏРјРѕ СЃРµР№С‡Р°СЃВ». Р’РѕР·РІСЂР°С‰Р°РµС‚ РґРѕР»Рё, РѕР¶РёРґР°РµРјСѓСЋ РґРѕС…РѕРґРЅРѕСЃС‚СЊ Рё
+    РїСЂРѕРµРєС†РёСЋ РєР°РїРёС‚Р°Р»Р°. РќРµ С‚СЂРµР±СѓРµС‚ РЅР°Р»РёС‡РёСЏ СЃРѕС…СЂР°РЅС‘РЅРЅРѕРіРѕ РїРѕСЂС‚С„РµР»СЏ.
     """
     if req.risk not in _VALID_STRATEGIES:
         raise HTTPException(status_code=400, detail=f"unknown risk '{req.risk}'")
     prefs = UserPreferences(
-        user_id=user_id or 0,
+        user_id=user_id,
         initial_capital=Decimal(str(req.amount)),
         monthly_contribution=Decimal("0"),
         share_usd=req.share_usd if req.share_usd is not None else 0.5,
@@ -1168,12 +1219,15 @@ async def api_allocate(
         "sortino": round(float(alloc.sortino), 3),
         "max_drawdown": round(float(alloc.max_drawdown), 3),
         "var_95": round(float(alloc.var_95), 3),
+        "calmar": round(float(alloc.calmar), 3),
         "basket": sorted(basket, key=lambda x: x["amount"], reverse=True),
         "projection": {
             "horizon_years": projection.horizon_years,
             "expected_capital": projection.expected_capital,
             "pessimistic_capital": projection.pessimistic_capital,
             "optimistic_capital": projection.optimistic_capital,
+            "mc_percentiles": projection.mc_percentiles,
+            "cvar_95": projection.cvar_95,
         },
     }
 
@@ -1190,13 +1244,13 @@ class BuildPlanRequest(BaseModel):
 @router.post("/build_plan", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_build_plan(
     req: BuildPlanRequest,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    """План ребалансировки: целевое распределение vs текущих позиций.
+    """РџР»Р°РЅ СЂРµР±Р°Р»Р°РЅСЃРёСЂРѕРІРєРё: С†РµР»РµРІРѕРµ СЂР°СЃРїСЂРµРґРµР»РµРЅРёРµ vs С‚РµРєСѓС‰РёС… РїРѕР·РёС†РёР№.
 
-    Если ``positions`` не переданы — берутся сохранённые позиции пользователя.
+    Р•СЃР»Рё ``positions`` РЅРµ РїРµСЂРµРґР°РЅС‹ вЂ” Р±РµСЂСѓС‚СЃСЏ СЃРѕС…СЂР°РЅС‘РЅРЅС‹Рµ РїРѕР·РёС†РёРё РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ.
     """
-    uid = user_id or 0
+    uid = user_id
     bonds = await _all_bonds()
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
@@ -1246,11 +1300,11 @@ async def api_build_plan(
 
 @router.post("/rebalance", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_rebalance(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
     drift_threshold: float = 0.05,
 ):
-    """Применить ребалансировку к сохранённым позициям пользователя."""
-    uid = user_id or 0
+    """РџСЂРёРјРµРЅРёС‚СЊ СЂРµР±Р°Р»Р°РЅСЃРёСЂРѕРІРєСѓ Рє СЃРѕС…СЂР°РЅС‘РЅРЅС‹Рј РїРѕР·РёС†РёСЏРј РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ."""
+    uid = user_id
     bonds = await _all_bonds()
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
@@ -1258,7 +1312,7 @@ async def api_rebalance(
         user_id=uid, prefs=prefs, bonds=bonds, drift_threshold=drift_threshold
     )
     if plan is None:
-        return {"rebalanced": False, "reason": "drift ниже порога — действие не требуется"}
+        return {"rebalanced": False, "reason": "drift РЅРёР¶Рµ РїРѕСЂРѕРіР° вЂ” РґРµР№СЃС‚РІРёРµ РЅРµ С‚СЂРµР±СѓРµС‚СЃСЏ"}
     return {
         "rebalanced": True,
         "strategy": plan.strategy,
@@ -1289,9 +1343,9 @@ class AlertRuleRequest(BaseModel):
 @router.post("/alerts/rules", dependencies=[Depends(RequireFeature("access_alerts"))])
 async def api_create_alert_rule(
     req: AlertRuleRequest,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         bond = (
             await session.execute(select(BondORM).where(BondORM.internal_id == req.internal_id))
@@ -1318,8 +1372,8 @@ async def api_create_alert_rule(
 
 
 @router.get("/alerts/rules", dependencies=[Depends(RequireFeature("access_alerts"))])
-async def api_list_alert_rules(user_id: int | None = Depends(get_optional_user_id)):
-    uid = user_id or 0
+async def api_list_alert_rules(user_id: int = Depends(require_user_id)):
+    uid = user_id
     async with session_scope() as session:
         rules = await list_rules(session, uid)
     return [
@@ -1343,9 +1397,9 @@ async def api_list_alert_rules(user_id: int | None = Depends(get_optional_user_i
 )
 async def api_delete_alert_rule(
     rule_id: int,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         removed = await delete_rule(session, uid, rule_id)
     if not removed:
@@ -1355,11 +1409,11 @@ async def api_delete_alert_rule(
 
 @router.get("/alerts/feed", dependencies=[Depends(RequireFeature("access_alerts"))])
 async def api_alert_feed(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
     limit: int = Query(50, ge=1, le=200),
 ):
-    """Лента сработавших пользовательских алертов (не системных)."""
-    uid = user_id or 0
+    """Р›РµРЅС‚Р° СЃСЂР°Р±РѕС‚Р°РІС€РёС… РїРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёС… Р°Р»РµСЂС‚РѕРІ (РЅРµ СЃРёСЃС‚РµРјРЅС‹С…)."""
+    uid = user_id
     async with session_scope() as session:
         events = await list_events(session, uid, limit=limit)
     return [
@@ -1374,5 +1428,7 @@ async def api_alert_feed(
         }
         for e in events
     ]
+
+
 
 

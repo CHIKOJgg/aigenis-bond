@@ -26,6 +26,7 @@ import MobileMenu from './components/MobileMenu';
 import ReferralProgram from './components/ReferralProgram';
 import BondDetailModal from './components/BondDetailModal';
 import { BondFilters, defaultFilters, type BondFiltersState } from './BondFilters';
+import { GoogleSignInButton } from './components/GoogleSignInButton';
 import YieldCurveChart from './components/charts/YieldCurveChart';
 import RVHeatmap from './components/charts/RVHeatmap';
 import CarryBarChart from './components/charts/CarryBarChart';
@@ -67,7 +68,15 @@ function AppInner() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
   const [legalPage, setLegalPage] = useState<'terms' | 'privacy' | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(isOnboardingNeeded());
+  // Onboarding is only for authenticated users — anonymous visitors must land
+  // on the marketing page first (acquisition funnel). Shown once per browser
+  // after the user resolves, so the tour never hijacks the landing page.
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  useEffect(() => {
+    if (user && isOnboardingNeeded()) {
+      setShowOnboarding(true);
+    }
+  }, [user]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [selectedBond, setSelectedBond] = useState<Bond | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -475,6 +484,7 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,16 +493,28 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
     try {
       await login(email, password);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message === 'Failed to fetch' ? t('auth.fetchError') : err.message);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleReset = () => {
-    setResetSent(true);
+  const handleReset = async () => {
     setError('');
-    setTimeout(() => setResetSent(false), 6000);
+    setResetting(true);
+    try {
+      if (!email.trim()) {
+        setError(t('auth.enterEmail') || 'Введите email, чтобы восстановить пароль');
+        return;
+      }
+      await api.auth.forgotPassword(email.trim());
+      setResetSent(true);
+      setTimeout(() => setResetSent(false), 8000);
+    } catch (err: any) {
+      setError(err.message === 'Failed to fetch' ? t('auth.fetchError') : err.message);
+    } finally {
+      setResetting(false);
+    }
   };
 
   return (
@@ -507,7 +529,7 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
         </div>
         <h2 className="text-lg font-semibold mb-4">{t('auth.signInTitle')}</h2>
         {error && <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 mb-4 text-sm text-red-300">{error}</div>}
-        {resetSent && <div className="bg-emerald-900/30 border border-emerald-800 rounded-lg p-3 mb-4 text-sm text-emerald-300">Сброс пароля. Обратитесь в поддержку: support@aigenis.by</div>}
+        {resetSent && <div className="bg-emerald-900/30 border border-emerald-800 rounded-lg p-3 mb-4 text-sm text-emerald-300">Если аккаунт существует, ссылка для сброса пароля отправлена на email</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="text-sm text-gray-400 block mb-1">{t('auth.email')}</label>
@@ -524,11 +546,17 @@ function LoginPage({ onRegister }: { onRegister: () => void }) {
             {submitting ? t('auth.signingIn') : t('auth.signIn')}
           </button>
           <div className="text-center">
-            <button type="button" onClick={handleReset} className="text-sm text-gray-500 hover:text-emerald-400 transition-colors">
-              Забыли пароль?
+            <button type="button" onClick={handleReset} disabled={resetting} className="text-sm text-gray-500 hover:text-emerald-400 disabled:opacity-50 transition-colors">
+              {resetting ? 'Отправка...' : 'Забыли пароль?'}
             </button>
           </div>
         </form>
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-gray-800" />
+          <span className="text-xs text-gray-500">{t('auth.or') || 'или'}</span>
+          <div className="flex-1 h-px bg-gray-800" />
+        </div>
+        <GoogleSignInButton />
         <p className="text-sm text-gray-400 mt-4 text-center">
           {t('auth.noAccount')}{' '}
           <button onClick={onRegister} className="text-emerald-400 hover:underline">{t('auth.signUp')}</button>
@@ -551,12 +579,15 @@ function RegisterPage({ onSwitch, defaultRefCode }: { onSwitch: () => void; defa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (password.length < 6) { setError(t('auth.pwMin')); return; }
+    // Match backend rules: min 8 chars + uppercase + digit.
+    if (password.length < 8) { setError(t('auth.pwMin')); return; }
+    if (!/[A-ZА-Я]/.test(password)) { setError(t('auth.pwUpper')); return; }
+    if (!/\d/.test(password)) { setError(t('auth.pwDigit')); return; }
     setSubmitting(true);
     try {
       await register(email, password, name, refCode.trim() || null);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message === 'Failed to fetch' ? t('auth.fetchError') : err.message);
     } finally {
       setSubmitting(false);
     }
@@ -587,7 +618,7 @@ function RegisterPage({ onSwitch, defaultRefCode }: { onSwitch: () => void; defa
           </div>
           <div>
             <label className="text-sm text-gray-400 block mb-1">{t('auth.password')}</label>
-            <input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={6}
+            <input value={password} onChange={e => setPassword(e.target.value)} type="password" required minLength={8}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" />
           </div>
           <div>
@@ -600,6 +631,12 @@ function RegisterPage({ onSwitch, defaultRefCode }: { onSwitch: () => void; defa
             {submitting ? t('auth.creating') : t('auth.createAccount')}
           </button>
         </form>
+        <div className="flex items-center gap-3 my-4">
+          <div className="flex-1 h-px bg-gray-800" />
+          <span className="text-xs text-gray-500">{t('auth.or') || 'или'}</span>
+          <div className="flex-1 h-px bg-gray-800" />
+        </div>
+        <GoogleSignInButton />
         <p className="text-sm text-gray-400 mt-4 text-center">
           {t('auth.hasAccount')}{' '}
           <button onClick={onSwitch} className="text-emerald-400 hover:underline">{t('auth.signIn')}</button>
@@ -797,7 +834,7 @@ function CurrencyTracker() {
   const limits = tierLimits(user?.subscription_tier);
   const isFree = user?.subscription_tier === 'free';
 
-  const [available, setAvailable] = useState<string[]>(['USD', 'BYN', 'EUR', 'XAU', 'XAG', 'XPT']);
+  const [available, setAvailable] = useState<string[]>(['USD', 'BYN', 'EUR', 'XAU', 'XAG', 'XPT', 'CNY']);
   const [selected, setSelected] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
 
@@ -2629,7 +2666,7 @@ function BondRow({ bond }: { bond: Bond }) {
 }
 
 function CurrencyBadge({ currency }: { currency: string }) {
-  const colors: Record<string, string> = { USD: 'bg-blue-900 text-blue-300', BYN: 'bg-green-900 text-green-300', EUR: 'bg-purple-900 text-purple-300', XAU: 'bg-amber-900 text-amber-300', XAG: 'bg-gray-700 text-gray-300', XPT: 'bg-slate-700 text-slate-300' };
+  const colors: Record<string, string> = { USD: 'bg-blue-900 text-blue-300', BYN: 'bg-green-900 text-green-300', EUR: 'bg-purple-900 text-purple-300', XAU: 'bg-amber-900 text-amber-300', XAG: 'bg-gray-700 text-gray-300', XPT: 'bg-slate-700 text-slate-300', CNY: 'bg-rose-900 text-rose-300' };
   return <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[currency] || 'bg-gray-800 text-gray-400'}`}>{currency}</span>;
 }
 

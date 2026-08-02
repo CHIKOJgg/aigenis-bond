@@ -11,7 +11,6 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
-import pytest
 
 from api.auth.service import create_access_token
 from api.main import app
@@ -54,7 +53,7 @@ async def _seed(bonds=None, user_id=None):
                     name="U",
                     password_hash="x",
                     role="user",
-                    subscription_tier="pro",
+                    subscription_tier="api_pro",
                     subscription_expires_at=datetime.now(UTC) + timedelta(days=30),
                     is_active=True,
                 )
@@ -168,7 +167,7 @@ def test_webhook_register_validation_and_dispatch(monkeypatch):
                 headers={**pheaders, "Accept-Language": "kz"},
             )
             assert bad.status_code == 400
-            assert "Webhook URL http://" in bad.json()["detail"]
+            assert "https://" in bad.json()["detail"]
 
             # Unsupported event -> 400.
             bad_ev = await client.post(
@@ -213,13 +212,13 @@ def test_webhook_register_validation_and_dispatch(monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_partner_rate_limit_enforced(monkeypatch):
     monkeypatch.setattr("api.partner.security._partner_hits", defaultdict(list))
-    raw, key_hash = generate_api_key()
+    raw, key_hash, key_fp = generate_api_key()
 
     async def run():
         async with session_scope() as s:
             s.add(
                 PartnerKeyORM(
-                    name="rl", key_hash=key_hash, tier="partner", rate_limit=2, active=True
+                    name="rl", key_hash=key_hash, key_fp=key_fp, tier="partner", rate_limit=2, active=True
                 )
             )
             await s.commit()

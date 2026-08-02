@@ -10,7 +10,10 @@
           + credit_risk_component
           + inflation_component
 
-Все компоненты — аддитивные баллы. Итоговый Score — float.
+Все компоненты — аддитивные баллы. Веса подобраны так, что теоретический
+максимум равен 100 (USD: 40 + 20 + 15 + 10 + 0 + 10 + 5), поэтому тир S
+(>= 90) получают только исключительные облигации, а не «все USD-бонды».
+Итоговый Score — float в диапазоне [0, 100] для практических профилей.
 """
 
 from __future__ import annotations
@@ -22,18 +25,18 @@ from typing import Any
 from scoring.models import BondScore, ScoreBreakdown
 
 CURRENCY_BONUS: dict[str, float] = {
-    "USD": 25.0,
-    "XAU": 20.0,
-    "XAG": 15.0,
-    "XPT": 12.0,
-    "BYN": 5.0,
+    "USD": 20.0,
+    "XAU": 16.0,
+    "XAG": 12.0,
+    "XPT": 9.0,
+    "BYN": 4.0,
     "EUR": 0.0,
 }
 
 
 METAL_EXTRA_BONUS: dict[str, float] = {
-    "XAU": 10.0,
-    "XAG": 5.0,
+    "XAU": 5.0,
+    "XAG": 4.0,
     "XPT": 3.0,
 }
 
@@ -49,19 +52,19 @@ def _duration_component(years: float | None) -> float:
     if years is None:
         return 0.0
     if years <= 2.0:
-        return 20.0
+        return 15.0
     if years <= 4.0:
         return 10.0
     if years <= 6.0:
         return 0.0
-    return -15.0
+    return -10.0
 
 
 def _yield_component(ytm_pct: float | None) -> float:
-    """Доходность: 1 балл за каждый полный процент YTM, ограничено 60."""
+    """Доходность: 1 балл за каждый полный процент YTM, ограничено 40."""
     if ytm_pct is None or ytm_pct <= 0:
         return 0.0
-    return min(ytm_pct, 60.0)
+    return min(ytm_pct, 40.0)
 
 
 def _currency_component(currency: str) -> float:
@@ -81,11 +84,11 @@ def _liquidity_component(
     """Ликвидность: оцениваем наличие цены, активный статус, близость к погашению."""
     score = 0.0
     if has_price:
-        score += 5.0
+        score += 4.0
     if status == "active":
-        score += 5.0
+        score += 4.0
     elif status in {"offer", "matured"}:
-        score -= 5.0
+        score -= 4.0
     if days_to_maturity is not None and days_to_maturity < 365:
         score += 2.0
     return score

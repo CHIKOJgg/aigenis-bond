@@ -6,18 +6,9 @@ import sys
 import time
 from contextlib import asynccontextmanager, suppress
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
-from playwright.async_api import (
-    Browser,
-    BrowserContext,
-    Page,
-    Playwright,
-    async_playwright,
-)
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from playwright_stealth import Stealth
 from tenacity import (
     AsyncRetrying,
     before_sleep_log,
@@ -27,6 +18,7 @@ from tenacity import (
 )
 
 from scraper.config import Settings, get_settings
+
 from ...errors import (
     BrowserNotAvailable,
     CircuitBreakerOpenError,
@@ -37,10 +29,26 @@ from ...errors import (
 )
 from ...logging import get_logger
 
+if TYPE_CHECKING:
+    from playwright.async_api import Browser, BrowserContext, Page, Playwright  # noqa: F401
+
 logger = get_logger("scraper.client")
 
 API_BASE = "https://invest.aigenis.by/api"
 SITE_BASE = "https://invest.aigenis.by"
+
+
+def _playwright_imports():
+    """Lazily import Playwright so the module (and API server) works without it.
+
+    Playwright is a heavy optional dependency used only by the browser-based
+    scraper; CI, the API image, and non-scraper workers must not require it.
+    """
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+    from playwright.async_api import async_playwright
+    from playwright_stealth import Stealth
+
+    return async_playwright, PlaywrightTimeoutError, Stealth
 
 
 def _abs_url(url: str | None) -> str | None:
@@ -90,7 +98,8 @@ class _CircuitBreaker:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        if exc_type and issubclass(exc_type, (TransientError, PlaywrightTimeoutError)):
+        pw_timeout_error = _playwright_imports()[1]
+        if exc_type and issubclass(exc_type, (TransientError, pw_timeout_error)):
             self.record_failure()
         else:
             self.record_success()
@@ -101,11 +110,11 @@ class AigenisClient:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings().aigenis
-        self._playwright: Playwright | None = None
-        self._browser: Browser | None = None
-        self._context: BrowserContext | None = None
+        self._playwright = None  # typed as Playwright | None (lazy import)
+        self._browser = None  # typed as Browser | None (lazy import)
+        self._context = None  # typed as BrowserContext | None (lazy import)
         self._semaphore = asyncio.Semaphore(self.settings.max_concurrency)
-        self._stealth = Stealth() if self.settings.use_stealth else None
+        self._stealth = None
         self._html_cache: dict[str, asyncio.Future[str]] = {}
         self._html_cache_lock = asyncio.Lock()
         self._circuit_breaker = _CircuitBreaker()
@@ -127,6 +136,9 @@ class AigenisClient:
     async def start(self) -> None:
         if self._started:
             return
+        async_playwright, _, stealth_cls = _playwright_imports()
+        if self.settings.use_stealth:
+            self._stealth = stealth_cls()
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(
             headless=self.settings.headless,
@@ -283,42 +295,61 @@ class AigenisClient:
     ) -> dict[str, Any] | list[Any]:
         if self._http is None:
             raise RuntimeError("Client not started")
-        await self._ensure_authenticated()
-        url = f"{API_BASE}{path}"
-        headers = {"Authorization": f"JWT {self._token}"} if self._token else {}
-        try:
-            if method.upper() == "GET":
-                resp = await self._http.get(url, params=params, headers=headers)
-            elif method.upper() == "POST":
-                resp = await self._http.post(url, params=params, headers=headers)
-            else:
-                raise ValueError(f"unsupported method {method}")
-        except httpx.TransportError as e:
-            raise TransientError(f"transport error calling {url}: {e}") from e
 
-        if resp.status_code == 404:
-            raise NotFoundError(f"{url} returned 404")
-        if resp.status_code == 401:
-            # Only attempt re-login when credentials are configured.
-            if self.settings.web_username and self.settings.web_password:
-                logger.warning("api_token_expired_renewing")
-                await self._login()
-                headers = {"Authorization": f"JWT {self._token}"} if self._token else {}
-                if method.upper() == "POST":
+        async def _do_request() -> dict[str, Any] | list[Any]:
+            await self._ensure_authenticated()
+            url = f"{API_BASE}{path}"
+            headers = {"Authorization": f"JWT {self._token}"} if self._token else {}
+            try:
+                if method.upper() == "GET":
+                    resp = await self._http.get(url, params=params, headers=headers)
+                elif method.upper() == "POST":
                     resp = await self._http.post(url, params=params, headers=headers)
                 else:
-                    resp = await self._http.get(url, params=params, headers=headers)
-            else:
-                raise FatalError(f"API returned 401 (no credentials configured): {url}")
-        if resp.status_code >= 400:
-            raise FatalError(f"API returned {resp.status_code}: {resp.text[:200]}")
-        return resp.json()
+                    raise ValueError(f"unsupported method {method}")
+            except httpx.TransportError as e:
+                raise TransientError(f"transport error calling {url}: {e}") from e
 
-    async def _retrying(self, func, *args, **kwargs):
+            if resp.status_code == 404:
+                raise NotFoundError(f"{url} returned 404")
+            if resp.status_code == 401:
+                # Only attempt re-login when credentials are configured.
+                if self.settings.web_username and self.settings.web_password:
+                    logger.warning("api_token_expired_renewing")
+                    await self._login()
+                    headers = {"Authorization": f"JWT {self._token}"} if self._token else {}
+                    if method.upper() == "POST":
+                        resp = await self._http.post(url, params=params, headers=headers)
+                    else:
+                        resp = await self._http.get(url, params=params, headers=headers)
+                else:
+                    raise FatalError(f"API returned 401 (no credentials configured): {url}")
+            if resp.status_code == 429:
+                raise TransientError(f"{url} returned 429 (rate limited)")
+            if resp.status_code >= 500:
+                raise TransientError(f"{url} returned {resp.status_code}")
+            if resp.status_code >= 400:
+                raise FatalError(f"API returned {resp.status_code}: {resp.text[:200]}")
+            return resp.json()
+
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(self.settings.max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
-            retry=retry_if_exception_type((TransientError, PlaywrightTimeoutError)),
+            retry=retry_if_exception_type((TransientError,)),
+            before_sleep=before_sleep_log(logger, 30),
+            reraise=True,
+        ):
+            with attempt:
+                async with self._circuit_breaker:
+                    return await _do_request()
+        raise RuntimeError("unreachable")
+
+    async def _retrying(self, func, *args, **kwargs):
+        pw_timeout_error = _playwright_imports()[1]
+        async for attempt in AsyncRetrying(
+            stop=stop_after_attempt(self.settings.max_retries),
+            wait=wait_exponential(multiplier=1, min=1, max=10),
+            retry=retry_if_exception_type((TransientError, pw_timeout_error)),
             before_sleep=before_sleep_log(logger, 30),
             reraise=True,
         ):

@@ -1,13 +1,13 @@
-"""Load / rate-limit enforcement tests for the API.
+﻿"""Load / rate-limit enforcement tests for the API.
 
 Two concerns, both required by the brief:
 
-1. Rate-limit correctness — the limiter MUST return HTTP 429 once a caller's
+1. Rate-limit correctness вЂ” the limiter MUST return HTTP 429 once a caller's
    budget is exhausted and MUST NOT breach the budget under burst or concurrent
    load. This guards against the API silently dropping the limit (which would
    let one client exhaust shared resources / hit an upstream rate limit).
 
-2. Server load — a burst of N concurrent requests must all be served (HTTP 2xx)
+2. Server load вЂ” a burst of N concurrent requests must all be served (HTTP 2xx)
    as long as the per-key budget is not exceeded, proving the server withstands
    realistic load without crashing or deadlocking.
 
@@ -21,7 +21,6 @@ import time
 from collections import defaultdict
 
 import httpx
-import pytest
 
 import api.main as main
 from api.auth.service import create_access_token
@@ -41,7 +40,7 @@ async def _ensure_schema() -> None:
 def test_memory_limiter_allows_up_to_limit(monkeypatch):
     monkeypatch.setattr(main, "_rate_limit_store", defaultdict(list))
     lim = 5
-    for i in range(lim):
+    for _ in range(lim):
         assert main._memory_allow("k", lim) is True
     # Next call must be rejected.
     assert main._memory_allow("k", lim) is False
@@ -150,18 +149,18 @@ def test_concurrent_burst_under_budget():
     """50 concurrent requests, well under a generous budget, all succeed.
 
     Verifies the server does not crash, deadlock, or 500 under parallel load."""
-    N = 50
+    n = 50
 
     async def run_all():
         async with _client() as client:
             # Pre-warm so the first-request schema creation cost is excluded.
             await client.get("/health")
-            tasks = [client.get("/health") for _ in range(N)]
+            tasks = [client.get("/health") for _ in range(n)]
             resps = await asyncio.gather(*tasks)
             return [r.status_code for r in resps]
 
     results = asyncio.run(run_all())
-    assert results.count(200) == N, f"expected all 200, got {results}"
+    assert results.count(200) == n, f"expected all 200, got {results}"
 
 
 def test_burst_does_not_breach_limit_under_concurrency(monkeypatch):
@@ -170,11 +169,11 @@ def test_burst_does_not_breach_limit_under_concurrency(monkeypatch):
     Runs with a tight limit and many more attempts in parallel; asserts the
     number of non-429 responses equals the limit (no race lets extra through).
     """
-    LIMIT = 20
-    ATTEMPTS = 200
-    monkeypatch.setenv("API_RATE_LIMIT", str(LIMIT))
+    limit = 20
+    attempts = 200
+    monkeypatch.setenv("API_RATE_LIMIT", str(limit))
     monkeypatch.setenv("API_RATE_WINDOW", "60")
-    monkeypatch.setattr(main, "_RATE_LIMIT", LIMIT)
+    monkeypatch.setattr(main, "_RATE_LIMIT", limit)
     monkeypatch.setattr(main, "_RATE_WINDOW", 60)
     monkeypatch.setattr(main, "_rate_limit_store", defaultdict(list))
     # Use distinct IPs so the only limiter is the per-key store on the health
@@ -186,12 +185,13 @@ def test_burst_does_not_breach_limit_under_concurrency(monkeypatch):
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=main.app), base_url="http://test"
         ) as ac:
-            tasks = [ac.get("/api/v1/bonds") for _ in range(ATTEMPTS)]
+            tasks = [ac.get("/api/v1/bonds") for _ in range(attempts)]
             resps = await asyncio.gather(*tasks)
             return [r.status_code for r in resps]
 
     codes = asyncio.run(run_all())
     allowed = sum(1 for c in codes if c == 200)
     throttled = sum(1 for c in codes if c == 429)
-    assert allowed == LIMIT, f"allowed={allowed} expected exactly {LIMIT}"
-    assert throttled == ATTEMPTS - LIMIT
+    assert allowed == limit, f"allowed={allowed} expected exactly {limit}"
+    assert throttled == attempts - limit
+

@@ -11,12 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from api.access_control import (
-    RequireFeature,
-    get_current_tier,
-    get_optional_user_id,
-)
 from api import _helpers as _h
+from api.access_control import RequireFeature, require_user_id
 from portfolio.backtest import run_backtest
 from portfolio.pnl import (
     compute_daily_returns,
@@ -34,12 +30,7 @@ from portfolio.transactions import (
 )
 from scraper.db import session_scope
 from scraper.models import Bond
-from scraper.orm import (
-    BondHistoryORM,
-    BondORM,
-    PnLSnapshotORM,
-    TransactionORM,
-)
+from scraper.orm import BondHistoryORM, BondORM, PnLSnapshotORM
 
 router = APIRouter(prefix="/api/v1", tags=["portfolio-advanced"])
 
@@ -61,16 +52,16 @@ class TransactionRequest(BaseModel):
     side: str = Field("buy", pattern="^(buy|sell)$")
     amount: float = Field(1000.0, gt=0)
     price: float = Field(100.0, gt=0)
-    currency: str = "BYN"
+    currency: str | None = None
     note: str | None = None
 
 
 @router.post("/transactions", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_record_transaction(
     req: TransactionRequest,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         bond = (
             await session.execute(select(BondORM).where(BondORM.internal_id == req.internal_id))
@@ -99,11 +90,11 @@ async def api_record_transaction(
 
 @router.get("/transactions", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_list_transactions(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         txs = await list_transactions(session, uid, limit=limit, offset=offset)
     return [
@@ -127,9 +118,9 @@ async def api_list_transactions(
 )
 async def api_delete_transaction(
     tx_id: int,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         ok = await delete_transaction(session, uid, tx_id)
     if not ok:
@@ -142,9 +133,9 @@ async def api_delete_transaction(
 # --------------------------------------------------------------------------- #
 @router.get("/pnl", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_pnl(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         positions = await list_positions(session, uid)
         txs = await list_transactions(session, uid, limit=1000)
@@ -153,6 +144,9 @@ async def api_pnl(
         return {
             "total_invested": 0,
             "total_value": 0,
+            "total_realized_pnl": 0,
+            "total_unrealized_pnl": 0,
+            "total_coupon_income": 0,
             "total_pnl": 0,
             "total_return_pct": 0,
             "max_drawdown_pct": 0,
@@ -170,13 +164,52 @@ async def api_pnl(
         bonds_by_id=bonds_by_id,
     )
 
-    # Compute daily returns from equity curve
-    equity = []
+    # Build the equity curve from REAL daily snapshots + today's computed value.
+    # No synthetic interpolation: without history we return just today's point.
     today = date.today()
-    for i in range(30):
-        d = today - timedelta(days=29 - i)
-        val = float(pnl.total_value) if i == 29 else float(pnl.total_value) * (0.99 + 0.01 * i / 29)
-        equity.append({"date": d.isoformat(), "value": round(val, 2)})
+    async with session_scope() as session:
+        result = await session.execute(
+            select(PnLSnapshotORM)
+            .where(PnLSnapshotORM.user_id == uid)
+            .order_by(PnLSnapshotORM.date.desc())
+            .limit(30)
+        )
+        snapshots = list(reversed(result.scalars().all()))
+
+    equity = [
+        {"date": s.date.isoformat(), "value": round(float(s.total_value), 2)}
+        for s in snapshots
+        if s.date != today
+    ]
+    equity.append({"date": today.isoformat(), "value": round(float(pnl.total_value), 2)})
+
+    # Persist today's snapshot so the curve accumulates going forward.
+    async with session_scope() as session:
+        existing = (
+            await session.execute(
+                select(PnLSnapshotORM).where(
+                    PnLSnapshotORM.user_id == uid, PnLSnapshotORM.date == today
+                )
+            )
+        ).scalar_one_or_none()
+        if existing:
+            existing.total_value = pnl.total_value
+            existing.invested = pnl.total_invested
+            existing.realized_pnl = pnl.total_realized
+            existing.unrealized_pnl = pnl.total_unrealized
+            existing.coupon_income = pnl.total_coupon_income
+        else:
+            session.add(
+                PnLSnapshotORM(
+                    user_id=uid,
+                    date=today,
+                    total_value=pnl.total_value,
+                    invested=pnl.total_invested,
+                    realized_pnl=pnl.total_realized,
+                    unrealized_pnl=pnl.total_unrealized,
+                    coupon_income=pnl.total_coupon_income,
+                )
+            )
 
     daily_rets = compute_daily_returns(equity)
     pnl.max_drawdown = Decimal(str(compute_max_drawdown(equity)))
@@ -191,10 +224,10 @@ async def api_pnl(
 # --------------------------------------------------------------------------- #
 @router.get("/pnl/history", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_pnl_history(
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
     days: int = Query(90, ge=7, le=365),
 ):
-    uid = user_id or 0
+    uid = user_id
     cutoff = date.today() - timedelta(days=days)
     async with session_scope() as session:
         result = await session.execute(
@@ -227,9 +260,9 @@ async def api_pnl_history(
 )
 async def api_bond_transactions(
     internal_id: str,
-    user_id: int | None = Depends(get_optional_user_id),
+    user_id: int = Depends(require_user_id),
 ):
-    uid = user_id or 0
+    uid = user_id
     async with session_scope() as session:
         txs = await get_bond_transactions(session, uid, internal_id)
         agg = await total_bought_sold(session, uid, internal_id)
@@ -269,7 +302,7 @@ class BacktestRequest(BaseModel):
 @router.post("/backtest", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_run_backtest(
     req: BacktestRequest,
-    user_id: int | None = Depends(get_optional_user_id),
+    _user_id: int = Depends(require_user_id),
 ):
     bonds = await _all_bonds()
 
@@ -287,18 +320,26 @@ async def api_run_backtest(
             if rows:
                 history_by_bond[b.internal_id] = list(rows)
 
-    sd = date.fromisoformat(req.start_date) if req.start_date else None
-    ed = date.fromisoformat(req.end_date) if req.end_date else None
+    sd = None
+    ed = None
+    try:
+        sd = date.fromisoformat(req.start_date) if req.start_date else None
+        ed = date.fromisoformat(req.end_date) if req.end_date else None
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid date format, expected YYYY-MM-DD") from None
 
-    result = run_backtest(
-        bonds=bonds,
-        history_by_bond=history_by_bond,
-        strategy=req.strategy,
-        initial_capital=Decimal(str(req.initial_capital)),
-        start_date=sd,
-        end_date=ed,
-        top_n=req.top_n,
-        rebalance_days=req.rebalance_days,
-    )
+    try:
+        result = run_backtest(
+            bonds=bonds,
+            history_by_bond=history_by_bond,
+            strategy=req.strategy,
+            initial_capital=Decimal(str(req.initial_capital)),
+            start_date=sd,
+            end_date=ed,
+            top_n=req.top_n,
+            rebalance_days=req.rebalance_days,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return result.as_dict()

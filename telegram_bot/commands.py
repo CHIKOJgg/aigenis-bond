@@ -41,13 +41,14 @@ from portfolio.scenarios import run_all_scenarios
 from recommendations.engine import recommend_bonds
 from scoring.disclaimer import DISCLAIMER_SHORT
 from scoring.engine import score_bond
-from scoring.repository import get_score, top_scores
+from scoring.repository import count_scores, get_score, top_scores
 from scraper import repositories
-from scraper.db import session_scope
 from scraper.config import get_settings
+from scraper.db import session_scope
 from scraper.models import Bond
 from scraper.orm import BondORM
 from telegram_bot import _cmd_helpers as _ch
+from telegram_bot.admin import cmd_stats  # noqa: F401  # resolved via cb_generic globals()
 from telegram_bot.handler_state import PAGE_SIZE, parse_lock
 from telegram_bot.helpers import (
     alert_direction_sign,
@@ -63,6 +64,7 @@ from telegram_bot.helpers import (
     user_id_from_message,
 )
 from telegram_bot.menus import _DESK_MENU, _OVERVIEW_MENU, _home_kb, _show_main_menu
+from telegram_bot.middleware import PRO_COMMANDS, gate_pro_callback
 from visualization.charts import (
     plot_capital_forecast,
     plot_portfolio_pie,
@@ -181,6 +183,8 @@ async def cmd_renew(message: Message) -> None:
 
 @router.message(Command("refer"))
 async def cmd_refer(message: Message) -> None:
+    from telegram_bot.subscriptions import get_or_create_user_by_telegram
+
     telegram_id = user_id_from_message(message)
     async with session_scope() as session:
         user = await get_or_create_user_by_telegram(session, telegram_id)
@@ -205,7 +209,7 @@ async def cmd_refer(message: Message) -> None:
 @router.message(Command("partner"))
 async def cmd_partner(message: Message) -> None:
     settings = get_settings()
-    partners_url = f"{settings.web_url.rstrip('/')}/partners"
+    partners_url = f"{settings.aigenis.web_url.rstrip('/')}/partners"
     text = (
         "🤝 <b>Aigenis Bonds для бизнеса</b>\n\n"
         "White-label аналитика облигаций, Bond API, виджет «Топ облигаций» и "
@@ -313,12 +317,15 @@ async def cmd_rates(message: Message) -> None:
 
 # Allowed `cmd_*` inline buttons. Handlers are resolved lazily via globals() at
 # call time so this set can be defined before the handler functions below.
+# Note: ``cmd_status`` has its own dedicated callback handler (``cb_status``)
+# and ``cmd_settings`` is reached via ``menu:settings`` — listing them here
+# would double-fire those actions.
 _CMD_HANDLER_NAMES = {
     "cmd_desk", "cmd_top", "cmd_portfolio", "cmd_curve", "cmd_buy", "cmd_forecast",
     "cmd_rates", "cmd_parse", "cmd_overview", "cmd_usd", "cmd_byn", "cmd_metals",
     "cmd_new", "cmd_rv", "cmd_duration", "cmd_carry", "cmd_stress", "cmd_desk_status",
-    "cmd_ml", "cmd_rebalance_auto", "cmd_scenario", "cmd_watchlist", "cmd_alerts",
-    "cmd_stats", "cmd_settings", "cmd_refer", "cmd_status", "cmd_renew",
+    "cmd_desk_spreads", "cmd_ml", "cmd_rebalance_auto", "cmd_rebalance", "cmd_scenario",
+    "cmd_watchlist", "cmd_alerts", "cmd_stats", "cmd_refer", "cmd_renew",
 }
 
 
@@ -326,6 +333,11 @@ _CMD_HANDLER_NAMES = {
 async def cb_generic(callback_query) -> None:
     handler = globals().get(callback_query.data)
     if handler is None:
+        return
+    if (
+        callback_query.data.removeprefix("cmd_") in PRO_COMMANDS
+        and not await gate_pro_callback(callback_query)
+    ):
         return
     if callback_query.data == "cmd_parse":
         await callback_query.answer("🚀 Запускаем парсинг…")
@@ -337,8 +349,15 @@ async def cb_generic(callback_query) -> None:
 @router.callback_query(lambda c: c.data and c.data.startswith("page:"))
 async def cb_paginate(callback_query) -> None:
     parts = callback_query.data.split(":")
+    if len(parts) < 3:
+        await callback_query.answer()
+        return
     prefix, page_str = parts[1], parts[2]
-    page = int(page_str)
+    try:
+        page = int(page_str)
+    except ValueError:
+        await callback_query.answer()
+        return
     dispatch = {
         "top": cmd_top,
         "usd": cmd_usd,
@@ -348,7 +367,9 @@ async def cb_paginate(callback_query) -> None:
     }
     handler = dispatch.get(prefix)
     if handler:
-        if prefix in ("top", "carry", "rv"):
+        if prefix in PRO_COMMANDS and not await gate_pro_callback(callback_query):
+            return
+        if prefix in ("top", "carry", "rv", "usd", "byn"):
             await handler(callback_query.message, page=page)
         else:
             await handler(callback_query.message)
@@ -381,13 +402,14 @@ async def cmd_top(message: Message, page: int = 0) -> None:
         if not top:
             await message.answer("Нет облигаций на этой странице.")
             return
+        total_scores = await count_scores(session)
         bonds_map = {b.internal_id: b.name for b in await fetch_all_bonds()}
         lines = [f"<b>🏆 TOP Reward/Risk</b> (стр. {page + 1})\n"]
         for i, s in enumerate(top, page * PAGE_SIZE + 1):
             name_display = bonds_map.get(s.internal_id, "")
             name_part = f" — {name_display}" if name_display else ""
             lines.append(f"{i}. <code>{s.internal_id}</code>{name_part} — Score: {float(s.score):.0f} (0–100, выше — лучше)")
-        total = page + 1
+        total = max(1, (total_scores + PAGE_SIZE - 1) // PAGE_SIZE)
         await message.answer(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
@@ -445,13 +467,13 @@ async def _currency_view(message: Message, currency: str, title: str, page: int 
 
 
 @router.message(Command("usd"))
-async def cmd_usd(message: Message) -> None:
-    await _currency_view(message, "USD", "💵 Облигации в USD")
+async def cmd_usd(message: Message, page: int = 0) -> None:
+    await _currency_view(message, "USD", "💵 Облигации в USD", page=page)
 
 
 @router.message(Command("byn"))
-async def cmd_byn(message: Message) -> None:
-    await _currency_view(message, "BYN", "🇧🇾 Облигации в BYN")
+async def cmd_byn(message: Message, page: int = 0) -> None:
+    await _currency_view(message, "BYN", "🇧🇾 Облигации в BYN", page=page)
 
 
 @router.message(Command("metals"))
@@ -750,7 +772,6 @@ async def cmd_predict(message: Message) -> None:
 @router.message(Command("rebalance-auto"))
 async def cmd_rebalance_auto(message: Message) -> None:
     uid = user_id_from_message(message)
-    _bond_dicts, _history = await fetch_bonds_with_history()
     async with session_scope() as session:
         from telegram_bot.preferences_repository import get_preferences
         from telegram_bot.subscriptions import get_or_create_user_by_telegram
@@ -1142,4 +1163,66 @@ async def cmd_desk_status(message: Message) -> None:
     lines.append("\n<b>Стресс-тесты (недавние):</b>")
     for r in stress_runs:
         lines.append(f"  {r.scenario_name}: изменение стоимости {float(r.pnl_pct):+.3f}%")
+    await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+
+
+# ---------------------------------------------------------------------------
+# Spreads (Z/G-spread, model vs market)
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("desk-spreads"))
+@router.message(Command("desk_spreads"))
+async def cmd_desk_spreads(message: Message) -> None:
+    bonds = await fetch_all_bonds()
+    if not bonds:
+        await message.answer(
+            "⏳ Котировки ещё загружаются. Нажмите «🔄 Обновить данные» в меню.",
+            reply_markup=_home_kb(),
+        )
+        return
+
+    from desk import spreads as desk_spreads
+    from desk import yield_curve as desk_curve_mod
+
+    by_cur: dict[str, list[Bond]] = {}
+    for b in bonds:
+        by_cur.setdefault(str(b.currency), []).append(b)
+    curves: dict[str, object] = {}
+    for cur, bs in by_cur.items():
+        curve = desk_curve_mod.curve_from_bonds(bs)
+        if len(curve.points) >= 3:
+            curves[cur] = desk_curve_mod.fit_nelson_siegel(curve.points)
+
+    reports = desk_spreads.compute_spreads(bonds, curves)
+    if reports:
+        async with session_scope() as session:
+            from desk.repository import save_spread_reports
+
+            await save_spread_reports(session, reports)
+            await session.commit()
+
+    if not reports:
+        await message.answer(
+            "Нет облигаций с достаточными данными для расчёта спредов.",
+            reply_markup=_home_kb(),
+        )
+        return
+
+    side_icon = {"cheap": "🟢", "rich": "🔴", "fair": "⚪"}
+    bonds_map = {b.internal_id: b.name for b in bonds}
+    lines = ["<b>📐 Z/G-спреды и mispricing (top-10)</b>\n"]
+    for r in reports[:10]:
+        icon = side_icon.get(r.side, "⚪")
+        name = bonds_map.get(r.internal_id, "")
+        name_part = f" ({name})" if name else ""
+        lines.append(
+            f"{icon} <code>{r.internal_id}</code>{name_part}: "
+            f"YTM={r.ytm_pct:.2f}%, G={r.g_spread_pct:+.2f} п.п., "
+            f"Z={r.z_spread_pct:+.2f} п.п., "
+            f"модель vs рынок {r.mispricing_pct:+.2f}%"
+            if all(v is not None for v in (r.ytm_pct, r.g_spread_pct, r.z_spread_pct, r.mispricing_pct))
+            else f"{icon} <code>{r.internal_id}</code>{name_part}: недостаточно данных"
+        )
+    lines.append("\n<i>Мин-модель: цена по Neal-Siegel кривой + cashflow-схема; rich — выше модели.</i>")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=_home_kb())

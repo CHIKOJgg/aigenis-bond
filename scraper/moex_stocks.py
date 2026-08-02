@@ -103,6 +103,7 @@ class MoexStockClient:
         self._cap = int(os.getenv("MOEX_STOCK_CAP", "500"))
         self._timeout = float(os.getenv("MOEX_TIMEOUT", "30"))
         self._id_by_secid: dict[str, str] = {}
+        self._board_by_internal: dict[str, str] = {}
 
     async def __aenter__(self) -> MoexStockClient:
         return self
@@ -146,6 +147,7 @@ class MoexStockClient:
             md = marketdata.get(secid, {})
             internal_id = f"MOEX_{secid}"
             self._id_by_secid[internal_id] = secid
+            self._board_by_internal[internal_id] = board
             try:
                 is_traded = md.get("IS_TRADED", 1)
                 status = "active" if is_traded == 1 else "suspended"
@@ -192,9 +194,11 @@ class MoexStockClient:
             from scraper.errors import NotFoundError
 
             raise NotFoundError(f"Unknown MOEX stock {internal_id}")
+        board = self._board_by_internal.get(internal_id, "TQBR")
+        currency = _BOARD_CURRENCY_MAP.get(board, "RUB")
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             url = (
-                f"{MOEX_ISS_BASE}/engines/stock/markets/shares/boards/TQBR"
+                f"{MOEX_ISS_BASE}/engines/stock/markets/shares/boards/{board}"
                 f"/securities/{secid}.json?iss.meta=off"
                 f"&iss.only=securities,marketdata"
             )
@@ -216,8 +220,8 @@ class MoexStockClient:
                 name=str(sec.get("SECNAME") or secid),
                 isin=sec.get("ISIN"),
                 issuer=sec.get("ISSUER") or sec.get("SHORTNAME"),
-                board="TQBR",
-                currency="RUB",
+                board=board,
+                currency=currency,
                 lot_size=_to_int(sec.get("LOTSIZE")),
                 prev_price=_to_dec(md_row.get("PREVPRICE")),
                 price=_to_dec(md_row.get("LAST")),
@@ -249,11 +253,12 @@ class MoexStockClient:
             secid = internal_id[len("MOEX_"):]
         if secid is None:
             return []
+        board = self._board_by_internal.get(internal_id, "TQBR")
         history: list[StockHistory] = []
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 url = (
-                    f"{MOEX_ISS_BASE}/history/engines/stock/markets/shares/boards/TQBR"
+                    f"{MOEX_ISS_BASE}/history/engines/stock/markets/shares/boards/{board}"
                     f"/securities/{secid}/candles.json?iss.meta=off&interval=24"
                 )
                 resp = await client.get(url)

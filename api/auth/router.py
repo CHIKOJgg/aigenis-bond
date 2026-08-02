@@ -1,5 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import threading
+import time
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -35,6 +37,43 @@ logger = get_logger("api.auth")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_RATE_LIMIT = 5  # attempts
+_LOGIN_RATE_WINDOW = 300  # 5 minutes
+_MAX_LOGIN_TRACKED_KEYS = 100000  # prevent memory exhaustion from brute-force
+
+
+def _check_rate_limit(
+    key: str,
+    *,
+    limit: int,
+    window: int,
+    detail: str,
+) -> None:
+    """Rate limit by a composite key (e.g. IP, IP+email)."""
+    now = time.time()
+    with _LOGIN_LOCK:
+        # Periodic cleanup
+        if len(_LOGIN_ATTEMPTS) > _MAX_LOGIN_TRACKED_KEYS:
+            _LOGIN_ATTEMPTS.clear()
+        attempts = _LOGIN_ATTEMPTS.get(key, [])
+        attempts = [t for t in attempts if t > now - window]
+        if len(attempts) >= limit:
+            raise HTTPException(status_code=429, detail=detail)
+        attempts.append(now)
+        _LOGIN_ATTEMPTS[key] = attempts
+
+
+def _check_login_rate_limit(email: str, client_ip: str | None = None) -> None:
+    """Rate limit by (IP + email) to prevent DoS against a specific victim's email."""
+    _check_rate_limit(
+        f"login:{email}:{client_ip or 'unknown'}",
+        limit=_LOGIN_RATE_LIMIT,
+        window=_LOGIN_RATE_WINDOW,
+        detail="Too many login attempts. Please try again in 5 minutes.",
+    )
+
 
 async def _get_session() -> AsyncIterator[AsyncSession]:
     async with session_scope() as session:
@@ -42,13 +81,15 @@ async def _get_session() -> AsyncIterator[AsyncSession]:
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: RegisterRequest, session: AsyncSession = Depends(_get_session)):
+async def register(req: RegisterRequest, request: Request, session: AsyncSession = Depends(_get_session)):
     if len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if not any(c.isupper() for c in req.password):
         raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
     if not any(c.isdigit() for c in req.password):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit")
+    ip = request.client.host if request.client else None
+    _check_rate_limit(f"register:{ip}", limit=10, window=3600, detail="Too many registration attempts. Please try again later.")
     user, error = await register_user(session, req.email.lower().strip(), req.password, req.name.strip(), getattr(req, "referral_code", None))
     if error:
         raise HTTPException(status_code=409, detail=error)
@@ -56,42 +97,6 @@ async def register(req: RegisterRequest, session: AsyncSession = Depends(_get_se
         access_token=create_access_token(user.id),
         refresh_token=create_refresh_token(user.id),
     )
-
-
-import time as time_module
-
-_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
-_LOGIN_LOCK = __import__("threading").Lock()
-_LOGIN_RATE_LIMIT = 5  # attempts
-_LOGIN_RATE_WINDOW = 300  # 5 minutes
-_MAX_LOGIN_TRACKED_KEYS = 100000  # prevent memory exhaustion from brute-force
-_REQUEST_IP: str | None = None
-
-
-def _client_ip() -> str:
-    """Return the client IP from the last request (set by middleware or FastAPI)."""
-    global _REQUEST_IP
-    return _REQUEST_IP or "unknown"
-
-
-def _check_login_rate_limit(email: str, client_ip: str | None = None) -> None:
-    """Rate limit by (IP + email) to prevent DoS against a specific victim's email."""
-    now = time_module.time()
-    ip = client_ip or _client_ip()
-    key = f"{email}:{ip}"
-    with _LOGIN_LOCK:
-        # Periodic cleanup
-        if len(_LOGIN_ATTEMPTS) > _MAX_LOGIN_TRACKED_KEYS:
-            _LOGIN_ATTEMPTS.clear()
-        attempts = _LOGIN_ATTEMPTS.get(key, [])
-        attempts = [t for t in attempts if t > now - _LOGIN_RATE_WINDOW]
-        if len(attempts) >= _LOGIN_RATE_LIMIT:
-            raise HTTPException(
-                status_code=429,
-                detail="Too many login attempts. Please try again in 5 minutes.",
-            )
-        attempts.append(now)
-        _LOGIN_ATTEMPTS[key] = attempts
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -111,7 +116,10 @@ async def refresh(req: RefreshRequest, session: AsyncSession = Depends(_get_sess
     payload = decode_token(req.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    user_id = int(payload["sub"])
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid refresh token") from None
     user = await get_user_by_id(session, user_id)
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
@@ -188,7 +196,10 @@ async def verify_email(token: str, session: AsyncSession = Depends(_get_session)
     payload = decode_token(token)
     if not payload or payload.get("type") != "email_verification":
         raise HTTPException(status_code=400, detail="Invalid verification token")
-    user_id = int(payload["sub"])
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid verification token") from None
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -213,3 +224,4 @@ async def get_me(user_id: int = Depends(_get_current_user), session: AsyncSessio
         is_active=user.is_active,
         is_verified=user.is_verified,
     )
+

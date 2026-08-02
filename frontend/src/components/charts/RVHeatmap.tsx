@@ -38,6 +38,30 @@ export default function RVHeatmap({ signals }: Props) {
     fill: zScoreColor(s.z_score),
   }));
 
+  // Recharts clones this element and injects cell props (x/y/width/height...).
+  const cellRenderer = (({ x, y, width, height, name, z_score }: {
+    x: number; y: number; width: number; height: number; name: string; z_score: number;
+  }) => {
+    if (width < 30 || height < 20) return null;
+    return (
+      <g>
+        <rect x={x} y={y} width={width} height={height} fill={zScoreColor(z_score)} rx={4} />
+        {width > 40 && height > 16 && (
+          <text x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="central"
+            fill="white" fontSize={10} fontWeight={600}>
+            {name}
+          </text>
+        )}
+        {width > 50 && height > 28 && (
+          <text x={x + width / 2} y={y + height / 2 + 12} textAnchor="middle" dominantBaseline="central"
+            fill="white" fontSize={9} opacity={0.8}>
+            z={z_score.toFixed(2)}
+          </text>
+        )}
+      </g>
+    );
+  }) as unknown as React.ReactElement;
+
   return (
     <div>
       <ResponsiveContainer width="100%" height={250}>
@@ -46,28 +70,7 @@ export default function RVHeatmap({ signals }: Props) {
           dataKey="size"
           nameKey="name"
           stroke="#1f2937"
-          content={({ x, y, width, height, name, z_score }: {
-            x: number; y: number; width: number; height: number; name: string; z_score: number;
-          }) => {
-            if (width < 30 || height < 20) return null;
-            return (
-              <g>
-                <rect x={x} y={y} width={width} height={height} fill={zScoreColor(z_score)} rx={4} />
-                {width > 40 && height > 16 && (
-                  <text x={x + width / 2} y={y + height / 2} textAnchor="middle" dominantBaseline="central"
-                    fill="white" fontSize={10} fontWeight={600}>
-                    {name}
-                  </text>
-                )}
-                {width > 50 && height > 28 && (
-                  <text x={x + width / 2} y={y + height / 2 + 12} textAnchor="middle" dominantBaseline="central"
-                    fill="white" fontSize={9} opacity={0.8}>
-                    z={z_score.toFixed(2)}
-                  </text>
-                )}
-              </g>
-            );
-          }}
+          content={cellRenderer}
         />
       </ResponsiveContainer>
       <Tooltip

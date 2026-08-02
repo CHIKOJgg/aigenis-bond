@@ -6,8 +6,8 @@ and all error path logging in the pipeline.
 from __future__ import annotations
 
 import asyncio
-import pytest
-from scraper.config import get_settings, Settings, DatabaseSettings, RedisSettings
+
+from scraper.config import DatabaseSettings, RedisSettings, Settings
 from scraper.errors import (
     CircuitBreakerOpenError,
     FatalError,
@@ -80,7 +80,7 @@ def test_rate_limit_error_is_transient():
 
 
 def test_engine_creation_logs():
-    from scraper.db import get_engine, dispose
+    from scraper.db import dispose, get_engine
     engine = get_engine()
     assert engine is not None
     asyncio.run(dispose())
