@@ -16,7 +16,7 @@
 
 ## 1. Три трека продажи (приоритет)
 1. **Продажа продукта компании (M&A / white-label)** — самый реалистичный исход.
-   Продукт имеет production-базу (298 тестов, CI, Docker, Prometheus, fail-closed
+   Продукт имеет production-базу (306 тестов, CI, Docker, Prometheus, fail-closed
    auth) и B2B-упаковку (Partner API + webhooks + affiliate + demo). Целевые
    buyer: брокеры СНГ, агрегаторы котировок, финтех-приложения, EdTech.
 2. **B2B distribution через партнёров (affiliate $0)** — дать 5–10 блогерам/

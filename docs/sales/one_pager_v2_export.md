@@ -2,7 +2,7 @@
 
 **Bonds Engine** — готовая Fixed Income business unit.
 Production-ready: парсер MOEX + скоринг + ML + Full Desk + Telegram-бот + React SPA + API + биллинг.
-Python/FastAPI/React, 298 тестов, Docker, CI.
+Python/FastAPI/React, 306 тестов, Docker, CI.
 
 ---
 
@@ -10,7 +10,7 @@ Python/FastAPI/React, 298 тестов, Docker, CI.
 
 | Блок | Что сделано |
 |---|---|
-| **Data** | MOEX ISS (RUB TQCB + USD/EUR TQOB), 100+ облигаций, история 5 лет |
+| **Data** | MOEX ISS (RUB TQCB + USD/EUR TQOB), 1500+ облигаций, история 5 лет |
 | **Score** | Reward/Risk 0–100 + тиры |
 | **ML** | YTM-регрессия + классификатор buy/hold/wait/avoid |
 | **Fixed Income Desk** | Duration, NS-Yield Curve, RV (z-score), Carry, Repo, Stress (7 сценариев) |

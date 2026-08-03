@@ -38,7 +38,7 @@
 
 Я разработал Fixed Income-платформу на открытых данных MOEX:
 скоринг облигаций, кривая доходности, RV, стресс-тесты, ML-прогнозы,
-подписки, партнёрский API. 1488 облигаций в базе, 298 автотестов,
+подписки, партнёрский API. 1500+ облигаций в базе, 306 автотестов,
 работает как готовый бизнес-юнит.
 
 Вашим клиентам сейчас приходится уходить за аналитикой облигаций на
@@ -52,7 +52,7 @@ cbonds и finam — приложение могло бы отдавать это
 ```
 Олег, добрый день! Я разработал готовый Bonds Engine — Fixed Income
 платформа (MOEX данные: скоринг + ML + Desk: кривая, RV, stress +
-Telegram-бот + веб). 298 тестов, production-ready. У вас такого модуля
+Telegram-бот + веб). 306 тестов, production-ready. У вас такого модуля
 нет — ваш FAQ по MOEX отправляет клиентов за аналитикой на cbonds/finam.
 Закрою пробел за неделю. Демо: {ссылка}
 ```
@@ -69,13 +69,13 @@ Telegram-бот + веб). 298 тестов, production-ready. У вас так�
 
 Я разработал Bonds Engine — production-ready Fixed Income платформу
 на открытых данных MOEX ISS:
-• Парсер MOEX: 1488 облигаций (RUB TQCB + USD/EUR евробонды TQOB)
+• Парсер MOEX: 1500+ облигаций (RUB TQCB + USD/EUR евробонды TQOB)
 • Reward/Risk Score 0–100 + объяснение «почему» + вердикт
 • Fixed Income Desk: Duration, NS-кривая, RV, Carry, Stress (7 сценариев)
 • ML: buy/hold/wait/avoid + walk-forward CV, рекомендации
 • Telegram-бот (aiogram 3) + React SPA + API + виджет
 • Биллинг: Telegram Stars + YooKassa, партнёрский API
-• 298 автотестов, Docker, CI, мониторинг
+• 306 автотестов, Docker, CI, мониторинг
 
 Ключевое: ваш FAQ по MOEX рекомендует клиентам аналитику на cbonds.ru
 и finam.ru. Bonds Engine закрывает этот пробел внутри экосистемы
@@ -149,12 +149,12 @@ Bonds Engine закрывает пробел Aigenis в аналитике об�
 Здравствуйте!
 
 У меня production-ready продукт для Fixed Income аналитики:
-• Парсер MOEX (RUB + USD/EUR евробонды, 1488 бумаг)
+• Парсер MOEX (RUB + USD/EUR евробонды, 1500+ бумаг)
 • Reward/Risk Score + ML (buy/hold/wait/avoid)
 • Fixed Income Desk (Duration, NS-кривая, RV, Carry, Stress)
 • Telegram-бот + React SPA + API + widget
 • Биллинг, гейтинг, партнёрская программа
-• Docker, CI, 298 автотестов
+• Docker, CI, 306 автотестов
 
 Python/FastAPI/React.
 
@@ -170,7 +170,7 @@ One-pager: {ссылка}
 
 ```
 {Имя}, напомню — демо продукта: {ссылка}
-Коротко: Fixed Income Desk + бот + сайт + API, 298 тестов, Docker.
+Коротко: Fixed Income Desk + бот + сайт + API, 306 тестов, Docker.
 Готов показать в удобное время.
 ```
 

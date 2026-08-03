@@ -156,7 +156,6 @@ function AppInner() {
     { id: 'ml', label: t('nav.recommendations') || 'Рекомендации', icon: <Brain size={16} /> },
     { id: 'desk', label: t('nav.desk'), icon: <LineChart size={16} />, premium: true },
     { id: 'portfolio', label: t('nav.portfolio'), icon: <PieChart size={16} />, premium: true },
-    { id: 'portfolio-advanced', label: 'P&L / Транзакции', icon: <TrendingUp size={16} />, premium: true },
     { id: 'forecast', label: t('nav.forecast'), icon: <TrendingUp size={16} />, premium: true },
     { id: 'alerts', label: t('nav.alerts'), icon: <Bell size={16} />, premium: true },
     { id: 'calculator', label: t('nav.calculator'), icon: <Calculator size={16} /> },

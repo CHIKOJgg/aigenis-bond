@@ -4,12 +4,12 @@
 Не код. Не MVP. Работающий продукт с выручкой Day 1.
 
 **Что внутри:**
-- Парсер MOEX (RUB + USD/EUR евробонды, **1488 бумаг**, публичный)
+- Парсер MOEX (RUB + USD/EUR евробонды, **1500+ бумаг**, публичный)
 - Reward/Risk Score + ML (buy/hold/wait/avoid)
 - Full Fixed Income Desk (Duration, NS-Yield Curve, RV, Carry, Stress)
 - Telegram-бот + React SPA + API + widget + партнёрский API
 - Биллинг (Stars + YooKassa + гейтинг)
-- Docker, CI, **298 автотестов**, мониторинг
+- Docker, CI, **306 автотестов**, мониторинг
 - Python/FastAPI/React
 
 **Для Aigenis:** ваш FAQ по MOEX отправляет клиентов за аналитикой на

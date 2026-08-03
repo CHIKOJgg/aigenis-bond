@@ -2,9 +2,9 @@
 
 **Коротко.** Production-ready Fixed Income платформа с полным циклом:
 сбор данных → скоринг → ML → Desk-аналитика → подписки (B2C + B2B).
-Построена на открытых данных MOEX ISS. 298 автотестов, CI, Docker,
-Telegram-бот + React SPA + API. Готова к запуску **Day 1** — без R&D,
-найма и 6-месячного time-to-market.
+Построена на открытых данных MOEX ISS и белорусского рынка (BYN).
+306 автотестов, CI, Docker, Telegram-бот + React SPA + API. Готова к
+запуску **Day 1** — без R&D, найма и 6-месячного time-to-market.
 
 > **Крючок для Aigenis (август 2026):** вы вывели MOEX в aigenis invest,
 > но FAQ отправляет ваших клиентов за аналитикой облигаций на cbonds.ru /
@@ -16,19 +16,21 @@ Telegram-бот + React SPA + API. Готова к запуску **Day 1** — 
 
 | Актив | Состояние |
 |---|---|
-| Парсер MOEX ISS (RUB TQCB + USD/EUR евробонды TQOB, без логина, с пагинацией) — **1488 облигаций** | Работает 24/7 |
+| Парсер MOEX ISS (RUB TQCB + USD/EUR евробонды TQOB, без логина, с пагинацией) + белорусский рынок (BYN) — **1500+ облигаций** | Работает 24/7 |
 | Reward/Risk Score 0–100 + тиры + объяснение «почему» (RU) | В продакшене |
 | ML: YTM-регрессия + классификатор buy/hold/wait/avoid, walk-forward CV, anti-leakage обучение | Обучен, предсказывает |
 | Симуляция Монте-Карло капитала (перцентили p5–p95, CVaR) | В продакшене |
 | Fixed Income Desk: Duration/Convexity/DV01/KRD, NS-кривая, RV, Carry, Repo, Stress (7 сценариев), Z/G-spreads | Валидирован (smoke-тесты) |
 | Портфель: оптимизация на реальных YTM, Sharpe/Sortino/Calmar/VaR, FIFO P&L, ребалансировка, бэктест | В продакшене |
 | Telegram-бот (aiogram 3) — все команды | Онбординг, алерты, карточки |
-| React SPA + FastAPI + SEO-страницы (индексация каждой облигации) | Проиндексировано, готово |
+| React SPA + FastAPI + SEO-страницы (индексация каждой облигации), интерфейс на 3 языках (RU/EN/BE) | Проиндексировано, готово |
+| AI-ассистент по облигациям (OpenRouter, отвечает по реальным данным базы) | В продакшене |
+| Новости эмитентов (MOEX ISS feed, по ISIN/эмитенту) | В продакшене |
 | Биллинг: Telegram Stars + YooKassa (защита от refund-атак, webhook-секреты) | Приём платежей, гейтинг 402 |
 | Партнёрский API + widget + affiliate + webhook-подписки (HMAC) | Самообслуживание, реф-коды |
 | Docker Compose (9 сервисов), Cloudflare Tunnel | Production-ready |
 | Prometheus + Grafana + Sentry + Loguru | Наблюдаемость |
-| 298 автотестов, ruff clean, mypy, CI (lint/test/migrations) | Качество кода |
+| 306 автотестов, ruff clean, mypy, CI (lint/test/migrations) | Качество кода |
 
 ---
 
@@ -73,7 +75,7 @@ Bonds Engine возвращает этот трафик в приложение:
 
 2. **Монетизация уже встроена.** Telegram Stars, YooKassa, гейтинг 402, рефералка, affiliate, партнёрский API self-service — вся инфраструктура продаж готова. Не нужно тратить ещё 3–4 месяца на биллинг.
 
-3. **Не MVР, а production.** 298 автотестов, CI, Docker, Prometheus, fail-closed auth, Cloudflare Tunnel, Sentry. Продукт работал — код проверен боем.
+3. **Не MVР, а production.** 306 автотестов, CI, Docker, Prometheus, fail-closed auth, Cloudflare Tunnel, Sentry. Продукт работал — код проверен боем.
 
 4. **Актив, а не код.** При покупке вы получаете:
    - Весь Git-репозиторий с историей

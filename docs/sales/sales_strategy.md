@@ -5,9 +5,9 @@
 ## 1. Продукт
 
 Bonds Engine — Fixed Income платформа:
-- Парсер MOEX ISS (RUB + USD/EUR евробонды, 1488 бумаг, публичный)
+- Парсер MOEX ISS (RUB + USD/EUR евробонды, 1500+ бумаг, публичный)
 - Reward/Risk Score + ML + Full Desk + Telegram + Web + API + биллинг
-- 298 автотестов, Docker, CI, мониторинг
+- 306 автотестов, Docker, CI, мониторинг
 
 ## 2. Кому продаём (приоритет)
 
