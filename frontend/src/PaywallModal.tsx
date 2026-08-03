@@ -203,12 +203,14 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
           >
             <ExternalLink size={16} /> {t('paywall.payTelegram')}
           </button>
-          <button
-            onClick={() => { closePaywall(); onSubscribe(); }}
-            className="flex-1 inline-flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white py-3 rounded-xl text-sm font-semibold transition-colors"
-          >
-            <CreditCard size={16} /> {t('paywall.payCard')}
-          </button>
+          {info?.yookassa_configured && (
+            <button
+              onClick={() => { closePaywall(); onSubscribe(); }}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white py-3 rounded-xl text-sm font-semibold transition-colors"
+            >
+              <CreditCard size={16} /> {t('paywall.payCard')}
+            </button>
+          )}
         </div>
         {info?.yookassa_configured && (
           <p className="mt-3 text-center text-xs text-gray-500">

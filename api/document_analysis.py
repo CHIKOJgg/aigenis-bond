@@ -5,6 +5,7 @@ PDF, sends to LLM for structured parsing of bond parameters. Successful
 analyses are persisted per user (document_analysis table, migration 0020)
 and can be listed back via GET /api/v1/documents.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from api.access_control import RequireFeature, require_user_id
+from api.llm import llm_completion
 from scraper.db import session_scope
 from scraper.orm import DocumentAnalysisORM
 
@@ -38,7 +40,11 @@ def _upload_rate_check(user_id: int) -> bool:
     with _upload_lock:
         # Periodic cleanup to prevent unbounded memory growth.
         if len(_upload_store) > _UPLOAD_MAX_TRACKED_USERS:
-            for key in [k for k in _upload_store if not _upload_store[k] or _upload_store[k][-1] <= now - _UPLOAD_WINDOW_SECONDS]:
+            for key in [
+                k
+                for k in _upload_store
+                if not _upload_store[k] or _upload_store[k][-1] <= now - _UPLOAD_WINDOW_SECONDS
+            ]:
                 _upload_store.pop(key, None)
         hits = [t for t in _upload_store.get(user_id, []) if t > now - _UPLOAD_WINDOW_SECONDS]
         if len(hits) >= _UPLOAD_MAX_PER_WINDOW:
@@ -90,43 +96,29 @@ def _extract_text_from_pdf(file_path: str) -> str:
             return ""
 
 
-def _analyze_with_llm(text: str) -> dict[str, object]:
+async def _analyze_with_llm(text: str) -> dict[str, object]:
     """Send extracted text to LLM for structured analysis."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        return {
-            "summary": "AI-анализ недоступен: API-ключ не настроен.",
-            "extracted": {},
-            "risk_flags": [],
-        }
-
     prompt = (
         "Проанализируй проспект облигации. Извлеки:\n"
         "- Эмитент\n- Номинал\n- Купон (ставка, тип, частота)\n"
         "- Дата погашения\n- Оферта (дата, цена)\n- Обеспечение\n"
         "- Ковенанты (список)\n- Рейтинг\n- Особые условия\n- Риски (список)\n\n"
-        "Ответ в JSON: {\"summary\": \"...\", \"extracted\": {...}, \"risk_flags\": [...]}\n"
+        'Ответ в JSON: {"summary": "...", "extracted": {...}, "risk_flags": [...]}\n'
         "Текст проспекта:\n" + text[:12000]
     )
 
     try:
-        from openai import OpenAI
-
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Ты аналитик облигаций. Отвечай строго в JSON."},
-                {"role": "user", "content": prompt},
-            ],
+        content = await llm_completion(
+            "Ты аналитик облигаций. Отвечай строго в JSON.",
+            prompt,
             max_tokens=2048,
             temperature=0.1,
         )
-        content = response.choices[0].message.content or "{}"
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(content[start:end])
+        if content:
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start >= 0 and end > start:
+                return json.loads(content[start:end])
     except Exception:
         pass
 
@@ -165,7 +157,9 @@ async def api_upload_document(
         raise HTTPException(status_code=400, detail="Файл слишком мал или повреждён.")
     # Verify PDF magic bytes — the extension alone is not proof of format.
     if not content.lstrip().startswith(b"%PDF"):
-        raise HTTPException(status_code=400, detail="Файл не является PDF (неверные магические байты).")
+        raise HTTPException(
+            status_code=400, detail="Файл не является PDF (неверные магические байты)."
+        )
 
     tmp_path: str | None = None
     try:
@@ -185,7 +179,7 @@ async def api_upload_document(
                 created_at=datetime.now().isoformat(),
             ).model_dump()
 
-        analysis = _analyze_with_llm(text)
+        analysis = await _analyze_with_llm(text)
         extracted = dict(analysis.get("extracted") or {})
         risk_flags = list(analysis.get("risk_flags") or [])
 

@@ -9,12 +9,21 @@ logger = get_logger("scraper.scheduler.v3")
 
 
 async def scheduled_ml_train() -> int:
-    """Раз в неделю: переобучить модели."""
+    """Раз в неделю: переобучить модели и подрезать старые артефакты."""
     logger.info("scheduled_ml_train_start")
     try:
         rc = await cmd_ml_train()
         if rc == 0:
             await cmd_ml_predict()
+            # Keep the artifacts dir bounded (champion is always preserved).
+            try:
+                from ml.registry import prune_artifacts
+
+                removed = prune_artifacts()
+                if removed:
+                    logger.info("ml_artifacts_pruned", count=len(removed))
+            except Exception as e:
+                logger.warning("ml_artifacts_prune_failed", error=str(e))
         logger.info("scheduled_ml_train_done", rc=rc)
     except Exception as e:
         logger.exception("scheduled_ml_train_failed", error=str(e))

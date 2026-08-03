@@ -211,7 +211,8 @@ def test_cashflow_endpoint_gated_and_works():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/v1/bond/OP-1/cashflow?amount=10000")
-            assert resp.status_code == 402
+            # Anonymous -> 401 login prompt (not the 402 paywall).
+            assert resp.status_code == 401
 
             resp = await client.get(
                 "/api/v1/bond/OP-1/cashflow?amount=10000", headers=_auth(1)

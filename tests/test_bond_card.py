@@ -128,9 +128,9 @@ def test_bond_analysis_endpoint_gated_and_full():
         await _seed_pro_user_and_bond()
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # Free -> 402.
+            # Anonymous -> 401 login prompt (not the 402 paywall).
             resp = await client.get("/api/v1/bond/OP-1/analysis")
-            assert resp.status_code == 402
+            assert resp.status_code == 401
 
             # Pro -> full payload.
             resp = await client.get("/api/v1/bond/OP-1/analysis", headers=_auth(1))

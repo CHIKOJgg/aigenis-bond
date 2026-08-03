@@ -9,18 +9,26 @@ from fastapi import HTTPException
 from api import access_control as ac
 
 
+class _FakeRequest:
+    """Minimal stand-in for starlette.Request in direct dependency calls."""
+
+    def __init__(self, headers: dict | None = None):
+        self.headers = headers or {}
+        self.state = type("S", (), {})()
+
+
 def test_require_feature_allows_paid_tier():
     dep = ac.RequireFeature("access_desk_rv")
     # pro tier has the flag -> no exception
-    assert asyncio.run(dep(tier="pro")) is None
-    assert asyncio.run(dep(tier="enterprise")) is None
+    assert asyncio.run(dep(_FakeRequest(), tier="pro")) is None
+    assert asyncio.run(dep(_FakeRequest(), tier="enterprise")) is None
 
 
 def test_require_feature_blocks_free_tier():
     dep = ac.RequireFeature("access_desk_rv")
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(dep(tier="free"))
-    assert exc.value.status_code == 402
+        asyncio.run(dep(_FakeRequest(), tier="free"))
+    assert exc.value.status_code == 401
 
 
 def test_feature_flags_present_for_every_tier():

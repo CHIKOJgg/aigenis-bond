@@ -84,9 +84,9 @@ def test_positions_require_pro_tier():
     async def run():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # Anonymous -> 401 login prompt (not the 402 paywall).
             resp = await client.get("/api/v1/positions")
-            assert resp.status_code == 402
-            assert resp.headers.get("X-Upgrade-Required") == "true"
+            assert resp.status_code == 401
 
     _run(run)
 

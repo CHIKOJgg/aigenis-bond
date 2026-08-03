@@ -34,8 +34,47 @@ if echo "$DATABASE_URL" | grep -q "postgresql"; then
 fi
 
 # 3. Run Alembic migrations
+# Several containers (parser/api/bot) run migrations at startup; serialize
+# them with a PostgreSQL advisory lock so they never race each other (each
+# migration is also written idempotently as a second line of defense).
 echo "[entrypoint] Running Alembic migrations..."
-alembic upgrade head
+DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+if [ -z "$DB_NAME" ]; then
+    DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*/\([^?]*\)$|\1|p')
+fi
+python3 - "$DB_NAME" <<'PY'
+import asyncio
+import os
+import sys
+
+DB_NAME = sys.argv[1]
+
+async def run():
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy import text
+    url = os.environ["DATABASE_URL"]
+    if url.startswith("postgresql+asyncpg://"):
+        engine = create_async_engine(url)
+    else:
+        # sync driver (e.g. psycopg2) for the lock; alembic uses its own URL
+        print("[entrypoint] Skipping advisory lock for non-asyncpg URL")
+        engine = None
+    if engine is not None:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT pg_advisory_lock(837710001)"))
+            await conn.commit()
+        await engine.dispose()
+    import subprocess
+    rc = subprocess.run(["alembic", "upgrade", "head"]).returncode
+    if engine is not None:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT pg_advisory_unlock(837710001)"))
+            await conn.commit()
+        await engine.dispose()
+    sys.exit(rc)
+
+asyncio.run(run())
+PY
 echo "[entrypoint] Migrations complete"
 
 # 4. Create initial admin user if configured

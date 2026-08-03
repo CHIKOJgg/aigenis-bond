@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import os
 import threading
 import time
 from collections.abc import AsyncIterator
@@ -65,10 +66,22 @@ def _check_rate_limit(
         _LOGIN_ATTEMPTS[key] = attempts
 
 
-def _check_login_rate_limit(email: str, client_ip: str | None = None) -> None:
+def _client_ip(request: Request) -> str | None:
+    """Real client IP behind a trusted reverse proxy (same policy as the
+    global limiter in api/main.py); falls back to the raw peer address."""
+    trusted = os.environ.get("TRUSTED_PROXY", "").strip() in ("1", "true", "yes")
+    if trusted:
+        xff = request.headers.get("x-forwarded-for", "")
+        if xff:
+            return xff.split(",")[-1].strip()
+    return request.client.host if request.client else None
+
+
+def _check_login_rate_limit(email: str, request: Request | None = None, client_ip: str | None = None) -> None:
     """Rate limit by (IP + email) to prevent DoS against a specific victim's email."""
+    ip = client_ip or (_client_ip(request) if request is not None else None)
     _check_rate_limit(
-        f"login:{email}:{client_ip or 'unknown'}",
+        f"login:{email}:{ip or 'unknown'}",
         limit=_LOGIN_RATE_LIMIT,
         window=_LOGIN_RATE_WINDOW,
         detail="Too many login attempts. Please try again in 5 minutes.",
@@ -88,7 +101,7 @@ async def register(req: RegisterRequest, request: Request, session: AsyncSession
         raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
     if not any(c.isdigit() for c in req.password):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit")
-    ip = request.client.host if request.client else None
+    ip = _client_ip(request)
     _check_rate_limit(f"register:{ip}", limit=10, window=3600, detail="Too many registration attempts. Please try again later.")
     user, error = await register_user(session, req.email.lower().strip(), req.password, req.name.strip(), getattr(req, "referral_code", None))
     if error:
@@ -101,7 +114,7 @@ async def register(req: RegisterRequest, request: Request, session: AsyncSession
 
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest, request: Request, session: AsyncSession = Depends(_get_session)):
-    _check_login_rate_limit(req.email.lower().strip(), request.client.host if request.client else None)
+    _check_login_rate_limit(req.email.lower().strip(), request)
     user, error = await login_user(session, req.email.lower().strip(), req.password)
     if error:
         raise HTTPException(status_code=401, detail=error)
@@ -164,7 +177,7 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
 
 @router.post("/forgot-password")
 async def forgot_password(req: ForgotPasswordRequest, request: Request, session: AsyncSession = Depends(_get_session)):
-    _check_login_rate_limit(req.email.lower().strip(), request.client.host if request.client else None)
+    _check_login_rate_limit(req.email.lower().strip(), request)
     token = await create_password_reset_token(session, req.email.lower().strip())
     if token:
         from api.notifications.email import send_password_reset_email
@@ -184,7 +197,7 @@ async def reset_password_endpoint(req: ResetPasswordRequest, request: Request, s
         raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
     if not any(c.isdigit() for c in req.new_password):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit")
-    _check_login_rate_limit(f"reset:{req.token[:16]}", request.client.host if request.client else None)
+    _check_login_rate_limit(f"reset:{req.token[:16]}", request)
     success = await reset_password(session, req.token, req.new_password)
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")

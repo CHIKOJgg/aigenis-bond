@@ -24,7 +24,7 @@ def test_subscribe_info_is_public_and_lists_star_plans():
         assert plan["duration_days"] > 0
 
 
-def test_gated_endpoints_return_402_for_anonymous():
+def test_gated_endpoints_return_401_for_anonymous():
     for path in (
         "/api/v1/desk/rv",
         "/api/v1/desk/curve",
@@ -33,8 +33,9 @@ def test_gated_endpoints_return_402_for_anonymous():
         "/api/v1/alerts",
     ):
         resp = client.get(path)
-        assert resp.status_code == 402, f"{path} should be gated"
-        assert resp.headers.get("X-Upgrade-Required") == "true"
+        # Anonymous -> 401 (login first); the 402 paywall is only for
+        # authenticated free users.
+        assert resp.status_code == 401, f"{path} should prompt login"
 
 
 def test_yookassa_billing_plans():

@@ -85,7 +85,8 @@ def test_allocate_requires_pro():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/api/v1/allocate", json={"amount": 10000})
-            assert resp.status_code == 402
+            # Anonymous -> 401 login prompt (not the 402 paywall).
+            assert resp.status_code == 401
 
     _run(run)
 

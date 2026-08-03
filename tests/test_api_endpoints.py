@@ -254,10 +254,36 @@ def test_pro_endpoint_requires_auth_or_tier():
     async def run():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            # Anonymous -> free -> 402 on pro-only portfolio endpoint.
+            # Anonymous -> 401 (login first), not the paywall.
             resp = await client.get("/api/v1/portfolio")
-            assert resp.status_code == 402
-            assert resp.headers.get("X-Upgrade-Required") == "true"
+            assert resp.status_code == 401
+
+            # Free (authenticated, expired trial) -> 402 paywall.
+            from datetime import UTC, datetime, timedelta
+
+            from scraper.db import session_scope
+            from scraper.orm import UserORM
+
+            async with session_scope() as s:
+                user = UserORM(
+                    email="paywall@test.io",
+                    password_hash="x",
+                    name="Paywall",
+                    subscription_tier="free",
+                    # Trial long expired so the user is genuinely free.
+                    trial_end=datetime.now(UTC) - timedelta(days=1),
+                    is_active=True,
+                )
+                s.add(user)
+                await s.flush()
+                from api.auth.service import create_access_token
+
+                token = create_access_token(user.id)
+            resp2 = await client.get(
+                "/api/v1/portfolio", headers={"Authorization": f"Bearer {token}"}
+            )
+            assert resp2.status_code == 402
+            assert resp2.headers.get("X-Upgrade-Required") == "true"
 
     _run(run)
 

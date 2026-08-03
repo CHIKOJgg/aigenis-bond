@@ -18,10 +18,6 @@ function getToken(): string | null {
 async function request<T>(path: string, options: RequestInit = {}, _isRetry = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
-    // ngrok free shows an interstitial "You are about to visit..." page for
-    // requests without its bypass cookie, which breaks JSON API responses
-    // (e.g. GET /auth/me after login). This header tells ngrok to skip it.
-    'ngrok-skip-browser-warning': '1',
     ...(options.headers as Record<string, string> || {}),
   };
   if (token) {
@@ -37,7 +33,7 @@ async function request<T>(path: string, options: RequestInit = {}, _isRetry = fa
       try {
         const refreshRes = await fetch(`${BASE}/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': '1' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
         if (refreshRes.ok) {
@@ -457,6 +453,13 @@ export interface BondHistoryData {
   ytm: number | null;
 }
 
+export interface NewsItem {
+  id: number | null;
+  title: string;
+  published_at: string;
+  url: string;
+}
+
 export const api = {
   // Generic request helper: full control over method/body with the same
   // auth/refresh/error handling as get/post. (ReferralProgram, PnL, etc.)
@@ -513,6 +516,13 @@ export const api = {
     company: (issuer: string) => get<CompanyDetail>(`/api/v1/companies/${encodeURIComponent(issuer)}`),
     search: (q: string) => get<SearchResult>(`/api/v1/search?q=${encodeURIComponent(q)}`),
     alerts: (limit = 10) => get<AnalyticsAlert[]>(`/api/v1/alerts?limit=${limit}`),
+    news: (params?: { issuer?: string; bondId?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.issuer) q.set('issuer', params.issuer);
+      if (params?.bondId) q.set('bond_id', params.bondId);
+      if (params?.limit) q.set('limit', String(params.limit));
+      return get<NewsItem[]>(`/api/v1/news?${q}`);
+    },
   },
 
   billing: {

@@ -146,6 +146,7 @@ services:
       REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-20}
       # --- Telegram ---
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_ALERT_CHAT_ID: ${TELEGRAM_ALERT_CHAT_ID:-}
       TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
       # --- Auth & Billing (for background tasks) ---
@@ -161,6 +162,9 @@ services:
       YOOKASSA_CURRENCY: ${YOOKASSA_CURRENCY:-BYN}
     volumes:
       - logs:/app/logs
+      # ML artifacts persist across redeploys; without this every recreation
+      # loses the trained models until the next weekly ml-train.
+      - ml_artifacts:/app/ml/artifacts
     networks:
       - aigenis-net
     deploy:
@@ -193,6 +197,7 @@ services:
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
       DEMO_MODE: ${DEMO_MODE:-0}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS:-}
       WEBHOOK_URL: ${WEBHOOK_URL:-}
       WEBHOOK_PATH: ${WEBHOOK_PATH:-/webhook}
@@ -219,6 +224,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-noreply@aigenis.by}
     volumes:
       - logs:/app/logs
+      # ML artifacts: the bot serves ML-based recommendations.
+      - ml_artifacts:/app/ml/artifacts
     healthcheck:
       # pgrep is not guaranteed in the image; the bot exposes /health on
       # BOT_METRICS_PORT (aiohttp) as soon as it starts.
@@ -255,7 +262,17 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-aigenis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-aigenis}}
       AIGENIS_LOG_LEVEL: ${AIGENIS_LOG_LEVEL:-INFO}
+      AIGENIS_ENVIRONMENT: ${AIGENIS_ENVIRONMENT:-production}
       DEMO_MODE: ${DEMO_MODE:-0}
+      # --- AI Assistant (NLP chat): OpenRouter -> OpenAI -> local fallback ---
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # --- Redis (rate limiting): without this the redis backend fails closed
+      # --- and every rate-limited request would 429.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-memory}
       # API runs behind the nginx frontend; trust the last X-Forwarded-For hop
       # for client-IP rate limiting and YooKassa webhook IP filtering.
       TRUSTED_PROXY: ${TRUSTED_PROXY:-1}
@@ -280,10 +297,16 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@aigenis.by}
+      # --- CORS: browsers from these origins may call the API directly ---
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # --- Telegram (for subscribe deep-links) ---
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       # --- Frontend ---
       FRONTEND_DIR: /app/frontend/dist
     volumes:
       - logs:/app/logs
+      # ML artifacts: the API reads trained models for recommendations.
+      - ml_artifacts:/app/ml/artifacts
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -472,6 +495,8 @@ volumes:
     name: aigenis-redisdata
   logs:
     name: aigenis-logs
+  ml_artifacts:
+    name: aigenis-ml-artifacts
   certbot-www:
     name: aigenis-certbot-www
   certbot-conf:

@@ -191,7 +191,9 @@ class UserORM(Base):
     google_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, server_default="user")
-    subscription_tier: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
+    subscription_tier: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default="free"
+    )
     subscription_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -204,8 +206,15 @@ class UserORM(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
     referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    # Short shareable referral code (web referral program). Generated at
+    # registration; unique across all users.
+    referral_code: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
     __table_args__ = (
         # email/google_id/telegram_id are already UNIQUE (see column defs);
@@ -225,17 +234,48 @@ class SubscriptionORM(Base):
     yookassa_payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     plan: Mapped[str] = mapped_column(String(32), nullable=False, server_default="free")
     status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="incomplete")
-    current_period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.false())
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    current_period_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=func.false()
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
     __table_args__ = (
         # user_id is already UNIQUE (one subscription row per user) — the
         # unique constraint is the lookup index; keep the other useful ones.
         Index("ix_subscriptions_yookassa_payment", "yookassa_payment_id"),
         Index("ix_subscriptions_plan", "plan"),
+    )
+
+
+class BillingPaymentEventORM(Base):
+    """Registry of already-processed billing notifications.
+
+    YooKassa retries webhook deliveries without a message id, so the same
+    ``payment.succeeded`` / ``payment.canceled`` / ``refund.succeeded`` can
+    arrive multiple times (even after a newer payment superseded the
+    subscription's current id). A row here means the notification was already
+    acted on; re-deliveries are skipped (see api/billing/service.py).
+    """
+
+    __tablename__ = "billing_payment_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    payment_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 
@@ -359,7 +399,10 @@ class PredictionORM(Base):
         Index("ix_predictions_asof", "asof_date"),
         Index("ix_predictions_decision", "decision"),
         UniqueConstraint(
-            "internal_id", "asof_date", "model_version", "kind",
+            "internal_id",
+            "asof_date",
+            "model_version",
+            "kind",
             name="uq_predictions_key",
         ),
     )
@@ -447,6 +490,7 @@ class RVSignalORM(Base):
         Index("ix_rv_internal_id", "internal_id"),
         Index("ix_rv_asof", "asof_date"),
         Index("ix_rv_side", "side"),
+        Index("uq_rv_signal_day", "internal_id", "peer_currency", "asof_date", unique=True),
     )
 
 
@@ -470,6 +514,7 @@ class CarryTradeORM(Base):
     __table_args__ = (
         Index("ix_carry_internal_id", "internal_id"),
         Index("ix_carry_asof", "asof_date"),
+        Index("uq_carry_day", "internal_id", "asof_date", unique=True),
     )
 
 
@@ -518,6 +563,7 @@ class StressRunORM(Base):
     __table_args__ = (
         Index("ix_stress_name", "scenario_name"),
         Index("ix_stress_asof", "asof_date"),
+        Index("uq_stress_day", "scenario_name", "asof_date", unique=True),
     )
 
 
@@ -600,9 +646,7 @@ class AlertRuleORM(Base):
     note: Mapped[str | None] = mapped_column(String(256), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=func.true())
     last_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
-    triggered_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -688,7 +732,9 @@ class PartnerKeyORM(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    branding: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"), nullable=True, server_default="{}")
+    branding: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True, server_default="{}"
+    )
 
     __table_args__ = (Index("ix_partner_api_keys_owner", "owner_user_id"),)
 
@@ -704,20 +750,14 @@ class PartnerReferralORM(Base):
     __tablename__ = "partner_referrals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    partner_key_id: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, index=True
-    )
-    referrer_user_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True, index=True
-    )
+    partner_key_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    referrer_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     referred_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     plan: Mapped[str] = mapped_column(String(32), nullable=False)
     amount: Mapped[float] = mapped_column(nullable=False, default=0.0)
     currency: Mapped[str] = mapped_column(String(8), nullable=False, server_default="BYN")
     commission_pct: Mapped[float] = mapped_column(nullable=False, default=0.0)
-    payout_status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default="pending"
-    )
+    payout_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -742,9 +782,7 @@ class PartnerLeadORM(Base):
     interest: Mapped[str | None] = mapped_column(String(32), nullable=True)
     message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="new")
-    partner_key_id: Mapped[int | None] = mapped_column(
-        Integer, nullable=True, index=True
-    )
+    partner_key_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -813,9 +851,15 @@ class PnLSnapshotORM(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     total_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
     invested: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
-    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, server_default="0")
-    unrealized_pnl: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, server_default="0")
-    coupon_income: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False, server_default="0")
+    realized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, server_default="0"
+    )
+    unrealized_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, server_default="0"
+    )
+    coupon_income: Mapped[Decimal] = mapped_column(
+        Numeric(20, 4), nullable=False, server_default="0"
+    )
     daily_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
 
     __table_args__ = (
@@ -851,9 +895,7 @@ class BacktestORM(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    __table_args__ = (
-        Index("ix_backtest_user_id", "user_id"),
-    )
+    __table_args__ = (Index("ix_backtest_user_id", "user_id"),)
 
 
 class DocumentAnalysisORM(Base):
@@ -876,9 +918,7 @@ class DocumentAnalysisORM(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    __table_args__ = (
-        Index("ix_documents_user_created", "user_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_documents_user_created", "user_id", "created_at"),)
 
 
 class SpreadReportORM(Base):
@@ -907,4 +947,5 @@ class SpreadReportORM(Base):
     __table_args__ = (
         Index("ix_spread_internal_id", "internal_id"),
         Index("ix_spread_asof", "asof_date"),
+        Index("uq_spread_day", "internal_id", "asof_date", unique=True),
     )

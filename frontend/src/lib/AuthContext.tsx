@@ -7,7 +7,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string, referralCode?: string | null) => Promise<void>;
   logout: () => void;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<User | null>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -16,11 +16,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refreshUser = async () => {
+  const refreshUser = async (): Promise<User | null> => {
     // Throws on failure so login/register surfaces a real error instead of
     // silently clearing tokens (which looked like "nothing happened").
     const u = await api.auth.me();
     setUser(u);
+    return u;
   };
 
   useEffect(() => {

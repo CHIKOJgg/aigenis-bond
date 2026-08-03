@@ -88,6 +88,17 @@ def decode_token(token: str) -> dict | None:
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
 
 
+def _generate_referral_code() -> str:
+    """Short unique-ish referral code for a new user (no '-' or '_' so it is
+    easy to type in a registration form)."""
+    import secrets
+
+    while True:
+        code = secrets.token_urlsafe(8)[:10].replace("-", "X").replace("_", "Y")
+        if len(code) == 10:
+            return code
+
+
 async def register_user(
     session: AsyncSession,
     email: str,
@@ -103,6 +114,7 @@ async def register_user(
         password_hash=hash_password(password),
         name=name,
         trial_end=datetime.now(UTC) + timedelta(days=TRIAL_DAYS),
+        referral_code=_generate_referral_code(),
     )
     session.add(user)
     await session.flush()  # assign user.id so the self-referral check is real
@@ -127,7 +139,7 @@ async def register_user(
 
 
 async def _resolve_referrer(session: AsyncSession, referral_code: str) -> UserORM | None:
-    """Resolve a referrer from an issued partner referral code.
+    """Resolve a referrer from a partner referral code or a user referral code.
 
     Raw numeric user ids are deliberately NOT accepted here — accepting them
     would let anyone farm trial extensions by passing arbitrary user ids.
@@ -144,7 +156,11 @@ async def _resolve_referrer(session: AsyncSession, referral_code: str) -> UserOR
         return (
             await session.execute(select(UserORM).where(UserORM.id == partner.owner_user_id))
         ).scalar_one_or_none()
-    return None
+    # Fall back to a regular user's own referral code (web referral program).
+    user = (
+        await session.execute(select(UserORM).where(UserORM.referral_code == code))
+    ).scalar_one_or_none()
+    return user if user and user.is_active else None
 
 
 async def _grant_referral_bonus(referrer: UserORM) -> None:
@@ -152,13 +168,23 @@ async def _grant_referral_bonus(referrer: UserORM) -> None:
     if bonus_days <= 0:
         return
     now = datetime.now(UTC)
+
+    def _aware(dt: datetime | None) -> datetime | None:
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=UTC)
+        return dt
+
     # Only extend an ALREADY-ACTIVE trial or paid window. Never (re)arm a
     # trial from scratch — otherwise throwaway registrations would farm
     # unlimited Pro access for the referrer (monetization bypass).
-    if referrer.trial_end and referrer.trial_end > now:
-        referrer.trial_end = referrer.trial_end + timedelta(days=bonus_days)
-    elif referrer.subscription_expires_at and referrer.subscription_expires_at > now:
-        referrer.subscription_expires_at = referrer.subscription_expires_at + timedelta(days=bonus_days)
+    trial_end = _aware(referrer.trial_end)
+    paid_end = _aware(referrer.subscription_expires_at)
+    if trial_end and trial_end > now:
+        referrer.trial_end = trial_end + timedelta(days=bonus_days)
+    elif paid_end and paid_end > now:
+        referrer.subscription_expires_at = paid_end + timedelta(days=bonus_days)
 
 
 async def login_user(session: AsyncSession, email: str, password: str) -> tuple[UserORM | None, str | None]:

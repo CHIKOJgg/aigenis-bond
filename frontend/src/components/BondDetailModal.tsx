@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Star, X, TrendingUp, BarChart3, Search, Newspaper } from 'lucide-react';
+import { Star, X, TrendingUp, BarChart3, Search, Newspaper, ExternalLink } from 'lucide-react';
 import { Modal } from '../lib/Modal';
 import { useI18n } from '../i18n';
 import { LoadingSkeleton } from './common';
-import type { Bond, BondAnalysisResult, Cashflow } from '../lib/api';
+import type { Bond, BondAnalysisResult, Cashflow, NewsItem } from '../lib/api';
 import { api, ApiError } from '../lib/api';
 
 interface BondDetailModalProps {
@@ -31,6 +31,9 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
   const [similarBonds, setSimilarBonds] = useState<Bond[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [similarLoaded, setSimilarLoaded] = useState(false);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsLoaded, setNewsLoaded] = useState(false);
 
   const showAnalysis = async () => {
     setAnalysisLoading(true); setAnalysisLocked(false); setAnalysis(null);
@@ -62,13 +65,28 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
     finally { setSimilarLoading(false); }
   };
 
-  // Auto-load similar bonds when tab becomes 'similar'
+  const loadNews = async () => {
+    if (newsLoaded) return;
+    setNewsLoading(true);
+    try {
+      const items = await api.analytics.news({ bondId: bond.internal_id, limit: 10 });
+      setNews(items);
+      setNewsLoaded(true);
+    } catch { /* ignore */ }
+    finally { setNewsLoading(false); }
+  };
+
+  // Auto-load similar bonds / news when the corresponding tab is opened.
   const prevTab = useRef(tab);
   useEffect(() => {
     if (tab === 'similar' && prevTab.current !== 'similar') {
       loadSimilar();
     }
+    if (tab === 'news' && prevTab.current !== 'news') {
+      loadNews();
+    }
     prevTab.current = tab;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -197,10 +215,34 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
         )}
 
         {tab === 'news' && (
-          <div className="text-center py-8">
-            <Newspaper size={48} className="mx-auto mb-4 text-gray-600" />
-            <p className="text-gray-400 mb-4">{t('detail.newsEmpty')}</p>
-            <p className="text-sm text-gray-600">{t('state.empty')}</p>
+          <div>
+            {newsLoading && <LoadingSkeleton />}
+            {!newsLoading && news.length === 0 && (
+              <div className="text-center py-8">
+                <Newspaper size={48} className="mx-auto mb-4 text-gray-600" />
+                <p className="text-gray-400 mb-2">{t('detail.newsEmpty')}</p>
+                <button onClick={loadNews} className="text-sm text-emerald-400 hover:text-emerald-300">{t('detail.loadNews')}</button>
+              </div>
+            )}
+            {!newsLoading && news.length > 0 && (
+              <div className="space-y-3">
+                {news.map((n) => (
+                  <a
+                    key={n.id ?? n.url}
+                    href={n.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block bg-gray-800/40 rounded-xl border border-gray-700/50 p-4 hover:border-emerald-700 transition-colors"
+                  >
+                    <p className="text-sm text-white leading-snug">{n.title}</p>
+                    <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                      <span>{n.published_at ? new Date(n.published_at.replace(' ', 'T')).toLocaleString() : ''}</span>
+                      <ExternalLink size={12} className="text-emerald-400" />
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

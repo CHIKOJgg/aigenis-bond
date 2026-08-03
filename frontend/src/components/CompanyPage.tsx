@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Building2, ExternalLink, ArrowLeft, TrendingUp } from 'lucide-react';
+import { Building2, ExternalLink, ArrowLeft, TrendingUp, Newspaper } from 'lucide-react';
 import { api } from '../lib/api';
-import type { CompanyDetail } from '../lib/api';
+import type { CompanyDetail, NewsItem } from '../lib/api';
 import { LoadingSkeleton, ErrorBanner, EmptyState, TierBadge } from './common';
 import { RecommendationCard } from './RecommendationCard';
 
@@ -15,6 +15,8 @@ export function CompanyPage({ issuer, onBack, onOpenBond }: Props) {
   const [data, setData] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -30,6 +32,15 @@ export function CompanyPage({ issuer, onBack, onOpenBond }: Props) {
       })
       .finally(() => {
         if (alive) setLoading(false);
+      });
+    api.analytics
+      .news({ issuer, limit: 6 })
+      .then((items) => {
+        if (alive) setNews(items);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (alive) setNewsLoading(false);
       });
     return () => {
       alive = false;
@@ -139,6 +150,32 @@ export function CompanyPage({ issuer, onBack, onOpenBond }: Props) {
           </div>
         )}
       </div>
+
+      {news.length > 0 && (
+        <div>
+          <h2 className="text-xl font-bold mb-3 flex items-center gap-2">
+            <Newspaper size={20} className="text-emerald-400" /> Новости
+          </h2>
+          {newsLoading && <LoadingSkeleton />}
+          <div className="space-y-3">
+            {news.map((n) => (
+              <a
+                key={n.id ?? n.url}
+                href={n.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block bg-gray-900 rounded-xl border border-gray-800 p-4 hover:border-emerald-700 transition-colors"
+              >
+                <p className="text-sm text-white leading-snug">{n.title}</p>
+                <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                  <span>{n.published_at ? new Date(n.published_at.replace(' ', 'T')).toLocaleString() : ''}</span>
+                  <ExternalLink size={12} className="text-emerald-400" />
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

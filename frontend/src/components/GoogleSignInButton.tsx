@@ -87,7 +87,7 @@ export function GoogleSignInButton() {
       cancelled = true;
       script.removeEventListener('load', init);
     };
-  }, [refreshUser]);
+  }, [refreshUser, t]);
 
   return (
     <div className="flex flex-col items-center">

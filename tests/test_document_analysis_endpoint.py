@@ -3,6 +3,7 @@
 Covers: file size limits, content type validation, PDF extraction fallback,
 temp file cleanup, feature gating, and error handling.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -126,7 +127,7 @@ async def test_upload_persists_and_lists(monkeypatch):
     def fake_extract(_path: str) -> str:
         return "Эмитент: Пример. Купон: 12%. Погашение: 2030."
 
-    def fake_analyze(_text: str) -> dict:
+    async def fake_analyze(_text: str) -> dict:
         return {
             "summary": "Хороший проспект.",
             "extracted": {"issuer": "Пример"},

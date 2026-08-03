@@ -305,11 +305,20 @@ class RequireFeature:
     def __init__(self, flag: str) -> None:
         self.flag = flag
 
-    async def __call__(self, tier: str = Depends(get_current_tier)) -> None:
+    async def __call__(self, request: Request, tier: str = Depends(get_current_tier)) -> None:
         flags = FEATURE_FLAGS.get(tier, FEATURE_FLAGS["free"])
-        if not flags.get(self.flag, False):
+        if flags.get(self.flag, False):
+            return
+        if tier == "free" and _get_current_user_from_request(request) is None:
+            # Anonymous caller without demo access: prompt login (401) instead
+            # of the paywall (402) — paying is impossible before signing in.
             raise HTTPException(
-                status_code=402,
-                detail="Эта функция доступна в подписке Pro / Enterprise.",
-                headers={"X-Upgrade-Required": "true"},
+                status_code=401,
+                detail="Authentication required",
+                headers={"WWW-Authenticate": "Bearer"},
             )
+        raise HTTPException(
+            status_code=402,
+            detail="Эта функция доступна в подписке Pro / Enterprise.",
+            headers={"X-Upgrade-Required": "true"},
+        )

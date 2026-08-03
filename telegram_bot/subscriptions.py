@@ -272,22 +272,22 @@ async def attach_referrer(telegram_id: int, referrer_user_id: int) -> bool:
         bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "3"))
         if bonus_days > 0:
             now = _now()
-            # Referrer's bonus: extend whichever access window is still active.
+            # Only extend an ALREADY-ACTIVE trial or paid window. Never (re)arm
+            # a trial from scratch — otherwise throwaway referrals would farm
+            # unlimited Pro access for the referrer (monetization bypass).
+            # Mirrors the web behavior in api/auth/service.py:_grant_referral_bonus.
             trial_end = _as_aware(referrer.trial_end)
             paid_end = _as_aware(referrer.subscription_expires_at)
             if trial_end and trial_end > now:
                 referrer.trial_end = trial_end + timedelta(days=bonus_days)
             elif paid_end and paid_end > now:
                 referrer.subscription_expires_at = paid_end + timedelta(days=bonus_days)
-            else:
-                referrer.trial_end = now + timedelta(days=bonus_days)
-            # Invitee's bonus: extend their (just-created) trial as promised.
+            # Invitee's bonus: extend their (just-created) active trial, never
+            # arm one from scratch.
             invitee_trial = _as_aware(user.trial_end)
             if invitee_trial and invitee_trial > now:
                 user.trial_end = invitee_trial + timedelta(days=bonus_days)
-            else:
-                user.trial_end = now + timedelta(days=bonus_days)
-        await session.flush()
+            await session.flush()
     logger.info("referrer_attached", telegram_id=telegram_id, referrer=referrer_user_id)
     return True
 

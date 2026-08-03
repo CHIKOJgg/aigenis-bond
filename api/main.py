@@ -4,12 +4,13 @@ import contextlib
 import os
 import threading
 import time
+import uuid
 from collections import defaultdict
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -22,6 +23,7 @@ from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
 from api.document_analysis import router as document_router
+from api.news import router as news_router
 from api.nlp import router as nlp_router
 from api.partner.router import router as partner_router
 from api.portfolio_api import router as portfolio_advanced_router
@@ -37,6 +39,7 @@ from scraper.logging import get_logger
 from scraper.orm import BondORM, BondScoreORM
 
 logger = get_logger("api")
+
 
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -76,6 +79,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(analytics_router)
 app.include_router(nlp_router)
+app.include_router(news_router)
 app.include_router(document_router)
 app.include_router(portfolio_advanced_router)
 app.include_router(reports_router)
@@ -124,8 +128,7 @@ async def security_headers(request: Request, call_next):
     if request.url.path.startswith("/widget"):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; object-src 'none'; "
-            "base-uri 'self'; script-src 'self'"
+            "default-src 'self'; object-src 'none'; base-uri 'self'; script-src 'self'"
         )
         # Explicitly drop the DENY that would otherwise block the iframe.
         if "X-Frame-Options" in response.headers:
@@ -243,7 +246,11 @@ def _memory_allow(client: str, limit: int) -> bool:
         # Evict stale keys so the store is bounded by distinct clients seen
         # within one window (plus retained entries), not total unique IPs ever.
         if len(_rate_limit_store) > _MAX_TRACKED_RATE_CLIENTS:
-            for key in [k for k in _rate_limit_store if not _rate_limit_store[k] or _rate_limit_store[k][-1] <= cutoff]:
+            for key in [
+                k
+                for k in _rate_limit_store
+                if not _rate_limit_store[k] or _rate_limit_store[k][-1] <= cutoff
+            ]:
                 _rate_limit_store.pop(key, None)
         timestamps = _rate_limit_store[client]
         timestamps[:] = [t for t in timestamps if t > cutoff]
@@ -258,7 +265,9 @@ async def rate_limit(request: Request, call_next):
     if request.url.path in ("/health", "/ready", "/openapi.json", "/docs", "/redoc"):
         return await call_next(request)
     # Public SEO pages must stay crawlable — never rate-limit crawlers away.
-    if request.url.path.startswith(("/bonds", "/partners", "/sitemap.xml", "/robots.txt", "/calculator", "/guides")):
+    if request.url.path.startswith(
+        ("/bonds", "/partners", "/sitemap.xml", "/robots.txt", "/calculator", "/guides")
+    ):
         return await call_next(request)
     client, limit = await _rate_identity_and_limit(request)
     allowed = (
@@ -325,11 +334,15 @@ class ErrorResponse(BaseModel):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+    request.state.request_id = request_id
     start = time.monotonic()
     response = await call_next(request)
     duration = time.monotonic() - start
+    response.headers["X-Request-Id"] = request_id
     logger.info(
         "api_request",
+        request_id=request_id,
         method=request.method,
         path=request.url.path,
         status=response.status_code,
@@ -339,8 +352,9 @@ async def log_requests(request: Request, call_next):
 
 
 @app.exception_handler(ScraperError)
-async def scraper_error_handler(_request: Request, exc: ScraperError):
-    logger.error("api_error", error=str(exc), context=exc.context)
+async def scraper_error_handler(request: Request, exc: ScraperError):
+    request_id = getattr(request.state, "request_id", None)
+    logger.error("api_error", error=str(exc), context=exc.context, request_id=request_id)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(error=exc.message).model_dump(),
@@ -348,8 +362,9 @@ async def scraper_error_handler(_request: Request, exc: ScraperError):
 
 
 @app.exception_handler(Exception)
-async def global_error_handler(_request: Request, exc: Exception):
-    logger.exception("api_unhandled_error", error=str(exc))
+async def global_error_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, "request_id", None)
+    logger.exception("api_unhandled_error", error=str(exc), request_id=request_id)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(error="Internal server error").model_dump(),
@@ -377,6 +392,18 @@ async def readiness() -> HealthResponse:
     if db_status["status"] != "ok":
         raise HTTPException(status_code=503, detail="Database unavailable")
     return HealthResponse(status="ok", db="ok", uptime_seconds=time.monotonic() - _start_time)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Prometheus metrics for the API worker (scraped by prometheus:9090).
+
+    The compose prometheus job targets ``api:8000/metrics``; without this
+    endpoint the scrape returned 404 and the API was invisible in Grafana.
+    """
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 # --- Bonds ---
@@ -548,3 +575,15 @@ def _validate_production_config() -> None:
         )
 
 
+# Entry point for the `bonds-api` console script (pyproject.toml). Kept here so
+# the installed package has a working command even when deployed outside the
+# compose file (which runs uvicorn directly).
+def run() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "api.main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("API_PORT", "8000")),
+        workers=int(os.environ.get("API_WORKERS", "1")),
+    )

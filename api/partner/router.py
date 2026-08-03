@@ -36,7 +36,7 @@ from scoring.disclaimer import DISCLAIMER_FULL
 from scoring.explain import explain_score
 from scraper.db import session_scope
 from scraper.logging import get_logger
-from scraper.orm import BondORM, PartnerKeyORM, PartnerReferralORM, WebhookORM
+from scraper.orm import BondORM, PartnerKeyORM, PartnerReferralORM, UserORM, WebhookORM
 
 router = APIRouter(prefix="/api/v1/partner", tags=["partner"])
 logger = get_logger("api.partner")
@@ -162,9 +162,28 @@ async def partner_referral_stats(user_id: int = Depends(_require_user)):
             )
         ).scalars().first()
         if key is None:
+            # Regular (non-partner) users get their own shareable referral code
+            # (generated at registration, see api/auth/service.py).
+            user = (
+                await session.execute(select(UserORM).where(UserORM.id == user_id))
+            ).scalar_one_or_none()
+            if user is None or not user.referral_code:
+                return ReferralStats(
+                    referral_code=None, total_referrals=0, conversions=0,
+                    pending_payouts=0, paid_payouts=0, total_commission=0.0,
+                )
+            referred = (
+                await session.execute(
+                    select(UserORM).where(UserORM.referred_by == user_id)
+                )
+            ).scalars().all()
             return ReferralStats(
-                referral_code=None, total_referrals=0, conversions=0,
-                pending_payouts=0, paid_payouts=0, total_commission=0.0,
+                referral_code=user.referral_code,
+                total_referrals=len(referred),
+                conversions=0,
+                pending_payouts=0,
+                paid_payouts=0,
+                total_commission=0.0,
             )
         rows = (
             await session.execute(

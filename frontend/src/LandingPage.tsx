@@ -20,6 +20,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
   const [mobileMenu, setMobileMenu] = useState(false);
   const [billing, setBilling] = useState<'month' | 'year'>('month');
   const [plans, setPlans] = useState<Record<string, { id: string; name: string; price: number; currency: string; features: string[] }>>({});
+  const [starsPlans, setStarsPlans] = useState<Record<string, number>>({});
   const discount = 0.8;
 
   useEffect(() => {
@@ -28,6 +29,16 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
         const byId: Record<string, { id: string; name: string; price: number; currency: string; features: string[] }> = {};
         for (const p of data) byId[p.id] = p;
         setPlans(byId);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    api.subscribeInfo()
+      .then((info) => {
+        const byTier: Record<string, number> = {};
+        for (const p of info.plans ?? []) byTier[p.tier] = p.stars;
+        setStarsPlans(byTier);
       })
       .catch(() => {});
   }, []);
@@ -151,7 +162,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
       <section className="border-y border-gray-800 bg-gray-900/50">
         <div className="max-w-5xl mx-auto px-4 py-10 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           <div>
-            <p className="text-3xl font-bold text-emerald-400">100+</p>
+            <p className="text-3xl font-bold text-emerald-400">1500+</p>
             <p className="text-sm text-gray-400 mt-1">{t('trust.stat1')}</p>
           </div>
           <div>
@@ -341,7 +352,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
           <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 flex flex-col">
             <h3 className="text-lg font-bold mb-1">{t('landing.planFree')}</h3>
             <p className="text-sm text-gray-400 mb-4">{t('landing.planFreeDesc')}</p>
-            <p className="text-3xl font-bold mb-6">$0</p>
+            <p className="text-3xl font-bold mb-6">0 BYN</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatBondDetails')}</li>
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatScoring')}</li>
@@ -372,7 +383,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
               ) : plans.pro?.price ?? 2900}
               <span className="text-base text-gray-500 font-normal"> {billing === 'year' ? '/мес при оплате за год' : t('landing.planPerMonth')}</span>
             </p>
-            <p className="text-sm text-gray-500 mb-6">{t('landing.or')} 150 Stars</p>
+            <p className="text-sm text-gray-500 mb-6">{t('landing.or')} {starsPlans.pro ?? 150} Stars</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatFree')}</li>
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatDesk')}</li>
@@ -397,7 +408,7 @@ export function LandingPage({ onLogin, onRegister, onTerms, onPrivacy }: Landing
               ) : plans.enterprise?.price ?? 9900}
               <span className="text-base text-gray-500 font-normal"> {billing === 'year' ? '/мес при оплате за год' : t('landing.planPerMonth')}</span>
             </p>
-            <p className="text-sm text-gray-500 mb-6">{t('landing.or')} 500 Stars</p>
+            <p className="text-sm text-gray-500 mb-6">{t('landing.or')} {starsPlans.enterprise ?? 500} Stars</p>
             <ul className="space-y-3 text-sm mb-8 flex-1">
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeatFree')}</li>
               <li className="flex items-start gap-2"><Check size={16} className="text-emerald-400 shrink-0 mt-0.5" /> {t('landing.planFeat300Api')}</li>

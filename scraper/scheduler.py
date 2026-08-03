@@ -29,6 +29,106 @@ async def scheduled_stocks_job() -> None:
         logger.exception("scheduled_stocks_job_failed", correlation_id=cid)
 
 
+async def scheduled_history_job() -> None:
+    """Daily history-only refresh (03:00), complementing the full 6-hour run.
+
+    Previously this cron slot re-ran the entire listing+details+history
+    pipeline — a full duplicate of ``scrape_all_6h``. Now it only refreshes
+    price/YTM candles (30 days) and the coupon calendar for the top-N bonds per
+    currency, so charts are fresh by market open without duplicating the scrape.
+    """
+    if _pipeline_lock.locked():
+        logger.info("scheduled_history_job_skipped_already_running")
+        return
+    async with _pipeline_lock:
+        settings = get_settings()
+        cid = correlation_id()
+        logger.info("scheduled_history_job_start", correlation_id=cid)
+        try:
+            source = (os.getenv("DATA_SOURCE") or "aigenis").strip().lower()
+            cap = int(os.getenv("MOEX_HISTORY_SAMPLE", "200"))
+            days = int(os.getenv("MOEX_HISTORY_DAYS", "30"))
+            from sqlalchemy import select
+
+            if source in ("moex", "both"):
+                from scraper import repositories
+                from scraper.db import session_scope
+                from scraper.moex import MoexClient
+                from scraper.orm import BondORM
+                from scraper.pipeline import _build_coupon_schedule
+
+                async with MoexClient(settings) as client:
+                    cur_list = [c.upper() for c in settings.aigenis.currencies]
+                    if "RUB" not in cur_list:
+                        cur_list = ["RUB", *cur_list]
+                    for cur in cur_list:
+                        async with session_scope() as session:
+                            ids = (
+                                await session.execute(
+                                    select(BondORM.internal_id)
+                                    .where(BondORM.currency == cur)
+                                    .order_by(BondORM.yield_to_maturity.desc())
+                                    .limit(cap)
+                                )
+                            ).scalars().all()
+                        for iid in ids:
+                            try:
+                                hist = await client.fetch_history(iid, _days=days)
+                                if hist:
+                                    async with session_scope() as session:
+                                        await repositories.history.upsert_history_batch(
+                                            session, hist
+                                        )
+                                coupons = await client.fetch_coupons(iid)
+                                if coupons:
+                                    schedule = _build_coupon_schedule(coupons)
+                                    async with session_scope() as session:
+                                        orm = (
+                                            await session.execute(
+                                                select(BondORM).where(
+                                                    BondORM.internal_id == iid
+                                                )
+                                            )
+                                        ).scalar_one_or_none()
+                                        if orm is not None:
+                                            orm.coupon_schedule = schedule
+                            except Exception:
+                                logger.warning(
+                                    "history_refresh_bond_failed",
+                                    internal_id=iid,
+                                    correlation_id=cid,
+                                )
+            if source in ("aigenis", "both"):
+                from scraper.client import AigenisClient
+                from scraper.db import session_scope
+                from scraper.pipeline import backfill_history
+
+                async with AigenisClient(settings.aigenis) as client:
+                    async with session_scope() as session:
+                        ids = (
+                            await session.execute(
+                                select(BondORM.internal_id).where(
+                                    BondORM.status == "active"
+                                )
+                            )
+                        ).scalars().all()
+                    ok, err = await backfill_history(
+                        client,
+                        list(ids),
+                        days=settings.aigenis.history_backfill_days,
+                    )
+                    logger.info(
+                        "history_refresh_done",
+                        rows=ok,
+                        err=err,
+                        correlation_id=cid,
+                    )
+        except Exception:
+            logger.exception("scheduled_history_job_failed", correlation_id=cid)
+        else:
+            logger.info("scheduled_history_job_done", correlation_id=cid)
+
+
 async def scheduled_job() -> None:
     if _pipeline_lock.locked():
         logger.info("scheduled_job_skipped_already_running")
@@ -83,7 +183,8 @@ def build_scheduler() -> AsyncIOScheduler:
 
     jobs = [
         ("scrape_all_6h", "0 */6 * * *", scheduled_job, 900),
-        ("scrape_history_daily", "0 3 * * *", scheduled_job, 1800),
+        # History-only refresh — NOT a duplicate full pipeline.
+        ("scrape_history_daily", "0 3 * * *", scheduled_history_job, 1800),
     ]
 
     try:

@@ -42,12 +42,20 @@ def test_api_rate_limits_increase_by_tier():
 # --------------------------------------------------------------------------- #
 # RequireFeature gating decision
 # --------------------------------------------------------------------------- #
+class _FakeRequest:
+    """Minimal stand-in for starlette.Request in direct dependency calls."""
+
+    def __init__(self, headers: dict | None = None):
+        self.headers = headers or {}
+        self.state = type("S", (), {})()
+
+
 def test_require_feature_allows_pro():
     import asyncio
 
     async def run():
         dep = RequireFeature("access_portfolio")
-        await dep(tier="pro")  # no exception
+        await dep(_FakeRequest(), tier="pro")  # no exception
 
     asyncio.run(run())
 
@@ -59,10 +67,25 @@ def test_require_feature_blocks_free():
 
     async def run():
         dep = RequireFeature("access_portfolio")
+        # Anonymous free caller -> 401 login prompt.
         with pytest.raises(HTTPException) as exc:
-            await dep(tier="free")
-        assert exc.value.status_code == 402
-        assert exc.value.headers.get("X-Upgrade-Required") == "true"
+            await dep(_FakeRequest(), tier="free")
+        assert exc.value.status_code == 401
+
+    asyncio.run(run())
+
+
+def test_require_feature_anonymous_gets_401():
+    import asyncio
+
+    from fastapi import HTTPException
+
+    async def run():
+        dep = RequireFeature("access_portfolio")
+        # Anonymous free caller -> 401 login prompt, not the paywall.
+        with pytest.raises(HTTPException) as exc:
+            await dep(_FakeRequest(), tier="free")
+        assert exc.value.status_code == 401
 
     asyncio.run(run())
 
@@ -75,7 +98,7 @@ def test_require_feature_unknown_tier_falls_back_to_free():
     async def run():
         dep = RequireFeature("access_portfolio")
         with pytest.raises(HTTPException):
-            await dep(tier="does-not-exist")
+            await dep(_FakeRequest(), tier="does-not-exist")
 
     asyncio.run(run())
 

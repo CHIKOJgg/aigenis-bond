@@ -61,9 +61,6 @@ function AppInner() {
   const { t, lang } = useI18n();
   const { user, loading, refreshUser } = useAuth();
   const { openPaywall } = usePaywall();
-  if (window.location.pathname === '/widget') {
-    return <WidgetPage />;
-  }
   const [page, setPage] = useState<Page>('dashboard');
   const [mobileMenu, setMobileMenu] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register' | null>(null);
@@ -90,20 +87,20 @@ function AppInner() {
       setToast(t('toast.paymentSuccess'));
       const cleanPath = window.location.pathname + window.location.search.replace(/[?&]success=1/, '');
       window.history.replaceState({}, '', cleanPath || window.location.pathname);
-      // Poll for tier update — webhook may take a few seconds
+      // Poll for tier update — webhook may take a few seconds. Reads the fresh
+      // tier from refreshUser's resolved value, not the closure's stale `user`.
       let attempts = 0;
-      const poll = () => {
-        refreshUser().catch(() => {}).finally(() => {
-          attempts++;
-          if (attempts < 6 && user?.subscription_tier === 'free') {
-            setTimeout(poll, 2000);
-          }
-        });
+      const poll = async () => {
+        const me = await refreshUser().catch(() => null);
+        attempts++;
+        if (attempts < 6 && me?.subscription_tier === 'free') {
+          setTimeout(poll, 2000);
+        }
       };
       poll();
       setTimeout(() => setToast(null), 5000);
     }
-  }, [refreshUser]);
+  }, [refreshUser, t]);
 
   const trialDaysLeft =
     user?.trial_end && new Date(user.trial_end).getTime() > Date.now()
@@ -114,6 +111,12 @@ function AppInner() {
   const isDemoMode =
     new URLSearchParams(window.location.search).get('demo') === '1' ||
     window.location.hostname.startsWith('demo');
+
+  // The public widget is a full-screen standalone page; all hooks above run
+  // unconditionally so React's rules-of-hooks hold on every render.
+  if (window.location.pathname === '/widget') {
+    return <WidgetPage />;
+  }
 
   if (showOnboarding) {
     return <OnboardingFlow
@@ -730,7 +733,7 @@ function Dashboard({ onPickCurrency, onOpenCompany, onSubscribe }: { onPickCurre
       setCompanies(c as CompanySummary[]);
     }).catch(() => setError(t('dash.loadError')))
     .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   if (loading) return <LoadingSkeleton />;
   if (error) return <ErrorBanner message={error} />;

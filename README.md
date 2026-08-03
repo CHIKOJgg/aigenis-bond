@@ -43,7 +43,9 @@ curl http://localhost:8000/health
 - **Webhook HMAC secret** for Telegram and partner webhooks
 - **SSRF protection** with IP pinning + IPv6 support
 - **Refund validation** — full-amount only, cross-channel protection
-- **298 tests**, all green, ruff-clean
+- **Webhook replay guard** — YooKassa re-deliveries never double-extend a subscription
+- **Referral abuse protection** — bonuses only extend active trials, never (re)arm new ones
+- **306 tests**, all green, ruff-clean
 
 ## Project structure
 

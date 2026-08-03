@@ -17,13 +17,13 @@ app.include_router(nlp_router)
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_requires_feature_flag():
-    """Free-tier users should receive 402 on /chat without a valid context."""
+    """Anonymous free users should receive 401 on /chat (login first)."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post(
             "/api/v1/chat",
             json={"message": "What is this bond?", "context": {}},
         )
-    assert resp.status_code == 402
+    assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -37,7 +37,7 @@ async def test_chat_endpoint_returns_reply_and_sources():
                 "/api/v1/chat",
                 json={"message": "What is the yield?", "context": {"internal_id": "test"}},
             )
-        assert resp.status_code in (200, 402)
+        assert resp.status_code in (200, 401)
     finally:
         del os.environ["OPENAI_API_KEY"]
 
@@ -53,7 +53,7 @@ async def test_chat_endpoint_handles_llm_error_gracefully():
                 "/api/v1/chat",
                 json={"message": "What is the yield?", "context": {"internal_id": "nonexistent-bond-id"}},
             )
-        assert resp.status_code in (200, 402)
+        assert resp.status_code in (200, 401)
     finally:
         del os.environ["OPENAI_API_KEY"]
 

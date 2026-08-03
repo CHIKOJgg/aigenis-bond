@@ -15,7 +15,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.logging import get_logger
-from scraper.orm import PartnerKeyORM, PartnerReferralORM, SubscriptionORM, UserORM
+from scraper.orm import (
+    BillingPaymentEventORM,
+    PartnerKeyORM,
+    PartnerReferralORM,
+    SubscriptionORM,
+    UserORM,
+)
 
 # Per-payment lock to prevent TOCTOU race on concurrent webhook deliveries.
 _webhook_locks: dict[str, asyncio.Lock] = {}
@@ -231,6 +237,36 @@ async def handle_webhook(body: bytes) -> str | None:
     return event_type
 
 
+async def _is_payment_processed(
+    session: AsyncSession, payment_id: str
+) -> bool:
+    """True if this payment notification was already acted on.
+
+    Guards against YooKassa webhook re-deliveries: the same payment event can
+    arrive multiple times, including long after a newer payment superseded the
+    subscription's current id (the old per-subscription ``yookassa_payment_id``
+    check missed those and would extend access again for free).
+    """
+    result = await session.execute(
+        select(BillingPaymentEventORM).where(
+            BillingPaymentEventORM.payment_id == payment_id
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def _mark_payment_processed(
+    session: AsyncSession, payment_id: str, event_type: str, user_id: int | None
+) -> None:
+    session.add(
+        BillingPaymentEventORM(
+            payment_id=payment_id,
+            event_type=event_type,
+            user_id=user_id,
+        )
+    )
+
+
 async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     from scraper.db import session_scope
 
@@ -274,6 +310,17 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             return
 
         async with session_scope() as session:
+            # Replay guard: skip notifications already acted on (YooKassa
+            # retries deliveries, and an old payment may be re-delivered after
+            # a newer purchase superseded the subscription's current id).
+            if await _is_payment_processed(session, payment_id):
+                logger.info(
+                    "webhook_payment_already_processed",
+                    payment_id=payment_id,
+                    event="payment.succeeded",
+                )
+                return
+
             # Find or create subscription record
             sub_result = await session.execute(
                 select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
@@ -318,6 +365,7 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
                 user.subscription_expires_at = sub.current_period_end
                 user.payment_channel = "yookassa"
 
+            await _mark_payment_processed(session, payment_id, "payment.succeeded", user_id)
             await session.commit()
             logger.info("subscription_activated", user_id=user_id, plan=plan, payment_id=payment_id)
 
@@ -401,6 +449,14 @@ async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
         return
 
     async with session_scope() as session:
+        # Replay guard: skip notifications already acted on.
+        if await _is_payment_processed(session, payment_id):
+            logger.info(
+                "webhook_payment_already_processed",
+                payment_id=payment_id,
+                event="payment.canceled",
+            )
+            return
         sub_result = await session.execute(
             select(SubscriptionORM).where(SubscriptionORM.user_id == user_id)
         )
@@ -421,6 +477,7 @@ async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
             user.subscription_expires_at = None
             user.payment_channel = None
 
+        await _mark_payment_processed(session, payment_id, "payment.canceled", user_id)
         await session.commit()
         logger.info("payment_canceled", user_id=user_id, payment_id=payment_id)
 
@@ -432,6 +489,11 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
     if not payment_id:
         return
 
+    # Replay key: the refund object's own id (refund ids are unique and never
+    # collide with payment ids; a redelivered refund.succeeded must be skipped,
+    # while a *different* refund for the same payment is a new event).
+    refund_id = str(obj.get("id") or "").strip()
+
     # Only a FULL refund revokes access; partial refunds (e.g. a discount
     # adjustment) must not cut an active subscription.
     try:
@@ -440,6 +502,14 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
         refund_amount = 0.0
 
     async with session_scope() as session:
+        # Replay guard: skip refund notifications already acted on.
+        if refund_id and await _is_payment_processed(session, refund_id):
+            logger.info(
+                "webhook_payment_already_processed",
+                payment_id=refund_id,
+                event="refund.succeeded",
+            )
+            return
         sub_result = await session.execute(
             select(SubscriptionORM).where(SubscriptionORM.yookassa_payment_id == payment_id)
         )
@@ -464,6 +534,8 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
                 user.subscription_tier = "free"
                 user.subscription_expires_at = None
                 user.payment_channel = None
+            if refund_id:
+                await _mark_payment_processed(session, refund_id, "refund.succeeded", sub.user_id)
             await session.commit()
             logger.info("subscription_refunded", user_id=sub.user_id, payment_id=payment_id)
 
