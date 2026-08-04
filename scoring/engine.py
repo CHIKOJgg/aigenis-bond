@@ -1,22 +1,22 @@
-"""Reward/Risk Score v3 — recalibrated multi-factor scoring engine.
+"""Reward/Risk Score v4 — professional multi-factor scoring engine.
 
-    score = yield_component
-          + currency_component
-          + duration_component
-          + liquidity_component
-          + metal_component
-          + credit_risk_component
-          + inflation_component
-          + coupon_component
-          + volatility_component
+    score = yield + currency + duration + liquidity + metal + credit
+          + inflation + coupon + volatility + hist_volatility + peer_relative
 
-Калибровка выверена на 60+ реалистичных профилях облигаций (аудит 2026-08).
-Тиры: S≥85, A≥75, B≥60, C≥45, D<45.
+    Также вычисляет:
+      reward_subtotal  — сумма всех положительных вкладов
+      risk_subtotal    — сумма модулей отрицательных вкладов
+      efficiency_ratio — reward / (1 + risk), Sharpe-подобный коэффициент
+      risk_adjusted_score — efficiency_ratio × 100 (отдельный score)
+
+    Калибровка выверена на 60+ реалистичных профилях (аудит 2026-08).
+    Тиры: S≥85, A≥75, B≥60, C≥45, D<45.
 """
 
 from __future__ import annotations
 
 import math
+import statistics
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -49,7 +49,6 @@ def _duration_years(maturity: date | None, ref: date | None = None) -> float | N
 
 
 def _duration_component(years: float | None) -> float:
-    """Сглаженная дюрация: пологая сигмоида. Штраф только за >8 лет."""
     if years is None:
         return 0.0
     if years <= 0.5:
@@ -64,7 +63,6 @@ def _duration_component(years: float | None) -> float:
 
 
 def _yield_component(ytm_pct: float | None) -> float:
-    """Доходность: 1 балл за каждый процент YTM, cap 40, плавный рост выше."""
     if ytm_pct is None or ytm_pct <= 0:
         return 0.0
     if ytm_pct <= 40:
@@ -73,7 +71,6 @@ def _yield_component(ytm_pct: float | None) -> float:
 
 
 def _coupon_component(coupon_pct: float | None, ytm_pct: float | None) -> float:
-    """Оценка стабильности купонного дохода."""
     if coupon_pct is None:
         return 0.0
     cp = float(coupon_pct)
@@ -83,6 +80,62 @@ def _coupon_component(coupon_pct: float | None, ytm_pct: float | None) -> float:
     if ytm_pct is not None and ytm_pct > 0 and cp > ytm_pct * 0.8:
         score += 1.0
     return round(score, 2)
+
+
+def _historical_volatility_component(ytm_history: list[float] | None) -> float:
+    """Стабильность YTM: бонус за низкую волатильность, штраф за высокую."""
+    if not ytm_history or len(ytm_history) < 3:
+        return 0.0
+    clean = [y for y in ytm_history if y > 0]
+    if len(clean) < 3:
+        return 0.0
+    try:
+        stdev = float(statistics.stdev(clean))
+    except statistics.StatisticsError:
+        return 0.0
+    if stdev < 0.5:
+        return 5.0
+    if stdev < 1.0:
+        return 3.0
+    if stdev < 2.0:
+        return 1.0
+    if stdev < 5.0:
+        return 0.0
+    if stdev < 10.0:
+        return -2.0
+    return -4.0
+
+
+def _peer_relative_component(
+    ytm_pct: float | None, currency: str, peer_ytms: list[float] | None
+) -> float:
+    """Сравнение с аналогами в той же валюте: z-score выше среднего = бонус."""
+    if ytm_pct is None or ytm_pct <= 0:
+        return 0.0
+    if not peer_ytms or len(peer_ytms) < 5:
+        return 0.0
+    clean = [y for y in peer_ytms if y > 0]
+    if len(clean) < 5:
+        return 0.0
+    try:
+        avg = float(statistics.mean(clean))
+        stdev = float(statistics.stdev(clean))
+    except statistics.StatisticsError:
+        return 0.0
+    if stdev < 0.1:
+        return 0.0
+    z = (ytm_pct - avg) / stdev
+    if z >= 2.0:
+        return 5.0
+    if z >= 1.0:
+        return 3.0
+    if z >= 0.0:
+        return 1.0
+    if z >= -1.0:
+        return -1.0
+    if z >= -2.0:
+        return -3.0
+    return -5.0
 
 
 def _currency_component(currency: str) -> float:
@@ -101,7 +154,6 @@ def _liquidity_component(
     price: float | None = None,
     nominal: float | None = None,
 ) -> float:
-    """Расширенная оценка ликвидности."""
     score = 0.0
     if has_price:
         score += 5.0
@@ -130,7 +182,6 @@ _CREDIT_TIERS: dict[str, float] = {
     "corp": -3.0,
     "unknown": -2.0,
 }
-
 
 _GOV_KEYWORDS = {
     "министерство", "республика", "государ", "treasury", "government",
@@ -169,7 +220,6 @@ def _classify_issuer(issuer: str | None) -> str:
 
 
 def _credit_risk_component(issuer: str | None, status: str) -> float:
-    """Расширенная классификация эмитентов с трехуровневой детализацией."""
     if status == "delisted":
         return -28.0
     if status == "matured":
@@ -181,7 +231,6 @@ def _credit_risk_component(issuer: str | None, status: str) -> float:
 
 
 def _inflation_component(currency: str, ytm_pct: float | None) -> float:
-    """Градуированная инфляционная корректировка."""
     cur = currency.upper()
     if cur == "USD":
         if ytm_pct is not None and ytm_pct >= 10:
@@ -224,7 +273,6 @@ def _volatility_component(
     status: str,
     coupon_pct: float | None,
 ) -> float:
-    """Оценка рискованности: штраф за экстремальные параметры."""
     score = 0.0
     if ytm_pct is not None:
         if ytm_pct > 60:
@@ -244,8 +292,8 @@ def _volatility_component(
             score -= 2.0
     return score
 
+
 def _inflation_component_market(currency: str, ytm_pct: float | None, is_moex: bool) -> float:
-    """Инфляционная корректировка с учётом рынка."""
     cur = currency.upper()
     if is_moex:
         if cur == "RUB":
@@ -274,6 +322,38 @@ def _inflation_component_market(currency: str, ytm_pct: float | None, is_moex: b
     return _inflation_component(currency, ytm_pct)
 
 
+def _compute_efficiency_ratio(breakdown: ScoreBreakdown) -> float:
+    """Sharpe-подобный коэффициент: reward / (1 + risk)."""
+    reward = sum(max(v, 0.0) for v in [
+        breakdown.yield_component,
+        breakdown.currency_component,
+        breakdown.duration_component,
+        breakdown.liquidity_component,
+        breakdown.metal_component,
+        breakdown.credit_risk_component,
+        breakdown.inflation_component,
+        breakdown.coupon_component,
+        breakdown.historical_volatility_component,
+        breakdown.peer_relative_component,
+    ])
+    risk = sum(abs(min(v, 0.0)) for v in [
+        breakdown.yield_component,
+        breakdown.currency_component,
+        breakdown.duration_component,
+        breakdown.liquidity_component,
+        breakdown.metal_component,
+        breakdown.credit_risk_component,
+        breakdown.inflation_component,
+        breakdown.coupon_component,
+        breakdown.volatility_component,
+        breakdown.historical_volatility_component,
+        breakdown.peer_relative_component,
+    ])
+    if risk < 0.5:
+        return round(reward, 2)
+    return round(reward / (1.0 + risk), 2)
+
+
 def score_bond(
     *,
     internal_id: str,
@@ -287,11 +367,15 @@ def score_bond(
     coupon_rate: Decimal | float | int | None = None,
     ref_date: date | None = None,
     market: str = "bcse",
+    ytm_history: list[float] | None = None,
+    peer_ytms: list[float] | None = None,
 ) -> BondScore:
-    """Рассчитать Reward/Risk Score v3 для одной облигации.
+    """Рассчитать Reward/Risk Score v4 для одной облигации.
 
-    market='bcse' — белорусский рынок (BYN-центричная калибровка)
-    market='moex' — российский рынок (RUB/ОФЗ-центричная калибровка)
+    market='bcse' — белорусский рынок
+    market='moex' — российский рынок
+    ytm_history — история YTM для расчёта волатильности
+    peer_ytms — YTM аналогов в той же валюте для z-score
     """
     ytm_pct = float(yield_to_maturity) if yield_to_maturity is not None else None
     coupon_pct = float(coupon_rate) if coupon_rate is not None else None
@@ -300,7 +384,6 @@ def score_bond(
     duration = _duration_years(maturity_date, ref_date)
     has_price = price is not None
     days_to_maturity = duration * 365.25 if duration is not None else None
-
     is_moex = (market == "moex")
 
     breakdown = ScoreBreakdown(
@@ -308,35 +391,54 @@ def score_bond(
         currency_component=_currency_component(currency),
         duration_component=_duration_component(duration),
         liquidity_component=_liquidity_component(
-            has_price=has_price,
-            status=status,
-            days_to_maturity=days_to_maturity,
-            price=price_f,
-            nominal=nominal_f,
+            has_price=has_price, status=status, days_to_maturity=days_to_maturity,
+            price=price_f, nominal=nominal_f,
         ),
         metal_component=_metal_component(currency),
         credit_risk_component=_credit_risk_component(issuer, status),
         inflation_component=_inflation_component_market(currency, ytm_pct, is_moex),
         coupon_component=_coupon_component(coupon_pct, ytm_pct),
         volatility_component=_volatility_component(
-            ytm_pct=ytm_pct,
-            price=price_f,
-            nominal=nominal_f,
-            status=status,
-            coupon_pct=coupon_pct,
+            ytm_pct=ytm_pct, price=price_f, nominal=nominal_f,
+            status=status, coupon_pct=coupon_pct,
         ),
+        historical_volatility_component=_historical_volatility_component(ytm_history),
+        peer_relative_component=_peer_relative_component(ytm_pct, currency, peer_ytms),
     )
+
+    reward_sum = sum(max(v, 0.0) for v in [
+        breakdown.yield_component, breakdown.currency_component,
+        breakdown.duration_component, breakdown.liquidity_component,
+        breakdown.metal_component, breakdown.credit_risk_component,
+        breakdown.inflation_component, breakdown.coupon_component,
+        breakdown.historical_volatility_component, breakdown.peer_relative_component,
+    ])
+    risk_sum = sum(abs(min(v, 0.0)) for v in [
+        breakdown.yield_component, breakdown.currency_component,
+        breakdown.duration_component, breakdown.liquidity_component,
+        breakdown.metal_component, breakdown.credit_risk_component,
+        breakdown.inflation_component, breakdown.coupon_component,
+        breakdown.volatility_component, breakdown.historical_volatility_component,
+        breakdown.peer_relative_component,
+    ])
+
+    breakdown.reward_subtotal = round(reward_sum, 2)
+    breakdown.risk_subtotal = round(risk_sum, 2)
+    breakdown.efficiency_ratio = _compute_efficiency_ratio(breakdown)
+
+    raw_score = round(breakdown.total(), 2)
+    risk_adj = round(breakdown.efficiency_ratio * 8.0, 2)
 
     return BondScore(
         internal_id=internal_id,
-        score=round(breakdown.total(), 2),
+        score=raw_score,
+        risk_adjusted_score=risk_adj,
         breakdown=breakdown,
         computed_at=datetime.now(UTC),
     )
 
 
 def score_bonds(bonds: list[dict[str, Any]], *, ref_date: date | None = None) -> list[BondScore]:
-    """Балтийский список облигаций (dict-формат)."""
     return [
         score_bond(
             internal_id=str(b["internal_id"]),

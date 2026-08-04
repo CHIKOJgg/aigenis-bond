@@ -162,6 +162,36 @@ def _metal_detail() -> str:
     return "Дополнительная премия за привязку к драгметаллу."
 
 
+def _historical_volatility_detail(points: float) -> str:
+    if points > 0:
+        return "YTM стабилен в истории — низкий риск колебаний доходности."
+    if points < 0:
+        return "Высокая историческая волатильность YTM — нестабильный инструмент."
+    return "Исторических данных недостаточно для оценки."
+
+
+def _peer_relative_detail(points: float, currency: str) -> str:
+    if points >= 3:
+        return f"Доходность значительно выше аналогов в {currency}."
+    if points > 0:
+        return f"Доходность выше среднего среди аналогов в {currency}."
+    if points < -3:
+        return f"Доходность значительно ниже аналогов в {currency}."
+    if points < 0:
+        return f"Доходность ниже среднего среди аналогов в {currency}."
+    return "Нет данных по аналогам для сравнения."
+
+
+def _efficiency_detail(ratio: float) -> str:
+    if ratio >= 10:
+        return "Отличное соотношение доходность/риск."
+    if ratio >= 5:
+        return "Хорошее соотношение доходность/риск."
+    if ratio >= 2:
+        return "Приемлемое соотношение доходность/риск."
+    return "Низкая эффективность — риски сопоставимы с доходностью."
+
+
 def explain_score(
     score: BondScore,
     *,
@@ -186,6 +216,8 @@ def explain_score(
     add("inflation", "Инфляция", b.inflation_component, _inflation_detail(b.inflation_component))
     add("coupon", "Купонный доход", b.coupon_component, _coupon_detail(b.coupon_component, coupon_pct))
     add("volatility", "Волатильность", b.volatility_component, _volatility_detail(b.volatility_component), skip_zero=True)
+    add("hist_vol", "Истор. волатильность", b.historical_volatility_component, _historical_volatility_detail(b.historical_volatility_component), skip_zero=True)
+    add("peer", "vs Аналоги", b.peer_relative_component, _peer_relative_detail(b.peer_relative_component, currency), skip_zero=True)
     add("metal", "Драгметалл", b.metal_component, _metal_detail(), skip_zero=True)
 
     factors.sort(key=lambda f: abs(f.points), reverse=True)

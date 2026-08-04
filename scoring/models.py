@@ -24,7 +24,7 @@ ScenarioName = Literal["Bull USD", "Neutral", "Bull BYN", "Stress"]
 
 
 class ScoreBreakdown(BaseModel):
-    """Раскладка Reward/Risk Score."""
+    """Раскладка Reward/Risk Score v4."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -37,18 +37,32 @@ class ScoreBreakdown(BaseModel):
     inflation_component: float = 0.0
     coupon_component: float = 0.0
     volatility_component: float = 0.0
+    historical_volatility_component: float = 0.0
+    peer_relative_component: float = 0.0
+    reward_subtotal: float = 0.0
+    risk_subtotal: float = 0.0
+    efficiency_ratio: float = 0.0
 
     def total(self) -> float:
-        return float(sum(self.model_dump().values()))
+        """Сумма 11 компонентов (без reward/risk/efficiency мета-полей)."""
+        return float(sum(
+            getattr(self, f) for f in (
+                "yield_component", "currency_component", "duration_component",
+                "liquidity_component", "metal_component", "credit_risk_component",
+                "inflation_component", "coupon_component", "volatility_component",
+                "historical_volatility_component", "peer_relative_component",
+            )
+        ))
 
 
 class BondScore(BaseModel):
-    """Reward/Risk Score для конкретной облигации."""
+    """Reward/Risk Score v4 для конкретной облигации."""
 
     model_config = ConfigDict(extra="ignore")
 
     internal_id: str
     score: float
+    risk_adjusted_score: float = 0.0
     breakdown: ScoreBreakdown
     computed_at: datetime
 
