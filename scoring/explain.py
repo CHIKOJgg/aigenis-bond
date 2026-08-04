@@ -36,7 +36,7 @@ class ScoreFactor:
 class ExplainedScore:
     """Full explanation payload."""
 
-    __slots__ = ("factors", "score", "strengths", "summary", "tier", "verdict", "weaknesses")
+    __slots__ = ("disclaimer", "factors", "score", "strengths", "summary", "tier", "verdict", "weaknesses")
 
     def __init__(
         self,
@@ -49,6 +49,8 @@ class ExplainedScore:
         strengths: list[str],
         weaknesses: list[str],
     ) -> None:
+        from scoring.disclaimer import DISCLAIMER_FULL
+
         self.score = round(score, 2)
         self.tier = tier
         self.verdict = verdict
@@ -56,6 +58,7 @@ class ExplainedScore:
         self.factors = factors
         self.strengths = strengths
         self.weaknesses = weaknesses
+        self.disclaimer = DISCLAIMER_FULL
 
     def as_dict(self) -> dict:
         from scoring.disclaimer import DISCLAIMER_FULL
