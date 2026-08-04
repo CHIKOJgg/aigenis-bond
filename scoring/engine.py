@@ -323,35 +323,26 @@ def _inflation_component_market(currency: str, ytm_pct: float | None, is_moex: b
 
 
 def _compute_efficiency_ratio(breakdown: ScoreBreakdown) -> float:
-    """Sharpe-подобный коэффициент: reward / (1 + risk)."""
+    """Sharpe-подобный коэффициент. reward/(reward+risk+1)*15 → диапазон 0-15."""
     reward = sum(max(v, 0.0) for v in [
-        breakdown.yield_component,
-        breakdown.currency_component,
-        breakdown.duration_component,
-        breakdown.liquidity_component,
-        breakdown.metal_component,
-        breakdown.credit_risk_component,
-        breakdown.inflation_component,
-        breakdown.coupon_component,
-        breakdown.historical_volatility_component,
-        breakdown.peer_relative_component,
+        breakdown.yield_component, breakdown.currency_component,
+        breakdown.duration_component, breakdown.liquidity_component,
+        breakdown.metal_component, breakdown.credit_risk_component,
+        breakdown.inflation_component, breakdown.coupon_component,
+        breakdown.historical_volatility_component, breakdown.peer_relative_component,
     ])
     risk = sum(abs(min(v, 0.0)) for v in [
-        breakdown.yield_component,
-        breakdown.currency_component,
-        breakdown.duration_component,
-        breakdown.liquidity_component,
-        breakdown.metal_component,
-        breakdown.credit_risk_component,
-        breakdown.inflation_component,
-        breakdown.coupon_component,
-        breakdown.volatility_component,
-        breakdown.historical_volatility_component,
+        breakdown.yield_component, breakdown.currency_component,
+        breakdown.duration_component, breakdown.liquidity_component,
+        breakdown.metal_component, breakdown.credit_risk_component,
+        breakdown.inflation_component, breakdown.coupon_component,
+        breakdown.volatility_component, breakdown.historical_volatility_component,
         breakdown.peer_relative_component,
     ])
-    if risk < 0.5:
-        return round(reward, 2)
-    return round(reward / (1.0 + risk), 2)
+    if reward < 0.5:
+        return 0.0
+    ratio = reward / (reward + risk + 1.0)
+    return round(ratio * 15.0, 2)
 
 
 def score_bond(
@@ -427,7 +418,7 @@ def score_bond(
     breakdown.efficiency_ratio = _compute_efficiency_ratio(breakdown)
 
     raw_score = round(breakdown.total(), 2)
-    risk_adj = round(breakdown.efficiency_ratio * 8.0, 2)
+    risk_adj = round(breakdown.efficiency_ratio * 6.0, 2)
 
     return BondScore(
         internal_id=internal_id,
