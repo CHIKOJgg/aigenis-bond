@@ -370,18 +370,18 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                         )
                     )
                 else:
-                    existing.name = b.name
-                    existing.issuer = b.issuer
-                    existing.currency = b.currency
-                    existing.nominal = b.nominal
-                    existing.coupon_rate = b.coupon_rate
-                    existing.coupon_frequency = b.coupon_frequency
-                    existing.maturity_date = b.maturity_date
-                    existing.price = b.price
-                    existing.yield_to_maturity = b.yield_to_maturity
-                    existing.isin = b.isin
-                    existing.status = b.status
-                    existing.is_government = b.is_government
+                    existing.name = b.name or existing.name
+                    existing.issuer = b.issuer or existing.issuer
+                    existing.currency = b.currency or existing.currency
+                    existing.nominal = b.nominal or existing.nominal
+                    existing.coupon_rate = b.coupon_rate if b.coupon_rate is not None else existing.coupon_rate
+                    existing.coupon_frequency = b.coupon_frequency or existing.coupon_frequency
+                    existing.maturity_date = b.maturity_date or existing.maturity_date
+                    existing.price = b.price if b.price is not None else existing.price
+                    existing.yield_to_maturity = b.yield_to_maturity if b.yield_to_maturity is not None else existing.yield_to_maturity
+                    existing.isin = b.isin or existing.isin
+                    existing.status = b.status or existing.status
+                    existing.is_government = b.is_government if b.is_government else existing.is_government
                     existing.fetched_at = datetime.now(UTC)
                 saved += 1
             await session.commit()

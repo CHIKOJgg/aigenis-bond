@@ -204,7 +204,7 @@ def duration_report(
 
     nominal = bond.nominal or Decimal("1000")
     ytm = float(ytm_override if ytm_override is not None else (bond.yield_to_maturity or 0.0))
-    coupon_pct = float(bond.coupon_rate or 0.0)
+    coupon_pct = float(bond.coupon_rate) if bond.coupon_rate is not None else ytm
     freq = int(bond.coupon_frequency or 2)
     issue = bond.start_date
 

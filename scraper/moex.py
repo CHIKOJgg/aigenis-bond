@@ -67,6 +67,19 @@ def _freq_from_coupon_period(value: Any) -> CouponFrequency | None:
     return None
 
 
+def _moex_status(securities: dict, marketdata: dict | None) -> str:
+    """Определить статус облигации по данным MOEX ISS."""
+    board = str(securities.get("BOARDID", "")).upper()
+    if board in ("TQCB", "TQOB"):
+        if marketdata:
+            traded = str(marketdata.get("LCLOSE", "")).strip()
+            last = str(marketdata.get("LAST", "")).strip()
+            if traded or last:
+                return "active"
+        return "active"
+    return "unknown"
+
+
 def _to_dec(value: Any) -> Decimal | None:
     if value is None or value == "":
         return None
@@ -199,7 +212,7 @@ class MoexClient:
                     yield_to_maturity=_to_dec(md.get("YIELD")),
                     isin=sec.get("ISIN"),
                     market="moex",
-                    status="active",
+                    status=_moex_status(sec, md),
                     is_government=bool(
                         sec.get("ISIN")
                         and str(sec.get("ISIN")).startswith("RU")
@@ -258,7 +271,7 @@ class MoexClient:
                 yield_to_maturity=_to_dec(md_row.get("YIELD")),
                 isin=sec.get("ISIN"),
                 market="moex",
-                status="active",
+                status=_moex_status(sec, md_row),
                 fetched_at=datetime.now(UTC),
             )
 
