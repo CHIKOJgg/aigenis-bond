@@ -300,6 +300,7 @@ class BondResponse(BaseModel):
     internal_id: str
     name: str
     currency: str
+    market: str = "bcse"
     price: float | None = None
     yield_to_maturity: float | None = None
     coupon_rate: float | None = None
@@ -412,6 +413,7 @@ async def metrics() -> Response:
 @app.get("/api/v1/bonds", response_model=list[BondResponse])
 async def list_bonds(
     currency: str | None = None,
+    market: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[BondResponse]:
@@ -423,6 +425,8 @@ async def list_bonds(
         stmt = select(BondORM)
         if currency:
             stmt = stmt.where(BondORM.currency == currency.upper())
+        if market and market in ("bcse", "moex"):
+            stmt = stmt.where(BondORM.market == market)
         stmt = stmt.limit(limit).offset(offset)
         result = await session.execute(stmt)
         bonds = list(result.scalars().all())
@@ -480,13 +484,18 @@ async def list_scores(
     limit: int = 20,
     offset: int = 0,
     min_score: float | None = None,
+    market: str | None = None,
 ) -> list[BondScoreResponse]:
     if limit < 1 or limit > 1000:
         raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
     async with session_scope() as session:
-        stmt = select(BondScoreORM).order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
+        stmt = select(BondScoreORM)
+        if market and market in ("bcse", "moex"):
+            stmt = stmt.join(BondORM, BondScoreORM.internal_id == BondORM.internal_id, isouter=True)
+            stmt = stmt.where(BondORM.market == market)
         if min_score is not None:
             stmt = stmt.where(BondScoreORM.score >= min_score)
+        stmt = stmt.order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
         result = await session.execute(stmt)
         scores = list(result.scalars().all())
     return [
@@ -521,6 +530,7 @@ def _bond_to_response(b: BondORM) -> BondResponse:
         internal_id=b.internal_id,
         name=b.name,
         currency=b.currency,
+        market=b.market,
         price=float(b.price) if b.price is not None else None,
         yield_to_maturity=float(b.yield_to_maturity) if b.yield_to_maturity is not None else None,
         coupon_rate=float(b.coupon_rate) if b.coupon_rate is not None else None,

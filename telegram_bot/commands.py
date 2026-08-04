@@ -364,12 +364,14 @@ async def cb_paginate(callback_query) -> None:
         "byn": cmd_byn,
         "carry": cmd_carry,
         "rv": cmd_rv,
+        "mkt_bcse": cmd_bcse,
+        "mkt_moex": cmd_moex,
     }
     handler = dispatch.get(prefix)
     if handler:
         if prefix in PRO_COMMANDS and not await gate_pro_callback(callback_query):
             return
-        if prefix in ("top", "carry", "rv", "usd", "byn"):
+        if prefix in ("top", "carry", "rv", "usd", "byn", "mkt_bcse", "mkt_moex"):
             await handler(callback_query.message, page=page)
         else:
             await handler(callback_query.message)
@@ -509,6 +511,57 @@ async def cmd_metals(message: Message) -> None:
         )
         parts.append(f"{title}: <code>{best.internal_id}</code> ({best.name}) Score {s.score:.0f}")
     await message.answer("\n".join(parts), parse_mode=ParseMode.HTML, reply_markup=_home_kb())
+
+
+@router.message(Command("bcse"))
+async def cmd_bcse(message: Message, page: int = 0) -> None:
+    await _market_view(message, "bcse", "🇧🇾 BCSE · Белорусский рынок", page=page)
+
+
+@router.message(Command("moex"))
+async def cmd_moex(message: Message, page: int = 0) -> None:
+    await _market_view(message, "moex", "🇷🇺 MOEX · Российский рынок", page=page)
+
+
+async def _market_view(message: Message, market: str, title: str, page: int = 0) -> None:
+    from telegram_bot.helpers import fetch_bonds_by_market
+
+    bonds = await fetch_bonds_by_market(market)
+    if not bonds:
+        await message.answer(f"Пока нет облигаций на рынке {market.upper()}. Данные обновляются — попробуйте позже.")
+        return
+    rows = []
+    for b in bonds:
+        sc = score_bond(
+            internal_id=b.internal_id,
+            yield_to_maturity=b.yield_to_maturity,
+            currency=b.currency,
+            maturity_date=b.maturity_date,
+            status=b.status,
+            issuer=b.issuer,
+            price=b.price,
+            nominal=b.nominal,
+            coupon_rate=b.coupon_rate,
+            market=market,
+        )
+        ytm = f"{float(b.yield_to_maturity):.2f}%" if b.yield_to_maturity else "—"
+        rows.append((b.internal_id, float(sc.score), ytm, b.name, sc.tier))
+
+    rows.sort(key=lambda r: r[1], reverse=True)
+    total_pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page_slice = rows[page * PAGE_SIZE : (page + 1) * PAGE_SIZE]
+
+    tier_emoji = {"S": "💎", "A": "🟢", "B": "🔵", "C": "🟡", "D": "🔴"}
+    lines = [f"<b>{title}</b> ({len(bonds)} выпусков, стр. {page + 1}/{total_pages})\n"]
+    for iid, sc, ytm, name, tier in page_slice:
+        te = tier_emoji.get(tier, "⚪")
+        lines.append(f"{te} <code>{iid}</code> {name} — Score {sc:.0f}, YTM {ytm}")
+
+    await message.answer(
+        "\n".join(lines),
+        parse_mode=ParseMode.HTML,
+        reply_markup=paginate_kb(f"mkt_{market}", page, total_pages),
+    )
 
 
 @router.message(Command("new"))

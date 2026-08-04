@@ -68,6 +68,8 @@ def recommend_bonds(
             status=str(bond.get("status", "unknown")),
             issuer=bond.get("issuer"),
             price=bond.get("price"),
+            nominal=bond.get("nominal"),
+            coupon_rate=bond.get("coupon_rate"),
         )
 
         if (
@@ -191,6 +193,8 @@ def recommend_for_issuer(
             status=str(bond.get("status", "unknown")),
             issuer=bond.get("issuer"),
             price=bond.get("price"),
+            nominal=bond.get("nominal"),
+            coupon_rate=bond.get("coupon_rate"),
         )
         risks: list[str] = []
         if pred.predicted_return_pct is not None and pred.predicted_return_pct < 0:

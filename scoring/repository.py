@@ -45,10 +45,13 @@ async def upsert_scores_batch(session: AsyncSession, scores: list[BondScore]) ->
     return len(scores)
 
 
-async def top_scores(session: AsyncSession, limit: int = 20, offset: int = 0) -> list[BondScoreORM]:
-    result = await session.execute(
-        select(BondScoreORM).order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
-    )
+async def top_scores(session: AsyncSession, limit: int = 20, offset: int = 0, market: str | None = None) -> list[BondScoreORM]:
+    stmt = select(BondScoreORM)
+    if market:
+        stmt = stmt.join(BondORM, BondScoreORM.internal_id == BondORM.internal_id, isouter=True)
+        stmt = stmt.where(BondORM.market == market)
+    stmt = stmt.order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
+    result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
@@ -72,6 +75,9 @@ async def recompute_all(session: AsyncSession) -> int:
                 status=b.status,
                 issuer=b.issuer,
                 price=b.price,
+                nominal=b.nominal,
+                coupon_rate=b.coupon_rate,
+                market=getattr(b, "market", "bcse"),
             )
         )
     await upsert_scores_batch(session, scores)

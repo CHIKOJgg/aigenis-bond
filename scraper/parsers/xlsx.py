@@ -68,7 +68,7 @@ def _to_decimal(v: Any) -> Decimal | None:
         return Decimal(str(v))
     if isinstance(v, str):
         try:
-            return Decimal(v.strip().replace(",", "."))
+            return Decimal(v.strip().replace(",", ".").replace(" ", "").replace("%", ""))
         except Exception:
             return None
     return None

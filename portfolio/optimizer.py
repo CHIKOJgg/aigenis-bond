@@ -35,6 +35,8 @@ def _bond_to_score(bond: Bond) -> BondScore:
         status=str(bond.status),
         issuer=bond.issuer,
         price=bond.price,
+        nominal=bond.nominal,
+        coupon_rate=bond.coupon_rate,
     )
 
 

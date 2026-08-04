@@ -198,6 +198,7 @@ class MoexClient:
                     price=_to_dec(md.get("LAST")),
                     yield_to_maturity=_to_dec(md.get("YIELD")),
                     isin=sec.get("ISIN"),
+                    market="moex",
                     status="active",
                     is_government=bool(
                         sec.get("ISIN")
@@ -256,6 +257,7 @@ class MoexClient:
                 price=_to_dec(md_row.get("LAST")),
                 yield_to_maturity=_to_dec(md_row.get("YIELD")),
                 isin=sec.get("ISIN"),
+                market="moex",
                 status="active",
                 fetched_at=datetime.now(UTC),
             )

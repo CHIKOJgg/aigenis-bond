@@ -31,6 +31,13 @@ async def fetch_bonds_by_currency(currency: str) -> list:
         return list(await repositories.bonds.get_by_currency(session, currency))
 
 
+async def fetch_bonds_by_market(market: str, limit: int = 500) -> list:
+    async with session_scope() as session:
+        stmt = select(BondORM).where(BondORM.market == market).limit(limit)
+        res = await session.execute(stmt)
+        return list(res.scalars().all())
+
+
 async def fetch_all_bonds(limit: int = 500):
     async with session_scope() as session:
         res = await session.execute(select(BondORM).limit(limit))

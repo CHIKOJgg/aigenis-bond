@@ -66,6 +66,9 @@ class BondORM(Base):
     exchange_rate_on_start: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
     term_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    market: Mapped[str] = mapped_column(
+        String(4), nullable=False, server_default="bcse", index=True
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="unknown")
     is_government: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=func.false()

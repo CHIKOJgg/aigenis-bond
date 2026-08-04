@@ -14,6 +14,7 @@ BondStatus = Literal["active", "delisted", "matured", "offer", "unknown"]
 IncomeMethod = Literal["coupon", "discount", "indexed", "mixed", "unknown"]
 StockStatus = Literal["active", "delisted", "suspended", "unknown"]
 StockBoard = Literal["TQBR", "TQOD", "TQDE", "TQIY"]
+Market = Literal["bcse", "moex"]
 
 _STOCK_CURRENCY_ALIASES = {
     "SUR": "RUB",
@@ -66,6 +67,7 @@ class Bond(BaseModel):
     end_date: date | None = None
 
     isin: str | None = None
+    market: Market = "bcse"
     status: BondStatus = "unknown"
     is_government: bool = False
 

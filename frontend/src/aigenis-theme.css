@@ -1,0 +1,260 @@
+/** Aigenis Web Terminal Theme — точное соответствие дизайн-системе web.aigenis.by
+ *
+ * Извлечено из CSS-переменных веб-терминала Aigenis (Angular, Material Design 3).
+ *
+ * Бренд:          #004b65 (глубокий сине-зелёный / teal)
+ * Фон:            #ffffff / #f5f9fb (светлый)
+ * Текст:          #01121a (почти чёрный) / #516c79 (вторичный)
+ * Шрифт:          Montserrat Variable (заголовки), Onest Variable (текст)
+ * Скругления:     9999px кнопки, 8-20px карточки
+ * Тени:           rgba(0, 29, 37, .xx) — мягкие
+ */
+
+:root {
+  --aigenis-brand-50: #eef3f5;
+  --aigenis-brand-100: #d9e4e8;
+  --aigenis-brand-200: #b2c9d1;
+  --aigenis-brand-300: #759eac;
+  --aigenis-brand-400: #387387;
+  --aigenis-brand-500: #004b65;
+  --aigenis-brand-600: #004055;
+  --aigenis-brand-700: #003545;
+  --aigenis-brand-800: #002935;
+  --aigenis-brand-900: #001d25;
+  --aigenis-brand-950: #001115;
+
+  --aigenis-tx-primary: #01121a;
+  --aigenis-tx-secondary: #516c79;
+  --aigenis-tx-tertiary: #717680;
+  --aigenis-tx-placeholder: #a4a7ae;
+  --aigenis-tx-disabled: #a4a7ae;
+
+  --aigenis-bg-primary: #ffffff;
+  --aigenis-bg-secondary: #fafafa;
+  --aigenis-bg-tertiary: #f5f5f5;
+  --aigenis-bg-brand-section: #001d25;
+  --aigenis-bg-active: #eef3f5;
+  --aigenis-bg-disabled: #f5f5f5;
+
+  --aigenis-border-primary: #b2c9d1;
+  --aigenis-border-secondary: #d6e2e6;
+  --aigenis-border-tertiary: #eef3f5;
+  --aigenis-border-brand: #004b65;
+  --aigenis-border-focus: #004b65;
+
+  --aigenis-success-600: #06b663;
+  --aigenis-success-500: #15b79e;
+  --aigenis-success-50: #ebfff2;
+  --aigenis-error-600: #e03400;
+  --aigenis-error-500: #ff3d00;
+  --aigenis-error-50: #fff4ef;
+  --aigenis-warning-600: #dc6803;
+  --aigenis-warning-500: #f79009;
+  --aigenis-warning-50: #fffaeb;
+  --aigenis-info-600: #35aaac;
+  --aigenis-info-500: #73d1d2;
+
+  --aigenis-font-headers: "Montserrat Variable", "Montserrat", sans-serif;
+  --aigenis-font-body: "Onest Variable", "Onest", sans-serif;
+  --aigenis-radius-xs: 6px;
+  --aigenis-radius-sm: 8px;
+  --aigenis-radius-md: 10px;
+  --aigenis-radius-lg: 14px;
+  --aigenis-radius-xl: 20px;
+  --aigenis-radius-full: 9999px;
+
+  --aigenis-shadow-xs: 0 1px 2px 0 rgba(10, 13, 18, .05);
+  --aigenis-shadow-sm: 0 1px 3px 0 rgba(10, 13, 18, .1);
+  --aigenis-shadow-lg: 0 4px 6px -2px rgba(0, 29, 37, .03),
+    0 12px 16px -4px rgba(0, 29, 37, .08);
+  --aigenis-shadow-2xl: 0 24px 48px -12px rgba(10, 13, 18, .18),
+    0 4px 4px -2px rgba(10, 13, 18, .04);
+}
+
+/* Базовые стили для Aigenis-совместимого виджета */
+.aigenis-bond-analyzer {
+  font-family: var(--aigenis-font-body);
+  color: var(--aigenis-tx-primary);
+  background: var(--aigenis-bg-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.aigenis-bond-analyzer h1,
+.aigenis-bond-analyzer h2,
+.aigenis-bond-analyzer h3,
+.aigenis-bond-analyzer h4 {
+  font-family: var(--aigenis-font-headers);
+  font-weight: 600;
+}
+
+/* Кнопки в стиле Aigenis — pill (полное скругление) */
+.aigenis-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  font-family: var(--aigenis-font-body);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  border-radius: var(--aigenis-radius-full);
+  cursor: pointer;
+  transition: background-color .15s, box-shadow .15s;
+  white-space: nowrap;
+}
+
+.aigenis-btn-primary {
+  background: var(--aigenis-brand-600);
+  color: #ffffff;
+}
+.aigenis-btn-primary:hover {
+  background: var(--aigenis-brand-700);
+}
+
+.aigenis-btn-outline {
+  background: transparent;
+  color: var(--aigenis-tx-primary);
+  border: 1px solid var(--aigenis-border-primary);
+}
+.aigenis-btn-outline:hover {
+  background: var(--aigenis-bg-active);
+  border-color: var(--aigenis-border-brand);
+}
+
+/* Карточка облигации */
+.aigenis-bond-card {
+  background: var(--aigenis-bg-primary);
+  border: 1px solid var(--aigenis-border-secondary);
+  border-radius: var(--aigenis-radius-xl);
+  padding: 20px;
+  transition: border-color .15s, box-shadow .15s;
+  cursor: pointer;
+}
+.aigenis-bond-card:hover {
+  border-color: var(--aigenis-border-primary);
+  box-shadow: var(--aigenis-shadow-lg);
+}
+
+/* Таблица */
+.aigenis-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.aigenis-table th {
+  font-family: var(--aigenis-font-headers);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--aigenis-tx-secondary);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--aigenis-border-secondary);
+}
+.aigenis-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--aigenis-border-tertiary);
+  color: var(--aigenis-tx-primary);
+}
+.aigenis-table tr:hover td {
+  background: var(--aigenis-bg-active);
+}
+
+/* Скор-тир бейджи */
+.aigenis-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--aigenis-radius-xs);
+  font-family: var(--aigenis-font-headers);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .5px;
+}
+.aigenis-tier-S {
+  background: #004b65;
+  color: #ffffff;
+}
+.aigenis-tier-A {
+  background: #387387;
+  color: #ffffff;
+}
+.aigenis-tier-B {
+  background: #759eac;
+  color: #001d25;
+}
+.aigenis-tier-C {
+  background: #f79009;
+  color: #ffffff;
+}
+.aigenis-tier-D {
+  background: #e03400;
+  color: #ffffff;
+}
+
+/* Значения метрик */
+.aigenis-metric {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--aigenis-font-headers);
+  font-weight: 600;
+}
+
+/* Вердикт */
+.aigenis-verdict {
+  font-family: var(--aigenis-font-headers);
+  font-weight: 600;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+.aigenis-verdict-strong {
+  color: var(--aigenis-brand-500);
+}
+.aigenis-verdict-good {
+  color: var(--aigenis-success-600);
+}
+.aigenis-verdict-moderate {
+  color: var(--aigenis-info-600);
+}
+.aigenis-verdict-weak {
+  color: var(--aigenis-error-600);
+}
+
+/* Факторы скоринга (плюсы/минусы) */
+.aigenis-factor {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+.aigenis-factor-positive { color: var(--aigenis-success-600); }
+.aigenis-factor-negative { color: var(--aigenis-error-600); }
+.aigenis-factor-neutral  { color: var(--aigenis-tx-secondary); }
+
+/* Инпут / поиск */
+.aigenis-input {
+  height: 44px;
+  padding: 0 14px;
+  font-family: var(--aigenis-font-body);
+  font-size: 14px;
+  border: 1px solid var(--aigenis-border-secondary);
+  border-radius: var(--aigenis-radius-sm);
+  background: var(--aigenis-bg-primary);
+  color: var(--aigenis-tx-primary);
+  transition: border-color .15s;
+  outline: none;
+}
+.aigenis-input:focus {
+  border-color: var(--aigenis-border-focus);
+  border-width: 2px;
+}
+.aigenis-input::placeholder {
+  color: var(--aigenis-tx-placeholder);
+}

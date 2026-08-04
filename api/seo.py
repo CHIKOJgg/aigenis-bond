@@ -222,10 +222,15 @@ def _sparkline(points: list[float]) -> str:
 
 
 @router.get("/bonds", response_class=HTMLResponse)
-async def seo_bonds(request: Request, currency: str | None = None, sort: str = "score"):
+async def seo_bonds(request: Request, currency: str | None = None, sort: str = "score", market: str | None = None):
     cur = currency.upper() if currency else None
+    mkt = market.lower() if market and market.lower() in ("bcse", "moex") else None
     async with session_scope() as session:
-        score_stmt = select(BondScoreORM).order_by(BondScoreORM.score.desc())
+        score_stmt = select(BondScoreORM)
+        if mkt:
+            score_stmt = score_stmt.join(BondORM, BondScoreORM.internal_id == BondORM.internal_id, isouter=True)
+            score_stmt = score_stmt.where(BondORM.market == mkt)
+        score_stmt = score_stmt.order_by(BondScoreORM.score.desc())
         scores = list((await session.execute(score_stmt)).scalars().all())
         ids = [s.internal_id for s in scores]
         if not ids:
@@ -238,6 +243,8 @@ async def seo_bonds(request: Request, currency: str | None = None, sort: str = "
         bond_stmt = select(BondORM).where(BondORM.internal_id.in_(ids))
         if cur:
             bond_stmt = bond_stmt.where(BondORM.currency == cur)
+        if mkt:
+            bond_stmt = bond_stmt.where(BondORM.market == mkt)
         bonds = {b.internal_id: b for b in (await session.execute(bond_stmt)).scalars().all()}
         score_map = {s.internal_id: float(s.score) for s in scores}
 
@@ -251,7 +258,9 @@ async def seo_bonds(request: Request, currency: str | None = None, sort: str = "
     else:
         rows.sort(key=lambda b: score_map.get(b.internal_id, -1), reverse=True)
 
+    mkt_label = f" {mkt.upper()}" if mkt else ""
     cur_filter = cur or "Все"
+    mkt_q = f"&market={mkt}" if mkt else ""
     title = f"Облигации {_esc(cur_filter)}: рейтинг по доходности и Score | {SITE_NAME}"
     desc = (f"Рейтинг облигаций ({cur_filter}) по доходности к погашению и Score Aigenis. "
             f"Топ-{min(len(rows), 50)} выпусков с ценой, купоном и погашением.")

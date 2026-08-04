@@ -140,6 +140,24 @@ def _inflation_detail(points: float) -> str:
     return "Инфляционный профиль нейтральный."
 
 
+def _coupon_detail(points: float, coupon_pct: float | None) -> str:
+    if coupon_pct is None:
+        return "Ставка купона не указана."
+    if points > 0:
+        return f"Купон {coupon_pct:.1f}% — стабильный денежный поток."
+    if points < 0:
+        return f"Низкий/нулевой купон {coupon_pct:.1f}% — дисконтная облигация."
+    return f"Купон {coupon_pct:.1f}% — на уровне рынка."
+
+
+def _volatility_detail(points: float) -> str:
+    if points < -3:
+        return "Экстремальные параметры — высокий спекулятивный риск."
+    if points < 0:
+        return "Повышенная волатильность — требуется осторожность."
+    return "Параметры в норме — стабильный инструмент."
+
+
 def _metal_detail() -> str:
     return "Дополнительная премия за привязку к драгметаллу."
 
@@ -149,6 +167,7 @@ def explain_score(
     *,
     currency: str,
     ytm_pct: float | None,
+    coupon_pct: float | None = None,
 ) -> ExplainedScore:
     """Build a plain-language explanation of a computed bond score."""
     b: ScoreBreakdown = score.breakdown
@@ -165,6 +184,8 @@ def explain_score(
     add("liquidity", "Ликвидность", b.liquidity_component, _liquidity_detail(b.liquidity_component))
     add("credit", "Кредитный риск", b.credit_risk_component, _credit_detail(b.credit_risk_component))
     add("inflation", "Инфляция", b.inflation_component, _inflation_detail(b.inflation_component))
+    add("coupon", "Купонный доход", b.coupon_component, _coupon_detail(b.coupon_component, coupon_pct))
+    add("volatility", "Волатильность", b.volatility_component, _volatility_detail(b.volatility_component), skip_zero=True)
     add("metal", "Драгметалл", b.metal_component, _metal_detail(), skip_zero=True)
 
     factors.sort(key=lambda f: abs(f.points), reverse=True)

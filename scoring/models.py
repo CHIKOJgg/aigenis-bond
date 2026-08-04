@@ -35,6 +35,8 @@ class ScoreBreakdown(BaseModel):
     metal_component: float = 0.0
     credit_risk_component: float = 0.0
     inflation_component: float = 0.0
+    coupon_component: float = 0.0
+    volatility_component: float = 0.0
 
     def total(self) -> float:
         return float(sum(self.model_dump().values()))
@@ -52,13 +54,13 @@ class BondScore(BaseModel):
 
     @property
     def tier(self) -> str:
-        if self.score >= 90:
+        if self.score >= 85:
             return "S"
-        if self.score >= 80:
+        if self.score >= 75:
             return "A"
-        if self.score >= 70:
-            return "B"
         if self.score >= 60:
+            return "B"
+        if self.score >= 45:
             return "C"
         return "D"
 
