@@ -109,17 +109,16 @@ def run_stress(
         price_change_pct = (
             -duration * total_shock + 0.5 * convexity * total_shock * total_shock
         )
-        new_price = float(bond.price or 100) * (1 + price_change_pct)
+        new_price = float(bond.price or bond.nominal or 100) * (1 + price_change_pct)
 
         fx_impact = 1.0
         if scenario.fx_shock_pct != 0 and str(bond.currency).upper() != base_currency.upper():
             fx_impact = 1 + scenario.fx_shock_pct / 100
 
-        cur_value = amount * Decimal(str(new_price / 100)) * Decimal(str(fx_impact))
-        # Baseline must reflect the bond's actual market price (not par), so an
-        # unshocked position shows ~zero P&L regardless of price != 100.
-        base_price = float(bond.price or 100)
-        baseline_value = amount * Decimal(str(base_price / 100))
+        nom = float(bond.nominal or 100)
+        cur_value = amount * Decimal(str(new_price / nom)) * Decimal(str(fx_impact))
+        base_price = float(bond.price or bond.nominal or 100)
+        baseline_value = amount * Decimal(str(base_price / nom))
 
         by_position[bond.internal_id] = cur_value - baseline_value
         by_tenor[tenor] = by_tenor.get(tenor, Decimal("0")) + (cur_value - baseline_value)

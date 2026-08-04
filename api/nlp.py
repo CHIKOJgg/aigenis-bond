@@ -386,7 +386,7 @@ async def _fallback_fx_rates() -> str:
         lines.extend(f"{pair}: {rate:.2f}" for pair, rate in rates.items())
     if metals:
         lines.append(
-            "Металлы (BYN за унцию/грамм): "
+            "Металлы (BYN за тройскую унцию): "
             + ", ".join(f"{m} — {p:.2f}" for m, p in metals.items())
         )
     if not lines:

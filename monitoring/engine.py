@@ -14,14 +14,13 @@ from notifications.repository import add_alert
 from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
 
 THRESHOLDS = {
-    "yield_drop_pct": 0.5,
-    "yield_rise_pct": 0.5,
+    "yield_drop_pp": 0.5,
+    "yield_rise_pp": 0.5,
     "coupon_change_pct": 0.1,
     "price_change_pct": 1.0,
     "fx_change_pct": 0.5,
     "metal_change_pct": 0.5,
     "high_score": 90.0,
-    # Data-quality guards: protect analytics from silent data rot.
     "empty_ytm_pct": 20.0,
     "stale_hours": 12.0,
 }
@@ -160,14 +159,14 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
                     dy = float(b.yield_to_maturity) - float(prev.yield_)
                     # Pick the alert spec (kind/title/dir) for the direction of
                     # the move; emit exactly one yield alert per bond per run.
-                    if dy <= -THRESHOLDS["yield_drop_pct"]:
+                    if dy <= -THRESHOLDS["yield_drop_pp"]:
                         yspec = (
                             "yield_drop",
                             f"{b.name}: доходность упала",
                             f"YTM {b.internal_id} изменился с {prev.yield_} "
                             f"на {b.yield_to_maturity} ({dy:+.2f} п.п.)",
                         )
-                    elif dy >= THRESHOLDS["yield_rise_pct"]:
+                    elif dy >= THRESHOLDS["yield_rise_pp"]:
                         yspec = (
                             "yield_rise",
                             f"{b.name}: доходность выросла",
@@ -241,7 +240,7 @@ async def detect_bond_changes(session: AsyncSession) -> MonitoringResult:
 async def detect_fx_changes(session: AsyncSession) -> MonitoringResult:
     counts: dict[str, int] = {}
     total = 0
-    for pair in ("USD/BYN", "EUR/BYN", "EUR/USD"):
+    for pair in ("USD/BYN", "EUR/BYN", "RUB/BYN", "CNY/BYN"):
         cur = await latest_fx(session, pair)
         prev = await previous_fx(session, pair)
         if cur is None or prev is None:
