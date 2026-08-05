@@ -8,10 +8,12 @@
 ## ДО СОЗВОНА (проверить за 5 минут)
 
 - [ ] `docker compose up -d` — все 5 сервисов healthy
+- [ ] ngrok запущен: `ngrok http http://localhost:80 --request-header-add=ngrok-skip-browser-warning:true`
 - [ ] Открыть 3 вкладки в браузере (не закрывать):
   - Вкладка 1: aigenis.by → FAQ по MOEX
-  - Вкладка 2: https://твой-домен/bcse-bond-analyzer.html
-  - Вкладка 3: https://твой-домен/moex-bond-analyzer.html
+  - Вкладка 2: https://subtetanic-irrigable-adalberto.ngrok-free.dev/bcse-bond-analyzer.html
+  - Вкладка 3: https://subtetanic-irrigable-adalberto.ngrok-free.dev/moex-bond-analyzer.html
+- [ ] В браузере один раз кликнуть «Visit Site» (предупреждение ngrok)
 - [ ] Проверить, что виджеты загружаются и показывают данные
 - [ ] Под рукой: one-pager, ссылка на демо для отправки в чат
 
