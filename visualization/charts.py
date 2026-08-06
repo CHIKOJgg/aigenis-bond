@@ -54,7 +54,7 @@ def plot_portfolio_pie(allocation: PortfolioAllocation) -> bytes:
 
 def plot_coupon_history(dates: list, coupons: list[float], title: str = "История купонов") -> bytes:
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(dates, coupons, marker="o", color="#10b981")
+    ax.plot(dates, coupons, marker="o", color="#004b65")
     ax.set_title(title)
     ax.set_ylabel("Купон, %")
     ax.grid(alpha=0.3)
@@ -82,7 +82,7 @@ def plot_capital_forecast(
     optimistic = [float(r.optimistic_capital) for r in results]
     x = range(len(labels))
     ax.plot(x, pessimistic, "--", color="#ef4444", label="Пессимистичный")
-    ax.plot(x, expected, "-", color="#10b981", linewidth=2, label="Ожидаемый")
+    ax.plot(x, expected, "-", color="#004b65", linewidth=2, label="Ожидаемый")
     ax.plot(x, optimistic, "--", color="#3b82f6", label="Оптимистичный")
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels)

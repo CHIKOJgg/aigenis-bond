@@ -64,7 +64,7 @@ function WidgetPageInner() {
 
   const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString() : '—');
   const scoreColor = (s: number | null) =>
-    s == null ? 'text-gray-400' : s >= 75 ? 'text-emerald-400' : s >= 50 ? 'text-yellow-400' : 'text-orange-400';
+    s == null ? 'text-[#a4a7ae]' : s >= 75 ? 'text-[#004b65]' : s >= 50 ? 'text-[#b45309]' : 'text-[#c2410c]';
 
   const currencies: { key: string | null; label: string }[] = [
     { key: null, label: t('widget.all') },
@@ -75,13 +75,13 @@ function WidgetPageInner() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-[#f5f9fb] text-[#01121a]">
       <div className="max-w-3xl mx-auto px-4 py-6">
         <div className="flex items-center gap-2 mb-1">
-          <TrendingUp className="text-emerald-400" size={20} />
+          <TrendingUp className="text-[#004b65]" size={20} />
           <h2 className="text-lg font-bold">{t('widget.title')}</h2>
         </div>
-        <p className="text-xs text-gray-400 mb-4">{t('widget.sub')}</p>
+        <p className="text-xs text-[#516c79] mb-4">{t('widget.sub')}</p>
 
         <div className="flex flex-wrap gap-2 mb-4">
           {currencies.map((c) => (
@@ -90,8 +90,8 @@ function WidgetPageInner() {
               onClick={() => setCurrency(c.key)}
               className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
                 currency === c.key
-                  ? 'bg-emerald-600 border-emerald-500 text-white'
-                  : 'bg-gray-900 border-gray-700 text-gray-300 hover:border-gray-600'
+                  ? 'bg-[#004b65] border-[#004b65] text-white'
+                  : 'bg-white border-[#d6e2e6] text-[#516c79] hover:border-[#004b65]'
               }`}
             >
               {c.label}
@@ -99,11 +99,11 @@ function WidgetPageInner() {
           ))}
         </div>
 
-        {loading && <p className="text-sm text-gray-400 py-6 text-center">{t('widget.loading')}</p>}
-        {error && <p className="text-sm text-red-400 py-6 text-center">{error}</p>}
+        {loading && <p className="text-sm text-[#516c79] py-6 text-center">{t('widget.loading')}</p>}
+        {error && <p className="text-sm text-[#b91c1c] py-6 text-center">{error}</p>}
 
         {!loading && !error && rows.length === 0 && (
-          <p className="text-sm text-gray-400 py-6 text-center">{t('widget.empty')}</p>
+          <p className="text-sm text-[#516c79] py-6 text-center">{t('widget.empty')}</p>
         )}
 
         {!loading && !error && rows.length > 0 && (
@@ -111,17 +111,17 @@ function WidgetPageInner() {
             {rows.map((b, i) => (
               <div
                 key={b.internal_id}
-                className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-3"
+                className="flex items-center justify-between bg-white border border-[#d6e2e6] rounded-xl px-4 py-3"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-5">{i + 1}</span>
+                    <span className="text-xs text-[#a4a7ae] w-5">{i + 1}</span>
                     <span className="font-medium truncate">{b.name}</span>
-                    <span className="text-[10px] uppercase text-gray-500 bg-gray-800 rounded px-1.5 py-0.5">
+                    <span className="text-[10px] uppercase text-[#516c79] bg-[#eef3f5] rounded px-1.5 py-0.5">
                       {b.currency}
                     </span>
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5 ml-7">
+                  <div className="text-xs text-[#717680] mt-0.5 ml-7">
                     {b.issuer ? `${b.issuer} · ` : ''}YTM {b.yield_to_maturity != null ? `${b.yield_to_maturity.toFixed(2)}%` : '—'} · {fmtDate(b.maturity_date)}
                   </div>
                 </div>
@@ -130,7 +130,7 @@ function WidgetPageInner() {
                     <div className={`text-lg font-bold ${scoreColor(b.score)}`}>
                       {b.score != null ? b.score.toFixed(0) : '—'}
                     </div>
-                    <div className="text-[10px] text-gray-500">{t('widget.score')}</div>
+                    <div className="text-[10px] text-[#717680]">{t('widget.score')}</div>
                   </div>
                 </div>
               </div>
@@ -140,7 +140,7 @@ function WidgetPageInner() {
 
         <a
           href={appUrl}
-          className="mt-6 flex items-center justify-center gap-1 w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
+          className="mt-6 flex items-center justify-center gap-1 w-full bg-[#004b65] hover:bg-[#387387] text-white py-2.5 rounded-xl text-sm font-medium transition-colors"
         >
           {t('widget.cta')} <ArrowUpRight size={16} />
         </a>

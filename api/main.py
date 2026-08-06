@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -23,6 +23,7 @@ from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
 from api.document_analysis import router as document_router
+from api.frontend import frontend_dir, frontend_index
 from api.news import router as news_router
 from api.nlp import router as nlp_router
 from api.partner.router import router as partner_router
@@ -545,10 +546,30 @@ def _bond_to_response(b: BondORM) -> BondResponse:
 
 # --- Static files (frontend) ---
 
-_frontend_dir = os.environ.get("FRONTEND_DIR", "")
-if _frontend_dir and os.path.isdir(_frontend_dir):
-    app.mount("/", StaticFiles(directory=_frontend_dir, html=True), name="frontend")
-    logger.info("frontend_mounted", directory=_frontend_dir)
+# SPA asset hashes never change, so let the browser cache them aggressively.
+_frontend_dir = frontend_dir()
+if _frontend_dir is not None:
+    assets_dir = _frontend_dir / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    logger.info("frontend_mounted", directory=str(_frontend_dir))
+
+
+# SPA catch-all: every unmatched GET goes to the frontend index.html and the
+# browser router takes over. SEO routes are registered earlier and already
+# split bots vs humans on /bonds, /bonds/{id} and /calculator (see api/seo.py).
+@app.get("/{path:path}", include_in_schema=False)
+async def spa_fallback(path: str) -> Response:
+    if path.startswith(("api/", "auth/", "billing/", "admin/", "partner/")):
+        raise HTTPException(status_code=404, detail="Not Found")
+    index = frontend_index()
+    if index is None:
+        raise HTTPException(status_code=404, detail="Frontend build not available")
+    return FileResponse(
+        index,
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 def _validate_production_config() -> None:

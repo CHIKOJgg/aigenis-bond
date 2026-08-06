@@ -6,22 +6,22 @@
   <title>Admin Login - Aigenis</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-950 text-white min-h-screen flex items-center justify-center">
-  <div class="bg-gray-900 rounded-xl border border-gray-800 p-8 w-full max-w-sm">
+<body class="bg-[#f5f9fb] text-[#01121a] min-h-screen flex items-center justify-center">
+  <div class="bg-white rounded-xl border border-[#d6e2e6] p-8 w-full max-w-sm">
     <h1 class="text-xl font-bold mb-6 text-center">Admin Login</h1>
     {% if error %}
-      <div class="bg-red-900/30 border border-red-800 rounded-lg p-3 mb-4 text-sm text-red-300">{{ error }}</div>
+      <div class="bg-[#fef2f2] border border-[#fecaca] rounded-lg p-3 mb-4 text-sm text-[#b91c1c]">{{ error }}</div>
     {% endif %}
     <form method="POST" class="space-y-4">
       <div>
-        <label class="text-sm text-gray-400 block mb-1">Email</label>
-        <input name="email" type="email" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm">
+        <label class="text-sm text-[#516c79] block mb-1">Email</label>
+        <input name="email" type="email" required class="w-full bg-white border border-[#d6e2e6] rounded-lg px-3 py-2 text-[#01121a] text-sm focus:border-[#004b65] outline-none">
       </div>
       <div>
-        <label class="text-sm text-gray-400 block mb-1">Password</label>
-        <input name="password" type="password" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm">
+        <label class="text-sm text-[#516c79] block mb-1">Password</label>
+        <input name="password" type="password" required class="w-full bg-white border border-[#d6e2e6] rounded-lg px-3 py-2 text-[#01121a] text-sm focus:border-[#004b65] outline-none">
       </div>
-      <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-sm font-medium">Sign In</button>
+      <button type="submit" class="w-full bg-[#004b65] hover:bg-[#387387] text-white py-2 rounded-lg text-sm font-medium">Sign In</button>
     </form>
   </div>
 </body>

@@ -30,29 +30,29 @@ def _generate_portfolio_pdf(
     for p in pnl_data.get("per_bond", []):
         b = bonds_by_id.get(p["internal_id"])
         name = b.name if b else p["internal_id"]
-        pnl_class = "color: #22c55e" if p["total_pnl"] >= 0 else "color: #ef4444"
+        pnl_class = "color: #008f5e" if p["total_pnl"] >= 0 else "color: #b91c1c"
         rows += f"""
         <tr>
-            <td style="padding:8px;border-bottom:1px solid #334155">{name}</td>
-            <td style="padding:8px;border-bottom:1px solid #334155;text-align:right">{p['weight']*100:.1f}%</td>
-            <td style="padding:8px;border-bottom:1px solid #334155;text-align:right">{p['current_value']:,.2f}</td>
-            <td style="padding:8px;border-bottom:1px solid #334155;text-align:right;{pnl_class}">{p['total_pnl']:+,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6">{name}</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right">{p['weight']*100:.1f}%</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right">{p['current_value']:,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right;{pnl_class}">{p['total_pnl']:+,.2f}</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  body {{ font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 40px; }}
+  body {{ font-family: -apple-system, system-ui, sans-serif; background: #f5f9fb; color: #01121a; padding: 40px; }}
   h1 {{ font-size: 24px; margin-bottom: 4px; }}
-  h2 {{ font-size: 16px; color: #94a3b8; font-weight: normal; margin-top: 32px; }}
-  .meta {{ color: #64748b; font-size: 12px; margin-bottom: 24px; }}
+  h2 {{ font-size: 16px; color: #516c79; font-weight: normal; margin-top: 32px; }}
+  .meta {{ color: #717680; font-size: 12px; margin-bottom: 24px; }}
   .stats {{ display: flex; gap: 16px; margin-bottom: 24px; }}
-  .stat {{ background: #1e293b; border-radius: 8px; padding: 12px 16px; min-width: 120px; }}
+  .stat {{ background: #ffffff; border: 1px solid #d6e2e6; border-radius: 8px; padding: 12px 16px; min-width: 120px; }}
   .stat-value {{ font-size: 20px; font-weight: bold; }}
-  .stat-label {{ font-size: 11px; color: #94a3b8; margin-top: 2px; }}
+  .stat-label {{ font-size: 11px; color: #516c79; margin-top: 2px; }}
   table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-  th {{ text-align: left; padding: 8px; border-bottom: 2px solid #334155; color: #94a3b8; font-size: 11px; text-transform: uppercase; }}
-  .footer {{ margin-top: 40px; text-align: center; color: #475569; font-size: 10px; }}
+  th {{ text-align: left; padding: 8px; border-bottom: 2px solid #d6e2e6; color: #516c79; font-size: 11px; text-transform: uppercase; }}
+  .footer {{ margin-top: 40px; text-align: center; color: #717680; font-size: 10px; }}
 </style></head><body>
 <h1>Aigenis Bonds — Отчёт по портфелю</h1>
 <div class="meta">Дата: {today} | Автоматически сгенерированный отчёт</div>
@@ -67,7 +67,7 @@ def _generate_portfolio_pdf(
     <div class="stat-label">Текущая стоимость</div>
   </div>
   <div class="stat">
-    <div class="stat-value" style="color: {'#22c55e' if pnl_data.get('total_pnl', 0) >= 0 else '#ef4444'}">
+    <div class="stat-value" style="color: {'#008f5e' if pnl_data.get('total_pnl', 0) >= 0 else '#b91c1c'}">
       {pnl_data.get('total_pnl', 0):+,.2f}
     </div>
     <div class="stat-label">P&L</div>

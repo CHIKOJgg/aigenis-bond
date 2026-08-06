@@ -69,7 +69,7 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
   }) => (
     <div
       className={`flex flex-col rounded-xl border p-4 ${
-        highlight ? 'border-amber-500 bg-amber-500/5' : 'border-gray-800 bg-gray-900'
+        highlight ? 'border-amber-500 bg-amber-50/50' : 'border-[#d6e2e6] bg-white'
       }`}
     >
       <div className="flex items-center justify-between mb-1">
@@ -81,36 +81,36 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
         )}
       </div>
       <div className="mb-3">
-        <span className="text-2xl font-bold text-white">{price}</span>
-        {period && <span className="text-sm text-gray-400 ml-1">{period}</span>}
+        <span className="text-2xl font-bold text-[#01121a]">{price}</span>
+        {period && <span className="text-sm text-[#516c79] ml-1">{period}</span>}
       </div>
       <div className="mt-auto">{cta}</div>
     </div>
   );
 
   return (
-    <Modal onClose={closePaywall} className="relative max-w-3xl w-full border-amber-800/50 max-h-[88vh] overflow-y-auto">
+    <Modal onClose={closePaywall} className="relative max-w-3xl w-full border-[#d6e2e6] max-h-[88vh] overflow-y-auto">
       <button
         onClick={closePaywall}
-        className="absolute top-3 right-3 text-gray-500 hover:text-white p-1 z-10"
+        className="absolute top-3 right-3 text-[#717680] hover:text-[#01121a] p-1 z-10"
         aria-label={t('action.close')}
       >
         <X size={18} />
       </button>
 
-      <div className="bg-gradient-to-br from-amber-600/20 to-gray-900 px-6 pt-8 pb-6 text-center">
-        <div className="w-14 h-14 bg-amber-600/20 rounded-full flex items-center justify-center mx-auto mb-3">
+      <div className="bg-gradient-to-br from-amber-50 to-[#f5f9fb] px-6 pt-8 pb-6 text-center">
+        <div className="w-14 h-14 bg-[#fef3c7] rounded-full flex items-center justify-center mx-auto mb-3">
           {ICONS[state.feature.icon] ?? ICONS.lock}
         </div>
         <h3 className="text-xl font-bold">{t(state.feature.title)}</h3>
-        <p className="text-sm text-gray-400 mt-2">{t(state.feature.description)}</p>
+        <p className="text-sm text-[#516c79] mt-2">{t(state.feature.description)}</p>
         {state.feature.benefit && (
-          <p className="text-sm text-emerald-300 mt-3 max-w-md mx-auto font-medium">
+          <p className="text-sm text-[#004b65] mt-3 max-w-md mx-auto font-medium">
             {state.feature.benefit}
           </p>
         )}
         {state.feature.stat && (
-          <p className="text-xs text-gray-500 mt-2 italic">
+          <p className="text-xs text-[#717680] mt-2 italic">
             {state.feature.stat}
           </p>
         )}
@@ -124,7 +124,7 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
             cta={
               <button
                 disabled={isFreeUser}
-                className="w-full text-sm py-2 rounded-lg border border-gray-700 text-gray-300 disabled:opacity-50 disabled:cursor-default"
+                className="w-full text-sm py-2 rounded-lg border border-[#b2c9d1] text-[#004b65] disabled:opacity-50 disabled:cursor-default"
               >
                 {isFreeUser ? t('paywall.currentPlan') : t('paywall.basic')}
               </button>
@@ -137,7 +137,7 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
             highlight
             cta={
               isPaid ? (
-                <button disabled className="w-full text-sm py-2 rounded-lg bg-gray-800 text-gray-400">
+                <button disabled className="w-full text-sm py-2 rounded-lg bg-[#eef3f5] text-[#717680]">
                   {t('paywall.accessOpen')}
                 </button>
               ) : (
@@ -156,13 +156,13 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
             period={ent ? `${ent.duration_days} ${t('paywall.days')}` : undefined}
             cta={
               isPaid ? (
-                <button disabled className="w-full text-sm py-2 rounded-lg bg-gray-800 text-gray-400">
+                <button disabled className="w-full text-sm py-2 rounded-lg bg-[#eef3f5] text-[#717680]">
                   {t('paywall.accessOpen')}
                 </button>
               ) : (
                 <button
                   onClick={openInBot}
-                  className="w-full inline-flex items-center justify-center gap-1.5 bg-gray-800 hover:bg-gray-700 text-white py-2 rounded-lg text-sm font-semibold transition-colors"
+                  className="w-full inline-flex items-center justify-center gap-1.5 bg-[#eef3f5] hover:bg-[#d9e4e8] text-[#004b65] py-2 rounded-lg text-sm font-semibold transition-colors"
                 >
                    <Star size={15} /> {t('paywall.payStars')}
                 </button>
@@ -172,22 +172,22 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
         </div>
 
         <div className="mt-6">
-          <p className="text-xs uppercase tracking-wide text-gray-500 mb-3 font-semibold">
+          <p className="text-xs uppercase tracking-wide text-[#717680] mb-3 font-semibold">
             {t('paywall.whatIncluded')}
           </p>
           <div className="space-y-1">
             {TIER_FEATURES.map((f) => (
               <div
                 key={f.label}
-                className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 py-1.5 border-b border-gray-800/60 text-sm"
+                className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 py-1.5 border-b border-[#d6e2e6]/60 text-sm"
               >
-                <span className="text-gray-300">{t(f.label)}</span>
-                <Check size={16} className={f.free ? 'text-emerald-400' : 'text-gray-700'} />
-                <Check size={16} className={f.pro ? 'text-emerald-400' : 'text-gray-700'} />
-                <Check size={16} className={f.ent ? 'text-emerald-400' : 'text-gray-700'} />
+                <span className="text-[#01121a]">{t(f.label)}</span>
+                <Check size={16} className={f.free ? 'text-[#004b65]' : 'text-[#d6e2e6]'} />
+                <Check size={16} className={f.pro ? 'text-[#004b65]' : 'text-[#d6e2e6]'} />
+                <Check size={16} className={f.ent ? 'text-[#004b65]' : 'text-[#d6e2e6]'} />
               </div>
             ))}
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 pt-2 text-[10px] uppercase text-gray-500">
+            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 pt-2 text-[10px] uppercase text-[#717680]">
               <span />
               <span className="text-center">Free</span>
               <span className="text-center">Pro</span>
@@ -206,21 +206,21 @@ export function PaywallModal({ onSubscribe }: { onSubscribe: () => void }) {
           {info?.yookassa_configured && (
             <button
               onClick={() => { closePaywall(); onSubscribe(); }}
-              className="flex-1 inline-flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 text-white py-3 rounded-xl text-sm font-semibold transition-colors"
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-[#eef3f5] hover:bg-[#d9e4e8] text-[#004b65] py-3 rounded-xl text-sm font-semibold transition-colors"
             >
               <CreditCard size={16} /> {t('paywall.payCard')}
             </button>
           )}
         </div>
         {info?.yookassa_configured && (
-          <p className="mt-3 text-center text-xs text-gray-500">
+          <p className="mt-3 text-center text-xs text-[#717680]">
             {t('paywall.yookassaNote')}
           </p>
         )}
       </div>
 
-      <div className="px-6 py-3 bg-gray-950/50 text-center">
-        <p className="text-xs text-gray-600 flex items-center justify-center gap-1">
+      <div className="px-6 py-3 bg-[#f5f9fb] text-center border-t border-[#d6e2e6]">
+        <p className="text-xs text-[#717680] flex items-center justify-center gap-1">
           <TrendingUp size={12} /> Aigenis Bonds
         </p>
       </div>

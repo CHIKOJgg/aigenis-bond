@@ -8,11 +8,11 @@ export interface BondFiltersState {
   search: string;
   currencies: string[];
   statuses: string[];
-  ytm: RangeValue; // percent
-  score: RangeValue; // 0..100
+  ytm: RangeValue;
+  score: RangeValue;
   price: RangeValue;
-  coupon: RangeValue; // percent
-  maturities: string[]; // bucket ids
+  coupon: RangeValue;
+  maturities: string[];
   favoritesOnly: boolean;
 }
 
@@ -37,7 +37,6 @@ export const defaultFilters: BondFiltersState = {
   favoritesOnly: false,
 };
 
-// Count of distinct filter *dimensions* that are active (used for the badge).
 export function activeFilterGroups(f: BondFiltersState): number {
   let n = 0;
   if (f.search.trim()) n++;
@@ -63,7 +62,6 @@ interface RangeFilterProps {
 }
 
 function RangeFilter({ label, unit = '', min, max, step = 1, value, onChange }: RangeFilterProps) {
-  const { t } = useI18n();
   const lo = value[0] ?? min;
   const hi = value[1] ?? max;
   const loPct = ((lo - min) / (max - min)) * 100;
@@ -75,15 +73,15 @@ function RangeFilter({ label, unit = '', min, max, step = 1, value, onChange }: 
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-gray-300">{label}</span>
-        <div className="flex items-center gap-1 text-xs text-gray-400">
+        <span className="text-xs font-medium text-[#516c79]">{label}</span>
+        <div className="flex items-center gap-1 text-xs text-[#717680]">
           <input
             type="number"
             value={value[0] ?? ''}
             placeholder={String(min)}
             step={step}
             onChange={(e) => onChange([e.target.value === '' ? null : Number(e.target.value), value[1]])}
-            className="w-16 bg-gray-800 border border-gray-700 rounded-md px-1.5 py-1 text-white text-right"
+            className="w-16 bg-white border border-[#d6e2e6] rounded-md px-1.5 py-1 text-[#01121a] text-right"
           />
           <span>—</span>
           <input
@@ -92,7 +90,7 @@ function RangeFilter({ label, unit = '', min, max, step = 1, value, onChange }: 
             placeholder={String(max)}
             step={step}
             onChange={(e) => onChange([value[0], e.target.value === '' ? null : Number(e.target.value)])}
-            className="w-16 bg-gray-800 border border-gray-700 rounded-md px-1.5 py-1 text-white text-right"
+            className="w-16 bg-white border border-[#d6e2e6] rounded-md px-1.5 py-1 text-[#01121a] text-right"
           />
           {unit && <span className="w-5">{unit}</span>}
         </div>
@@ -107,7 +105,7 @@ function RangeFilter({ label, unit = '', min, max, step = 1, value, onChange }: 
           step={step}
           value={lo}
           onChange={(e) => setLo(Number(e.target.value))}
-          aria-label={`${label}: ${t('filters.min')}`}
+          aria-label={`${label} min`}
         />
         <input
           type="range"
@@ -116,7 +114,7 @@ function RangeFilter({ label, unit = '', min, max, step = 1, value, onChange }: 
           step={step}
           value={hi}
           onChange={(e) => setHi(Number(e.target.value))}
-          aria-label={`${label}: ${t('filters.max')}`}
+          aria-label={`${label} max`}
         />
       </div>
     </div>
@@ -134,7 +132,7 @@ function ChipToggleGroup({ label, options, selected, onToggle }: ChipToggleGroup
   if (options.length === 0) return null;
   return (
     <div>
-      <div className="text-xs font-medium text-gray-300 mb-2">{label}</div>
+      <div className="text-xs font-medium text-[#516c79] mb-2">{label}</div>
       <div className="flex flex-wrap gap-1.5">
         {options.map((opt) => {
           const active = selected.includes(opt);
@@ -145,8 +143,8 @@ function ChipToggleGroup({ label, options, selected, onToggle }: ChipToggleGroup
               onClick={() => onToggle(opt)}
               className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
                 active
-                  ? 'bg-emerald-600 border-emerald-500 text-white'
-                  : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                  ? 'bg-[#004b65] border-[#004b65] text-white'
+                  : 'bg-white border-[#d6e2e6] text-[#516c79] hover:border-[#b2c9d1]'
               }`}
             >
               {opt}
@@ -190,7 +188,6 @@ export function BondFilters({
     onChange({ ...defaultFilters });
   };
 
-  // Build removable active-filter chips.
   const chips: { id: string; label: string; onRemove: () => void }[] = [];
   if (filters.search.trim())
     chips.push({ id: 'search', label: `${t('filters.search')}: «${filters.search.trim()}»`, onRemove: () => update({ search: '' }) });
@@ -233,28 +230,28 @@ export function BondFilters({
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row gap-2">
-        <div className="flex items-center gap-2 flex-1 bg-gray-900 border border-gray-800 rounded-xl px-3">
-          <Search size={16} className="text-gray-500 shrink-0" />
+        <div className="flex items-center gap-2 flex-1 bg-white border border-[#d6e2e6] rounded-xl px-3">
+          <Search size={16} className="text-[#a4a7ae] shrink-0" />
           <input
             value={filters.search}
             onChange={(e) => update({ search: e.target.value })}
             placeholder={t('bonds.searchPlaceholder')}
-            className="bg-transparent py-2.5 text-white text-sm w-full outline-none placeholder:text-gray-600"
+            className="bg-transparent py-2.5 text-[#01121a] text-sm w-full outline-none placeholder:text-[#a4a7ae]"
           />
           {filters.search && (
-            <button onClick={() => update({ search: '' })} className="text-gray-500 hover:text-white"           aria-label={t('bonds.clearSearch')}>
+            <button onClick={() => update({ search: '' })} className="text-[#a4a7ae] hover:text-[#01121a]" aria-label={t('bonds.clearSearch')}>
               <X size={15} />
             </button>
           )}
         </div>
         <button
           onClick={() => setOpen((o) => !o)}
-          className="flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-xl px-4 py-2.5 text-sm text-gray-200 transition-colors"
+          className="flex items-center justify-center gap-2 bg-white hover:bg-[#f5f9fb] border border-[#d6e2e6] rounded-xl px-4 py-2.5 text-sm text-[#01121a] transition-colors"
         >
           <SlidersHorizontal size={16} />
           {t('bonds.filters')}
           {groups > 0 && (
-            <span className="bg-emerald-600 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+            <span className="bg-[#004b65] text-white text-xs rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
               {groups}
             </span>
           )}
@@ -263,7 +260,7 @@ export function BondFilters({
       </div>
 
       {open && (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 animate-fadeIn">
+        <div className="bg-white rounded-xl border border-[#d6e2e6] p-4 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5 animate-fadeIn shadow-sm">
           <ChipToggleGroup
             label={t('filters.currencyLabel')}
             options={currencyOptions}
@@ -277,7 +274,7 @@ export function BondFilters({
             onToggle={(v) => toggleInArray('statuses', v)}
           />
           <div>
-            <div className="text-xs font-medium text-gray-300 mb-2">{t('filters.maturityLabel')}</div>
+            <div className="text-xs font-medium text-[#516c79] mb-2">{t('filters.maturityLabel')}</div>
             <div className="flex flex-wrap gap-1.5">
               {MATURITY_BUCKETS.map((b) => {
                 const active = filters.maturities.includes(b.id);
@@ -288,8 +285,8 @@ export function BondFilters({
                     onClick={() => toggleInArray('maturities', b.id)}
                     className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
                       active
-                        ? 'bg-emerald-600 border-emerald-500 text-white'
-                        : 'bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600'
+                        ? 'bg-[#004b65] border-[#004b65] text-white'
+                        : 'bg-white border-[#d6e2e6] text-[#516c79] hover:border-[#b2c9d1]'
                     }`}
                   >
                     {t(`maturity.${b.id}`)}
@@ -304,21 +301,21 @@ export function BondFilters({
           <RangeFilter label={t('common.price')} min={0} max={200} step={1} value={filters.price} onChange={(v) => update({ price: v })} />
           <RangeFilter label={t('common.coupon')} unit="%" min={0} max={30} step={0.5} value={filters.coupon} onChange={(v) => update({ coupon: v })} />
 
-          <div className="lg:col-span-2 xl:col-span-3 flex items-center justify-between border-t border-gray-800 pt-3">
-            <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+          <div className="lg:col-span-2 xl:col-span-3 flex items-center justify-between border-t border-[#d6e2e6] pt-3">
+            <label className="flex items-center gap-2 text-sm text-[#516c79] cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={filters.favoritesOnly}
                 onChange={(e) => update({ favoritesOnly: e.target.checked })}
-                className="accent-amber-400 w-4 h-4"
+                className="accent-[#004b65] w-4 h-4"
               />
-              <Star size={15} className={filters.favoritesOnly ? 'fill-amber-400 text-amber-400' : 'text-gray-500'} />
+              <Star size={15} className={filters.favoritesOnly ? 'fill-[#004b65] text-[#004b65]' : 'text-[#a4a7ae]'} />
               {t('filters.favoritesOnly')}
             </label>
             <button
               onClick={resetAll}
               disabled={groups === 0}
-              className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white disabled:opacity-40"
+              className="flex items-center gap-1.5 text-sm text-[#717680] hover:text-[#01121a] disabled:opacity-40"
             >
               <RotateCcw size={14} /> {t('common.resetAll')}
             </button>
@@ -328,22 +325,22 @@ export function BondFilters({
 
       {(chips.length > 0 || open) && (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-gray-500">
-            {t('common.found')}: <b className="text-gray-300">{resultCount}</b> {t('common.of')} {totalCount}
+          <span className="text-xs text-[#717680]">
+            {t('common.found')}: <b className="text-[#01121a]">{resultCount}</b> {t('common.of')} {totalCount}
           </span>
           {chips.map((c) => (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-full px-2.5 py-1 text-xs text-gray-200"
+              className="inline-flex items-center gap-1 bg-white border border-[#d6e2e6] rounded-full px-2.5 py-1 text-xs text-[#01121a]"
             >
               {c.label}
-              <button onClick={c.onRemove} className="text-gray-500 hover:text-red-400"               aria-label={t('common.removeFilter')}>
+              <button onClick={c.onRemove} className="text-[#a4a7ae] hover:text-red-500" aria-label={t('common.removeFilter')}>
                 <X size={12} />
               </button>
             </span>
           ))}
           {chips.length > 0 && (
-            <button onClick={resetAll} className="text-xs text-gray-500 hover:text-white underline">
+            <button onClick={resetAll} className="text-xs text-[#717680] hover:text-[#01121a] underline">
               {t('common.reset')}
             </button>
           )}

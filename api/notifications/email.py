@@ -1,4 +1,4 @@
-"""Email notification service via SMTP.
+﻿"""Email notification service via SMTP.
 
 All email settings are configured via environment variables (SMTP_HOST, etc.).
 If SMTP is not configured, all send operations log a warning and return silently.
@@ -55,15 +55,15 @@ def _base_html(body: str) -> str:
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          margin: 0; padding: 0; background: #0a0a0f; color: #e5e5e5; }}
+          margin: 0; padding: 0; background: #f5f9fb; color: #01121a; }}
   .container {{ max-width: 600px; margin: 0 auto; padding: 24px; }}
-  .card {{ background: #1a1a2e; border-radius: 12px; padding: 32px; border: 1px solid #2a2a3e; }}
-  .btn {{ display: inline-block; background: #059669; color: white !important; text-decoration: none;
+  .card {{ background: #ffffff; border-radius: 12px; padding: 32px; border: 1px solid #d6e2e6; }}
+  .btn {{ display: inline-block; background: #004b65; color: white !important; text-decoration: none;
           padding: 12px 24px; border-radius: 8px; font-weight: 600; }}
-  .btn:hover {{ background: #047857; }}
+  .btn:hover {{ background: #387387; }}
   h1 {{ font-size: 24px; margin: 0 0 16px; }}
-  p {{ color: #9ca3af; line-height: 1.6; margin: 0 0 16px; }}
-  .footer {{ margin-top: 32px; font-size: 12px; color: #6b7280; text-align: center; }}
+  p {{ color: #516c79; line-height: 1.6; margin: 0 0 16px; }}
+  .footer {{ margin-top: 32px; font-size: 12px; color: #717680; text-align: center; }}
 </style></head><body>
 <div class="container"><div class="card">
   <h1>Aigenis Bonds</h1>
@@ -83,9 +83,9 @@ def send_verification_email(to: str, token: str) -> bool:
     html = _base_html(f"""
         <p>Welcome to Aigenis Bonds! Please verify your email address to activate your account.</p>
         <p style="text-align:center"><a href="{url}" class="btn">Verify Email</a></p>
-        <p>Or copy this link into your browser: <code style="color:#9ca3af">{url}</code></p>
+        <p>Or copy this link into your browser: <code style="color:#004b65">{url}</code></p>
     """)
-    return _send_email(to, "Verify your email — Aigenis Bonds", html)
+    return _send_email(to, "Verify your email вЂ” Aigenis Bonds", html)
 
 
 def send_password_reset_email(to: str, token: str) -> bool:
@@ -96,9 +96,9 @@ def send_password_reset_email(to: str, token: str) -> bool:
         <p>We received a request to reset your password. Click the button below to set a new one.</p>
         <p style="text-align:center"><a href="{url}" class="btn">Reset Password</a></p>
         <p>If you did not request this, you can safely ignore this email.</p>
-        <p>Or copy this link: <code style="color:#9ca3af">{url}</code></p>
+        <p>Or copy this link: <code style="color:#004b65">{url}</code></p>
     """)
-    return _send_email(to, "Password reset — Aigenis Bonds", html)
+    return _send_email(to, "Password reset вЂ” Aigenis Bonds", html)
 
 
 def send_subscription_expiring_email(to: str, tier: str, days_left: int) -> bool:
@@ -121,3 +121,4 @@ def send_welcome_email(to: str, name: str) -> bool:
         <p style="text-align:center"><a href="{url}" class="btn">Go to Dashboard</a></p>
     """)
     return _send_email(to, "Welcome to Aigenis Bonds!", html)
+

@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import TransactionLog from './TransactionLog';
-import PnLDashboard from './PnLDashboard';
-import BacktestPanel from './BacktestPanel';
+import TransactionLog from '../components/TransactionLog';
+import PnLDashboard from '../components/PnLDashboard';
+import BacktestPanel from '../components/BacktestPanel';
+import { useI18n } from '../i18n';
+import { usePageMeta } from '../app/usePageMeta';
 
 const TABS = [
   { id: 'pnl', label: 'P&L Дашборд' },
@@ -12,6 +14,8 @@ const TABS = [
 type Tab = (typeof TABS)[number]['id'];
 
 export default function PortfolioAdvancedPage() {
+  const { t } = useI18n();
+  usePageMeta(t('meta.portfolio'));
   const [tab, setTab] = useState<Tab>('pnl');
 
   return (

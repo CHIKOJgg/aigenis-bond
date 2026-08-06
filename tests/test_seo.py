@@ -309,5 +309,67 @@ def test_seo_calculator():
     asyncio.run(run())
 
 
+def test_spa_fallback_and_bot_split(tmp_path, monkeypatch):
+    """main-level wiring: SPA catch-all for non-SEO paths, bot split on /bonds.
+
+    Without a frontend build (FRONTEND_DIR unset) every unknown path 404s and
+    SEO pages stay fully crawlable; with a build, humans get the SPA on any
+    route while crawlers keep receiving the server-rendered page.
+    """
+
+    async def run_no_build():
+        await _ensure_schema()
+        await _seed()
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/stocks")
+                assert resp.status_code == 404
+                resp = await client.get("/api/v1/definitely-unknown")
+                assert resp.status_code == 404
+                resp = await client.get("/bonds")
+                assert resp.status_code == 200
+                assert "Рейтинг облигаций" in resp.text
+        finally:
+            await dispose()
+
+    asyncio.run(run_no_build())
+
+    # A fake frontend build: dist/index.html (+ assets/ directory).
+    (tmp_path / "index.html").write_text("<div id='root'>SPA-MARKER</div>", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    monkeypatch.setenv("FRONTEND_DIR", str(tmp_path))
+
+    async def run_with_build():
+        await _ensure_schema()
+        await _seed()
+        try:
+            transport = httpx.ASGITransport(app=app)
+            human = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"}
+            bot = {"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"}
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                # Human on any SPA path -> the app shell.
+                resp = await client.get("/stocks", headers=human)
+                assert resp.status_code == 200
+                assert "SPA-MARKER" in resp.text
+                # Unknown API paths still 404 as JSON, never the SPA.
+                resp = await client.get("/api/v1/definitely-unknown", headers=human)
+                assert resp.status_code == 404
+                assert "SPA-MARKER" not in resp.text
+                # Human on an SEO-covered path -> the app shell (route exists in SPA).
+                resp = await client.get("/bonds", headers=human)
+                assert resp.status_code == 200
+                assert "SPA-MARKER" in resp.text
+                # Crawler on the same path -> the server-rendered SEO page.
+                resp = await client.get("/bonds", headers=bot)
+                assert resp.status_code == 200
+                assert "Рейтинг облигаций" in resp.text
+                assert "SPA-MARKER" not in resp.text
+        finally:
+            await dispose()
+
+    asyncio.run(run_with_build())
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])

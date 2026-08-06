@@ -74,7 +74,7 @@ export function Modal({ onClose, children, labelledBy, className = '', initialFo
         aria-modal="true"
         aria-labelledby={labelledBy}
         tabIndex={-1}
-        className={`bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden shadow-2xl outline-none ${className}`}
+        className={`bg-white border border-[#d6e2e6] rounded-2xl overflow-hidden shadow-2xl outline-none ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

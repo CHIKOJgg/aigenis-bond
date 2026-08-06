@@ -83,12 +83,14 @@ export interface Bond {
   issuer: string | null;
   issuer_logo: string | null;
   fetched_at: string | null;
+  nominal?: number | null;
 }
 
 export interface BondScore {
   internal_id: string;
   score: number;
   tier: string | null;
+  breakdown?: Record<string, number> | null;
 }
 
 export interface Stats {
@@ -460,6 +462,59 @@ export interface NewsItem {
   url: string;
 }
 
+export interface Stock {
+  internal_id: string;
+  secid: string;
+  name: string;
+  isin: string | null;
+  issuer: string | null;
+  board: string;
+  currency: string;
+  lot_size: number | null;
+  prev_price: number | null;
+  price: number | null;
+  open_price: number | null;
+  high_price: number | null;
+  low_price: number | null;
+  close_price: number | null;
+  volume: number | null;
+  value_traded: number | null;
+  market_capitalization: number | null;
+  pe_ratio: number | null;
+  pbr_ratio: number | null;
+  dividend_yield: number | null;
+  earnings_per_share: number | null;
+  sector: string | null;
+  status: string;
+  fetched_at: string | null;
+}
+
+export interface StockHistoryPoint {
+  date: string;
+  open_price: number | null;
+  high_price: number | null;
+  low_price: number | null;
+  close_price: number | null;
+  volume: number | null;
+  value_traded: number | null;
+  weighted_avg_price: number | null;
+}
+
+export interface StockStats {
+  total_stocks: number;
+  active_stocks: number;
+  by_sector: Record<string, number>;
+  by_board: Record<string, number>;
+}
+
+export interface StockSectorSummary {
+  sector: string;
+  count: number;
+  avg_pe: number | null;
+  avg_dividend_yield: number | null;
+  total_market_cap: number | null;
+}
+
 export const api = {
   // Generic request helper: full control over method/body with the same
   // auth/refresh/error handling as get/post. (ReferralProgram, PnL, etc.)
@@ -563,6 +618,24 @@ export const api = {
       request<{ status: string; id: number }>(`/api/v1/alerts/rules/${id}`, { method: 'DELETE' }),
     feed: (limit = 50) =>
       get<AlertFeedItem[]>(`/api/v1/alerts/feed?limit=${limit}`),
+  },
+
+  // MOEX stocks — public endpoints from api/stocks.py.
+  stocks: {
+    list: (params?: { board?: string; sector?: string; sort_by?: string; limit?: number; offset?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.board) q.set('board', params.board);
+      if (params?.sector) q.set('sector', params.sector);
+      if (params?.sort_by) q.set('sort_by', params.sort_by);
+      if (params?.limit != null) q.set('limit', String(params.limit));
+      if (params?.offset != null) q.set('offset', String(params.offset));
+      return get<Stock[]>(`/api/v1/stocks?${q}`);
+    },
+    get: (internalId: string) => get<Stock>(`/api/v1/stocks/${encodeURIComponent(internalId)}`),
+    history: (internalId: string, days = 30) =>
+      get<StockHistoryPoint[]>(`/api/v1/stocks/${encodeURIComponent(internalId)}/history?days=${days}`),
+    stats: () => get<StockStats>('/api/v1/stocks/stats'),
+    sectors: () => get<StockSectorSummary[]>('/api/v1/stocks/sectors'),
   },
 
   auth: {

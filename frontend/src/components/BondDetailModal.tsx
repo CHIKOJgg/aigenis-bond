@@ -16,9 +16,42 @@ interface BondDetailModalProps {
   onOpenBond?: (id: string) => void;
 }
 
+interface BondDetailContentProps {
+  bond: Bond;
+  onSubscribe?: () => void;
+  onOpenCompany?: (issuer: string) => void;
+  onOpenBond?: (id: string) => void;
+  headerAction?: React.ReactNode;
+}
+
 type Tab = 'overview' | 'analytics' | 'similar' | 'news';
 
 export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, onClose, onSubscribe, onOpenCompany, onOpenBond }: BondDetailModalProps) {
+  return (
+    <Modal onClose={onClose} className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="p-6">
+        <BondDetailContent
+          bond={bond}
+          onSubscribe={onSubscribe}
+          onOpenCompany={onOpenCompany}
+          onOpenBond={onOpenBond}
+          headerAction={
+            <>
+              {onToggleFavorite && (
+                <button onClick={onToggleFavorite} className="text-[#a4a7ae] hover:text-[#004b65] p-1">
+                  <Star size={18} className={isFavorite ? 'fill-[#004b65] text-[#004b65]' : ''} />
+                </button>
+              )}
+              <button onClick={onClose} className="text-[#a4a7ae] hover:text-[#01121a] p-1"><X size={18} /></button>
+            </>
+          }
+        />
+      </div>
+    </Modal>
+  );
+}
+
+export function BondDetailContent({ bond, onSubscribe, onOpenCompany, onOpenBond, headerAction }: BondDetailContentProps) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('overview');
   const [analysis, setAnalysis] = useState<BondAnalysisResult | null>(null);
@@ -76,7 +109,6 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
     finally { setNewsLoading(false); }
   };
 
-  // Auto-load similar bonds / news when the corresponding tab is opened.
   const prevTab = useRef(tab);
   useEffect(() => {
     if (tab === 'similar' && prevTab.current !== 'similar') {
@@ -99,25 +131,17 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
   const fmtDate = (s: string | null) => s ? new Date(s).toLocaleDateString() : '—';
 
   return (
-    <Modal onClose={onClose} className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold">{bond.internal_id}</h3>
-          <div className="flex items-center gap-2">
-            {onToggleFavorite && (
-              <button onClick={onToggleFavorite} className="text-gray-400 hover:text-amber-400 p-1">
-                <Star size={18} className={isFavorite ? 'fill-amber-400 text-amber-400' : ''} />
-              </button>
-            )}
-            <button onClick={onClose} className="text-gray-400 hover:text-white p-1"><X size={18} /></button>
-          </div>
-        </div>
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-[#01121a]">{bond.internal_id}</h3>
+        <div className="flex items-center gap-2">{headerAction}</div>
+      </div>
 
-        <div className="flex gap-1 border-b border-gray-800 mb-4 overflow-x-auto">
+        <div className="flex gap-1 border-b border-[#d6e2e6] mb-4 overflow-x-auto">
           {tabs.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                tab === t.id ? 'border-emerald-400 text-emerald-400' : 'border-transparent text-gray-400 hover:text-gray-200'
+                tab === t.id ? 'border-[#004b65] text-[#004b65]' : 'border-transparent text-[#717680] hover:text-[#01121a]'
               }`}>
               {t.icon} {t.label}
             </button>
@@ -131,8 +155,8 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
               <DetailRow label={t('common.currency')} value={bond.currency} />
               {onOpenCompany && bond.issuer ? (
                 <div className="flex flex-col">
-                  <span className="text-xs text-gray-500">{t('common.issuer')}</span>
-                  <button onClick={() => onOpenCompany(bond.issuer!)} className="text-emerald-400 hover:text-emerald-300 font-medium truncate text-left">{bond.issuer}</button>
+                  <span className="text-xs text-[#717680]">{t('common.issuer')}</span>
+                  <button onClick={() => onOpenCompany(bond.issuer!)} className="text-[#004b65] hover:text-[#387387] font-medium truncate text-left">{bond.issuer}</button>
                 </div>
               ) : (
                 <DetailRow label={t('common.issuer')} value={bond.issuer || '-'} />
@@ -147,23 +171,23 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
             </dl>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={showAnalysis} className="bg-gray-800 hover:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">{t('detail.analyze')}</button>
-              <button onClick={showCashflow} className="bg-gray-800 hover:bg-gray-700 text-sm text-white px-3 py-2 rounded-lg transition-colors">{t('detail.income')}</button>
+              <button onClick={showAnalysis} className="bg-[#f8fafb] hover:bg-[#eef3f5] text-sm text-[#01121a] px-3 py-2 rounded-lg transition-colors border border-[#d6e2e6]">{t('detail.analyze')}</button>
+              <button onClick={showCashflow} className="bg-[#f8fafb] hover:bg-[#eef3f5] text-sm text-[#01121a] px-3 py-2 rounded-lg transition-colors border border-[#d6e2e6]">{t('detail.income')}</button>
             </div>
 
             {analysisLoading && <LoadingSkeleton />}
             {analysisLocked && <UpgradePrompt onSubscribe={onSubscribe} />}
             {analysis && !analysisLocked && (
-              <div className="mt-4 bg-gray-800/40 rounded-xl p-4 space-y-3">
-                <h4 className="font-semibold">{analysis.analysis.verdict}</h4>
+              <div className="mt-4 bg-[#f5f9fb] rounded-xl p-4 space-y-3 border border-[#d6e2e6]">
+                <h4 className="font-semibold text-[#01121a]">{analysis.analysis.verdict}</h4>
                 {Array.isArray(analysis.analysis.reasons) && analysis.analysis.reasons.length > 0 && (
-                  <ul className="list-disc pl-5 text-sm text-gray-300 space-y-1">
+                  <ul className="list-disc pl-5 text-sm text-[#516c79] space-y-1">
                     {analysis.analysis.reasons.map((r, i) => <li key={i}>{String(r)}</li>)}
                   </ul>
                 )}
                 {analysis.ml_prediction && (
-                  <div className="text-sm text-gray-300 space-y-1 border-t border-gray-700 pt-2">
-                    <div>ML: <b className="capitalize">{analysis.ml_prediction.decision}</b> (conf {analysis.ml_prediction.confidence.toFixed(2)})</div>
+                  <div className="text-sm text-[#516c79] space-y-1 border-t border-[#d6e2e6] pt-2">
+                    <div>ML: <b className="capitalize text-[#01121a]">{analysis.ml_prediction.decision}</b> (conf {analysis.ml_prediction.confidence.toFixed(2)})</div>
                   </div>
                 )}
               </div>
@@ -172,9 +196,9 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
             {cashflowLoading && <LoadingSkeleton />}
             {cashflowLocked && <UpgradePrompt onSubscribe={onSubscribe} />}
             {cashflow && !cashflowLocked && (
-              <div className="mt-3 bg-gray-800/40 rounded-xl p-4 text-sm space-y-2">
-                <div className="flex justify-between"><span className="text-gray-400">{t('detail.annualIncome')}</span><span className="font-mono text-emerald-400">{cashflow.annual_income.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">{t('detail.yieldOnCost')}</span><span className="font-mono">{cashflow.yield_on_cost.toFixed(2)}%</span></div>
+              <div className="mt-3 bg-[#f5f9fb] rounded-xl p-4 text-sm space-y-2 border border-[#d6e2e6]">
+                <div className="flex justify-between"><span className="text-[#516c79]">{t('detail.annualIncome')}</span><span className="font-mono text-[#004b65]">{cashflow.annual_income.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-[#516c79]">{t('detail.yieldOnCost')}</span><span className="font-mono">{cashflow.yield_on_cost.toFixed(2)}%</span></div>
               </div>
             )}
           </div>
@@ -182,9 +206,9 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
 
         {tab === 'analytics' && (
           <div className="text-center py-8">
-            <BarChart3 size={48} className="mx-auto mb-4 text-gray-600" />
-            <p className="text-gray-400 mb-4">{t('detail.analyticsDesc')}</p>
-            <button onClick={showAnalysis} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm">{t('detail.loadAnalytics')}</button>
+            <BarChart3 size={48} className="mx-auto mb-4 text-[#a4a7ae]" />
+            <p className="text-[#516c79] mb-4">{t('detail.analyticsDesc')}</p>
+            <button onClick={showAnalysis} className="bg-[#004b65] hover:bg-[#003545] text-white px-4 py-2 rounded-lg text-sm">{t('detail.loadAnalytics')}</button>
           </div>
         )}
 
@@ -192,18 +216,18 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
           <div>
             {similarBonds.length === 0 && !similarLoading && (
               <div className="text-center py-8">
-                <Search size={48} className="mx-auto mb-4 text-gray-600" />
-                <p className="text-gray-400 mb-4">{t('detail.similarPrompt')}</p>
-                <button onClick={loadSimilar} className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm">{t('detail.loadSimilar')}</button>
+                <Search size={48} className="mx-auto mb-4 text-[#a4a7ae]" />
+                <p className="text-[#516c79] mb-4">{t('detail.similarPrompt')}</p>
+                <button onClick={loadSimilar} className="bg-[#004b65] hover:bg-[#003545] text-white px-4 py-2 rounded-lg text-sm">{t('detail.loadSimilar')}</button>
               </div>
             )}
             {similarLoading && <LoadingSkeleton />}
             {similarBonds.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {similarBonds.map((b) => (
-                  <button key={b.internal_id} onClick={() => onOpenBond?.(b.internal_id)} className="text-left bg-gray-800/40 rounded-xl p-3 border border-gray-700/50 hover:border-emerald-700 transition-colors">
-                    <p className="font-medium text-sm truncate">{b.name}</p>
-                    <div className="flex flex-wrap gap-x-3 text-xs text-gray-400 mt-1">
+                  <button key={b.internal_id} onClick={() => onOpenBond?.(b.internal_id)} className="text-left bg-[#f8fafb] rounded-xl p-3 border border-[#d6e2e6] hover:border-[#004b65] transition-colors">
+                    <p className="font-medium text-sm text-[#01121a] truncate">{b.name}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-[#717680] mt-1">
                       <span>YTM: {b.yield_to_maturity?.toFixed(2)}%</span>
                       <span>{b.currency}</span>
                     </div>
@@ -219,9 +243,9 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
             {newsLoading && <LoadingSkeleton />}
             {!newsLoading && news.length === 0 && (
               <div className="text-center py-8">
-                <Newspaper size={48} className="mx-auto mb-4 text-gray-600" />
-                <p className="text-gray-400 mb-2">{t('detail.newsEmpty')}</p>
-                <button onClick={loadNews} className="text-sm text-emerald-400 hover:text-emerald-300">{t('detail.loadNews')}</button>
+                <Newspaper size={48} className="mx-auto mb-4 text-[#a4a7ae]" />
+                <p className="text-[#516c79] mb-2">{t('detail.newsEmpty')}</p>
+                <button onClick={loadNews} className="text-sm text-[#004b65] hover:text-[#387387]">{t('detail.loadNews')}</button>
               </div>
             )}
             {!newsLoading && news.length > 0 && (
@@ -232,12 +256,12 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
                     href={n.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="block bg-gray-800/40 rounded-xl border border-gray-700/50 p-4 hover:border-emerald-700 transition-colors"
+                    className="block bg-[#f8fafb] rounded-xl border border-[#d6e2e6] p-4 hover:border-[#004b65] transition-colors"
                   >
-                    <p className="text-sm text-white leading-snug">{n.title}</p>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                    <p className="text-sm text-[#01121a] leading-snug">{n.title}</p>
+                    <div className="flex items-center gap-2 mt-2 text-xs text-[#717680]">
                       <span>{n.published_at ? new Date(n.published_at.replace(' ', 'T')).toLocaleString() : ''}</span>
-                      <ExternalLink size={12} className="text-emerald-400" />
+                      <ExternalLink size={12} className="text-[#004b65]" />
                     </div>
                   </a>
                 ))}
@@ -245,16 +269,15 @@ export default function BondDetailModal({ bond, isFavorite, onToggleFavorite, on
             )}
           </div>
         )}
-      </div>
-    </Modal>
+    </div>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className="text-gray-200 font-medium truncate">{value}</span>
+      <span className="text-xs text-[#717680]">{label}</span>
+      <span className="text-[#01121a] font-medium truncate">{value}</span>
     </div>
   );
 }
@@ -262,9 +285,9 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 function UpgradePrompt({ onSubscribe }: { onSubscribe?: () => void }) {
   const { t } = useI18n();
   return (
-    <div className="mt-4 bg-amber-900/20 border border-amber-500/20 rounded-xl p-4 text-center">
-      <p className="text-sm text-amber-300 mb-2">{t('detail.upgradePrompt')}</p>
-      <button onClick={onSubscribe} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-sm">{t('detail.upgradeCta')}</button>
+    <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+      <p className="text-sm text-amber-700 mb-2">{t('detail.upgradePrompt')}</p>
+      <button onClick={onSubscribe} className="bg-[#004b65] hover:bg-[#003545] text-white px-4 py-2 rounded-lg text-sm">{t('detail.upgradeCta')}</button>
     </div>
   );
 }

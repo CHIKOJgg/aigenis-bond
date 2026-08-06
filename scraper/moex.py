@@ -89,6 +89,36 @@ def _to_dec(value: Any) -> Decimal | None:
         return None
 
 
+def _coupon_rate_pct(sec: dict) -> Decimal | None:
+    """Coupon rate in % per annum.
+
+    MOEX ISS securities block exposes TWO coupon fields:
+      - COUPONVALUE  — coupon AMOUNT in face-currency per bond per period
+        (e.g. 8.38 RUB on a 750-RUB face) — NOT a rate.
+      - COUPONPERCENT — annual coupon RATE in percent (e.g. 13.6 = 13.6%).
+    The engine/UI treat coupon_rate as an annual % (percent points), so we
+    must use COUPONPERCENT when present and only fall back to a derived
+    amount-based estimate when the rate is missing.
+    """
+    pct = _to_dec(sec.get("COUPONPERCENT"))
+    if pct is not None and pct > 0:
+        return pct
+    amount = _to_dec(sec.get("COUPONVALUE"))
+    face = _to_dec(sec.get("FACEVALUE"))
+    period = sec.get("COUPONPERIOD")
+    if amount is None or face is None or face <= 0 or period is None:
+        return None
+    try:
+        period_days = int(period)
+    except (TypeError, ValueError):
+        return None
+    if period_days <= 0:
+        return None
+    per_period_pct = float(amount) / float(face) * 100.0
+    annual_pct = per_period_pct * (365.0 / period_days)
+    return Decimal(str(round(annual_pct, 4)))
+
+
 def _to_date(value: Any) -> date | None:
     if not value:
         return None
@@ -205,7 +235,7 @@ class MoexClient:
                     issuer=sec.get("ISSUER") or sec.get("SHORTNAME"),
                     currency=cur,  # type: ignore[arg-type]
                     nominal=_to_dec(sec.get("FACEVALUE")),
-                    coupon_rate=_to_dec(sec.get("COUPONVALUE")),
+                    coupon_rate=_coupon_rate_pct(sec),
                     coupon_frequency=_freq_from_coupon_period(sec.get("COUPONPERIOD")),
                     maturity_date=_to_date(sec.get("MATDATE")),
                     price=_to_dec(md.get("LAST")),
@@ -264,7 +294,7 @@ class MoexClient:
                 issuer=sec.get("ISSUER") or sec.get("SHORTNAME"),
                 currency=cur,  # type: ignore[arg-type]
                 nominal=_to_dec(sec.get("FACEVALUE")),
-                coupon_rate=_to_dec(sec.get("COUPONVALUE")),
+                coupon_rate=_coupon_rate_pct(sec),
                 coupon_frequency=_freq_from_coupon_period(sec.get("COUPONPERIOD")),
                 maturity_date=_to_date(sec.get("MATDATE")),
                 price=_to_dec(md_row.get("LAST")),

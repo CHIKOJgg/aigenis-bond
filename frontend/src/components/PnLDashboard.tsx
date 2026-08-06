@@ -109,8 +109,8 @@ export default function PnLDashboard() {
         <StatCard
           label="Реализованный P&L"
           value={`${data.total_realized_pnl >= 0 ? '+' : ''}${data.total_realized_pnl.toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`}
-          icon={<TrendingUp size={16} className="text-emerald-400" />}
-          color="bg-emerald-500/20"
+          icon={<TrendingUp size={16} className="text-green-400" />}
+          color="bg-green-500/20"
         />
         <StatCard
           label="Нереализованный P&L"

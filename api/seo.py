@@ -17,15 +17,17 @@ import asyncio
 import html
 import json
 import os
+import re
 import secrets as _secrets
 import tempfile
 from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from sqlalchemy import select
 
+from api.frontend import frontend_index
 from api.partner.security import generate_api_key
 from scraper.config import get_settings
 from scraper.db import session_scope
@@ -54,10 +56,48 @@ SITE_NAME = "Aigenis Bonds"
 BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "").strip()
 APP_CTA_LABEL = "Открыть полный разбор в Aigenis Bonds"
 
+# ─── Bot / human split ───────────────────────────────────────────────────────
+# SEO-covered paths (/bonds, /bonds/{id}, /calculator) shadow the SPA in
+# production, so crawlers must get the server-rendered page while regular
+# visitors get the single-page app. Matching a wide set of crawlers and link
+# previewers (Telegram, VK, Facebook, Slack…) — they also consume the
+# server-rendered OG markup.
+_BOT_UA_RE = re.compile(
+    r"(googlebot|yandex(?:bot)?|bingbot|bingpreview|duckduckbot|baiduspider|"
+    r"applebot|facebookexternalhit|facebot|twitterbot|linkedinbot|slackbot|"
+    r"discordbot|telegrambot|whatsapp|vkShare|vkbot|pinterest|redditbot|"
+    r"instagram|skypeuripreview|snapchat|"
+    r"ahrefsbot|semrushbot|mj12bot|dotbot|rogerbot|serpstatbot|screaming frog|"
+    r"blexbot|seznambot|exabot|sogou|ia_archiver|archive\.org|slurp|"
+    r"monitor|uptimerobot|pingdom|"
+    r"gptbot|chatgpt|claude(?:bot)?|anthropic|perplexity|bard|bytespider|"
+    r"meta-externalagent|petalbot|cohere|youbot|"
+    r"\bbot\b|\bspider\b|\bcrawler\b|\bpreview\b|\bslurp\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_bot(request: Request) -> bool:
+    """True for crawlers and link previewers; empty UA counts as a bot."""
+    ua = request.headers.get("user-agent", "")
+    return not ua or bool(_BOT_UA_RE.search(ua))
+
+
+def _spa_page() -> HTMLResponse | None:
+    """The built SPA entry, or None when the frontend is not built here."""
+    index = frontend_index()
+    if index is None:
+        return None
+    return FileResponse(
+        index,
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache"},
+    )
+
 # Minimal, dependency-free CSS — readable light theme for crawlers + visitors.
 _PAGE_CSS = """
 :root{--bg:#f7f8fa;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
---brand:#059669;--brand-d:#047857;--amber:#b45309;--red:#b91c1c;--chip:#ecfdf5}
+--brand:#004b65;--brand-d:#003545;--amber:#b45309;--red:#b91c1c;--chip:#e3eef3}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
 background:var(--bg);color:var(--ink);line-height:1.55}
@@ -216,13 +256,17 @@ def _sparkline(points: list[float]) -> str:
     poly = " ".join(coords)
     return (
         f'<svg class="spark" viewBox="0 0 {w:.0f} {h:.0f}" preserveAspectRatio="none" '
-        f'aria-hidden="true"><polyline points="{poly}" fill="none" stroke="#059669" '
+        f'aria-hidden="true"><polyline points="{poly}" fill="none" stroke="#004b65" '
         f'stroke-width="2"/></svg>'
     )
 
 
 @router.get("/bonds", response_class=HTMLResponse)
 async def seo_bonds(request: Request, currency: str | None = None, sort: str = "score", market: str | None = None):
+    if not _is_bot(request):
+        spa = _spa_page()
+        if spa is not None:
+            return spa
     cur = currency.upper() if currency else None
     mkt = market.lower() if market and market.lower() in ("bcse", "moex") else None
     async with session_scope() as session:
@@ -329,6 +373,10 @@ async def seo_bonds(request: Request, currency: str | None = None, sort: str = "
 
 @router.get("/bonds/{internal_id}", response_class=HTMLResponse)
 async def seo_bond(request: Request, internal_id: str):
+    if not _is_bot(request):
+        spa = _spa_page()
+        if spa is not None:
+            return spa
     async with session_scope() as session:
         bond = (await session.execute(
             select(BondORM).where(BondORM.internal_id == internal_id)
@@ -395,7 +443,7 @@ async def seo_bond(request: Request, internal_id: str):
   {('<h2>Динамика цены</h2>' + spark) if spark else ''}
   {('<p class="note">' + issuer_line + '</p>' if issuer_line else '')}
 </div>
-<div class="card" style="border-color:var(--brand);background:#f0fdf9">
+<div class="card" style="border-color:var(--brand);background:#f0f6f9">
   <h2 style="margin-top:0">Полный разбор — бесплатно</h2>
   <p>Что влияет на Score, ML-прогноз, стресс-тест и рекомендация «стоит ли покупать» —
   в приложении {SITE_NAME}. Доступен 7-дневный пробный Pro.</p>
@@ -580,7 +628,7 @@ async def seo_partners(request: Request):
   <li><b>EdTech по инвестициям</b> — готовая учебная платформа с реальными данными.</li>
   <li><b>Финансовые медиа и блогеры</b> — партнёрская программа с % с подписок.</li>
 </ul>
-<div class="card" style="border-color:var(--brand);background:#f0fdf9">
+<div class="card" style="border-color:var(--brand);background:#f0f6f9">
   <h2 style="margin-top:0">Оставить заявку на B2B / white-label</h2>
   <p>Заполните форму — мы пришлём API-ключ, виджет и условия партнёрки в Telegram.
   Или сразу <a href="{_esc(partner_bot)}">напишите боту про B2B →</a>.</p>
@@ -1108,6 +1156,10 @@ def _calc_modified_duration(mac_duration: float | None, ytm: float | None, freq:
 @router.get("/calculator", response_class=HTMLResponse)
 async def seo_calculator(request: Request):
     """Bond calculator: YTM from price, or price from YTM, plus duration."""
+    if not _is_bot(request):
+        spa = _spa_page()
+        if spa is not None:
+            return spa
     # Parse query params for pre-filled form
     q = request.query_params
     price = q.get("price")
