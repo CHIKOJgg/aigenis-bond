@@ -226,6 +226,89 @@ Connect to: `ws://localhost:8000/ws` (or `wss://` in production)
 
 ---
 
+## Aigenis Integration API
+
+B2B-контракт поставки аналитики в отдельном namespace `/api/aigenis/v1`
+(plan item 5.11). Полное OpenAPI-описание генерируется автоматически и доступно
+на `/openapi.json`; здесь — краткая спецификация контракта.
+
+### Auth
+
+All endpoints require a Bearer token — SSO JWT от Aigenis IdP
+(`Authorization: Bearer <jwt>`, `api/aigenis/security.py`). Валидируются
+iss/aud/exp и подпись через JWKS; entitlement scopes:
+
+| Scope | Purpose |
+| --- | --- |
+| `analytics:read` | списки и детальная аналитика бондов |
+| `portfolio:read` | расчёт эффекта на портфель |
+| `alerts:write` | создание алертов |
+
+Fail-closed: в production отсутствующий/невалидный токен → `401`; нехватка
+scope → `403`. В demo/staging без SSO-конфигурации — pass-through контекст.
+
+### Endpoints
+
+| Method | Path | Summary |
+| --- | --- | --- |
+| GET | `/api/aigenis/v1/bonds` | Список облигаций с Score (cursor pagination) |
+| GET | `/api/aigenis/v1/bonds/{instrument_id}` | Детальная аналитика с объяснением Score |
+| POST | `/api/aigenis/v1/portfolio-impact` | Оценка влияния на портфель |
+| POST | `/api/aigenis/v1/alerts` | Создание алерта (идемпотентный) |
+
+### Response headers (все ответы, plan item 5.13)
+
+| Header | Meaning |
+| --- | --- |
+| `X-Request-Id` | correlation id (переиспользует входящий при наличии) |
+| `X-Data-As-Of` | свежесть данных (`ISO 8601`) |
+| `X-Model-Version` | версия скоринговой модели (`v1`) |
+| `X-Data-Quality` | `ok` / `warning` / `critical` |
+
+### Pagination (GET /bonds)
+
+Keyset-cursor по `internal_id`:
+
+```json
+{
+  "as_of": "2026-08-06T12:00:00+00:00",
+  "data_status": "ok",
+  "items": [],
+  "next_cursor": "b-1024"
+}
+```
+
+Параметры: `market` (`BCSE`|`MOEX`), `currency`, `limit` (1–100, default 50),
+`cursor` (из `next_cursor`). Фильтры term/status принимаются на бэкенде и
+применяются в W2 пилота.
+
+### Error schema (все ошибки)
+
+```json
+{
+  "error": "not_covered",
+  "detail": null,
+  "request_id": "6f4f...",
+  "message": "Instrument X is not covered by the analytics engine."
+}
+```
+
+Статусы:
+- `401` — нет/невалидный SSO JWT (fail-closed)
+- `403` — недостаточный scope
+- `404` — инструмент не покрыт (`not_covered`), а не 500
+- `422` — валидация тела/параметров (pydantic)
+
+Rate limit: общие лимиты API (429 с `Retry-After`).
+
+### Deprecation policy
+
+Планируемые изменения контракта (поля, эндпоинты) объявляются заранее;
+каждый эндпоинт в OpenAPI помежается тегом `deprecated` за N дней до
+выключения. Версия контракта фиксируется в `X-Model-Version` / URL.
+
+---
+
 ## Error Format
 
 All errors return JSON:

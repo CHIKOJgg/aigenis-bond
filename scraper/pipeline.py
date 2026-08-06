@@ -20,6 +20,7 @@ from scraper.errors import (
     ScraperError,
     TransientError,
 )
+from scraper.lineage import record_snapshot_lineage
 from scraper.logging import get_logger
 from scraper.models import Bond, BondDailyAccrual
 from scraper.moex import MoexClient
@@ -575,7 +576,8 @@ async def run_once_moex_stocks(boards: list[str] | None = None) -> dict[str, int
 async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
     settings = client.settings
     cur_list = list(currencies)
-    logger.info("pipeline_start", currencies=cur_list)
+    ingestion_run = f"run-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%f')}"
+    logger.info("pipeline_start", currencies=cur_list, ingestion_run=ingestion_run)
 
     # Graceful degradation: if the primary source is unavailable (e.g. no paid
     # credentials), do not crash the whole pipeline. Serve stale DB data and let
@@ -641,6 +643,15 @@ async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
             **xlsx_stats,
             "stale_mode": True,
         }
+        async with session_scope() as session:
+            await record_snapshot_lineage(
+                session,
+                source="fallback",
+                ingestion_run=ingestion_run,
+                quality_status="critical",
+                rows_processed=saved_fb,
+                extra={"stale_mode": True},
+            )
         logger.info("pipeline_done_stale", **summary)
         return summary
     details_ok, details_err = await collect_details(client, internal_ids)
@@ -661,5 +672,15 @@ async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
         "scored": scored,
         **xlsx_stats,
     }
+    async with session_scope() as session:
+        await record_snapshot_lineage(
+            session,
+            source=settings.data_provider or "aigenis",
+            ingestion_run=ingestion_run,
+            quality_status="ok" if details_err == 0 else "warning",
+            rows_processed=details_ok + details_err,
+            license_contract_id=settings.license_contract_id,
+            extra={"market": ",".join(cur_list), "details_err": details_err},
+        )
     logger.info("pipeline_done", **summary)
     return summary

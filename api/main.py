@@ -18,6 +18,7 @@ from sqlalchemy import text as sa_text
 
 from api.access_control import add_feature_access_headers
 from api.admin.router import router as admin_router
+from api.aigenis import router as aigenis_router
 from api.analytics import router as analytics_router
 from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
@@ -116,6 +117,11 @@ logger.info("stocks_api_enabled")
 # Demo showcase (/demo/*). Deterministic, fixtures-only — no live API, no side effects.
 app.include_router(demo_router)
 logger.info("demo_api_enabled")
+
+# Aigenis integration boundary (B2B) — SSO JWT + entitlement scopes, separate
+# namespace /api/aigenis/v1 with cursor pagination and data-lineage headers.
+app.include_router(aigenis_router)
+logger.info("aigenis_integration_api_enabled")
 
 # --- Security headers ---
 # Applied to every response (except the docs/OpenAPI endpoints) to harden the

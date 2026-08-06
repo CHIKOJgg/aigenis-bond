@@ -8,7 +8,10 @@
 # =============================================================================
 
 # ---- Stage 1: Frontend build ----
-FROM node:22-alpine AS frontend
+# Debian (glibc) base, not alpine: npm bug #4828 — a lockfile generated on a
+# glibc host misses the musl rollup optional dependency, so `npm ci` + `vite
+# build` fails with "Cannot find module @rollup/rollup-linux-x64-musl".
+FROM node:22 AS frontend
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci

@@ -25,6 +25,11 @@ from scraper.orm.desk import (
     StressRunORM,
 )
 from scraper.orm.documents import DocumentAnalysisORM
+from scraper.orm.integration import (  # noqa: F401 — schema import for alembic/tests
+    InstrumentMapORM,
+    SnapshotLineageORM,
+)
+from scraper.orm.jobs import JobRunORM
 from scraper.orm.markets import FxRateORM, MetalPriceORM
 from scraper.orm.ml import ModelVersionORM, PredictionORM, TrainingRunORM
 from scraper.orm.partner import (
@@ -67,6 +72,8 @@ __all__ = [
     "CurvePointORM",
     "DocumentAnalysisORM",
     "FxRateORM",
+    "InstrumentMapORM",
+    "JobRunORM",
     "MetalPriceORM",
     "ModelVersionORM",
     "ParseErrorORM",

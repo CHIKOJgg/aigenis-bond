@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
         try:
             return _json.loads(self.currencies_raw)
-        except _json.JSONDecodeError, TypeError:
+        except (_json.JSONDecodeError, TypeError):
             pass
         return [c.strip().upper() for c in self.currencies_raw.split(",") if c.strip()]
 
@@ -68,6 +68,19 @@ class Settings(BaseSettings):
 
     sentry_dsn: str | None = None
     environment: str = "production"
+
+    # Deployment profile: "saas" (current B2C) | "aigenis" (B2B integration).
+    # Profile "aigenis" forbids browser scraping (fail-closed) and relies on the
+    # official data feed via MarketDataProvider (plan item 5.7).
+    deployment_profile: str = Field(default="saas", validation_alias="DEPLOYMENT_PROFILE")
+    # Active market-data provider: aigenis_official | moex | demo_fixtures.
+    # Configurable provider selection (plan item 5.5).
+    data_provider: str = Field(default="", validation_alias="DATA_PROVIDER")
+
+    # License/contract id для lineage snapshots (plan item 5.6).
+    license_contract_id: str | None = Field(
+        default=None, validation_alias="AIGENIS_LICENSE_CONTRACT_ID"
+    )
 
     # Google OAuth client id used to verify the `aud`/`azp` claim of Google
     # id_tokens during the /auth/google login flow. If unset, Google login is
@@ -108,7 +121,7 @@ class Settings(BaseSettings):
                 raw_items = [str(x).strip().upper() for x in parsed]
             else:
                 raw_items = [x.strip().upper() for x in v.split(",") if x.strip()]
-        except _json.JSONDecodeError, TypeError:
+        except (_json.JSONDecodeError, TypeError):
             raw_items = [x.strip().upper() for x in v.split(",") if x.strip()]
         bad = [c for c in raw_items if c not in allowed]
         if bad:
@@ -196,7 +209,7 @@ class TelegramSettings(BaseSettings):
             parsed = _json.loads(self.admin_ids_raw)
             if isinstance(parsed, list):
                 return [int(x) for x in parsed]
-        except _json.JSONDecodeError, TypeError, ValueError:
+        except (_json.JSONDecodeError, TypeError, ValueError):
             pass
         # Fall back to comma-separated ints; a garbage value must not crash
         # startup, so non-numeric entries are skipped.

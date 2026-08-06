@@ -59,18 +59,26 @@ services:
     image: redis:7-alpine
     container_name: aigenis-redis
     restart: unless-stopped
+    environment:
+      # Needed by the healthcheck below (docker-compose $$ escaping turns
+      # $$REDIS_PASSWORD into a literal $ at render time; the value must come
+      # from the container env, not the host shell — plan item 11.1).
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required. Run: python scripts/generate_secrets.py --write-env}"
     command: >
-      redis-server
+      sh -c 'exec redis-server
       --appendonly yes
       --maxmemory ${REDIS_MAX_MEMORY:-256mb}
       --maxmemory-policy ${REDIS_MAXMEM_POLICY:-allkeys-lru}
-    # ports only needed for host access; internal networking uses 6379
+      --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required. Run: python scripts/generate_secrets.py --write-env}'
+    # ports only needed for host access; internal networking uses 6379 (ACL/password
+    # set above; never publish Redis publicly — plan item 11.1)
     # ports:
     #   - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # REDISCLI_AUTH avoids the "-a pass" process-list warning (11.1).
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -142,7 +150,7 @@ services:
       DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-3600}
       DB_SLOW_QUERY_THRESHOLD_S: ${DB_SLOW_QUERY_THRESHOLD_S:-0.1}
       # --- Redis ---
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-}@redis:6379/0}
       REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-20}
       # --- Telegram ---
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -271,7 +279,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       # --- Redis (rate limiting): without this the redis backend fails closed
       # --- and every rate-limited request would 429.
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-}@redis:6379/0}
       RATE_LIMIT_BACKEND: ${RATE_LIMIT_BACKEND:-memory}
       # API runs behind the nginx frontend; trust the last X-Forwarded-For hop
       # for client-IP rate limiting and YooKassa webhook IP filtering.

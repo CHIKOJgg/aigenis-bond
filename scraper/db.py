@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -165,3 +166,95 @@ async def dispose() -> None:
         logger.info("engine_disposed")
     _engine = None
     _session_factory = None
+
+
+# ──────────────────────────────────────────────
+# Scheduler leadership lock (plan item 11.2)
+# ──────────────────────────────────────────────
+
+
+class AdvisoryLock:
+    """PostgreSQL advisory lock for cross-instance scheduler leadership.
+
+    ``pg_try_advisory_lock`` is acquired per database connection. We hold a
+    dedicated connection on a NullPool engine (not the pooled session engine)
+    so the lock is released on process exit and never lingers after a crash,
+    and so returning the connection to a pool can't silently keep the lock
+    alive on a reused socket.
+
+    Non-PostgreSQL dialects (tests/sqlite) degrade to a local asyncio lock —
+    scheduler tests run in-process, single replica.
+    """
+
+    _KEY = 0x414947_454E_4953  # "AIGENIS" as int64
+
+    def __init__(self) -> None:
+        self._local = asyncio.Lock()
+        self._conn: Any = None
+        self._name: str | None = None
+        self._engine: Any = None
+
+    @classmethod
+    def _key_for(cls, name: str) -> int:
+        # Stable 63-bit key from the lock name (advisory locks take int4/int8).
+        return cls._KEY ^ (abs(hash(name)) % 0x7FFF_FFFF)
+
+    async def acquire(self, name: str) -> bool:
+        """Try to acquire the lock; returns True if this instance is leader."""
+        await self._local.acquire()
+        self._name = name
+        if not _is_postgresql():
+            # sqlite/in-memory: single-process tests — local lock is enough.
+            return True
+        try:
+            from sqlalchemy import text
+            from sqlalchemy.ext.asyncio import create_async_engine
+            from sqlalchemy.pool import NullPool
+
+            if self._engine is None:
+                self._engine = create_async_engine(
+                    get_settings().database.url,
+                    poolclass=NullPool,
+                )
+            self._conn = await self._engine.connect()
+            row = await self._conn.execute(
+                text("SELECT pg_try_advisory_lock(:key)"),
+                {"key": self._key_for(name)},
+            )
+            acquired = bool(row.first()[0])
+            if not acquired:
+                await self._conn.close()
+                self._conn = None
+                self._local.release()
+            return acquired
+        except Exception:
+            logger.exception("advisory_lock_acquire_failed")
+            if self._conn is not None:
+                await self._conn.close()
+                self._conn = None
+            self._local.release()
+            return False
+
+    async def release(self) -> None:
+        if self._conn is not None:
+            try:
+                from sqlalchemy import text
+
+                await self._conn.execute(
+                    text("SELECT pg_advisory_unlock(:key)"),
+                    {"key": self._key_for(self._name or "")},
+                )
+            except Exception:  # pragma: no cover — best-effort cleanup
+                logger.warning("advisory_lock_unlock_failed")
+            await self._conn.close()
+            self._conn = None
+        self._local.release()
+
+    async def dispose(self) -> None:
+        if self._engine is not None:
+            await self._engine.dispose()
+            self._engine = None
+
+
+# Module-level singleton shared by every scheduled job in this process.
+PIPELINE_LOCK = AdvisoryLock()

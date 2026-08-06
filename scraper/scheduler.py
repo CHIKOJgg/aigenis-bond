@@ -4,16 +4,16 @@ import asyncio
 import os
 import signal
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from scraper.config import get_settings
+from scraper.db import PIPELINE_LOCK
 from scraper.logging import correlation_id, get_logger
 
 logger = get_logger("scraper.scheduler")
-
-_pipeline_lock = asyncio.Lock()
 
 
 async def scheduled_stocks_job() -> None:
@@ -33,18 +33,24 @@ async def scheduled_stocks_job() -> None:
         logger.exception("scheduled_stocks_job_failed", correlation_id=cid)
 
 
-async def scheduled_history_job() -> None:
+async def scheduled_history_job() -> str:
     """Daily history-only refresh (03:00), complementing the full 6-hour run.
 
     Previously this cron slot re-ran the entire listing+details+history
     pipeline — a full duplicate of ``scrape_all_6h``. Now it only refreshes
     price/YTM candles (30 days) and the coupon calendar for the top-N bonds per
     currency, so charts are fresh by market open without duplicating the scrape.
+
+    Returns a PIPELINE_LOCK outcome so the scheduler wrapper can record it.
     """
-    if _pipeline_lock.locked():
+    if PIPELINE_LOCK._local.locked():
         logger.info("scheduled_history_job_skipped_already_running")
-        return
-    async with _pipeline_lock:
+        return "skipped"
+    acquired = await PIPELINE_LOCK.acquire("history")
+    if not acquired:
+        logger.info("scheduled_history_job_skipped_leader_is_another_instance")
+        return "skipped"
+    try:
         settings = get_settings()
         cid = correlation_id()
         logger.info("scheduled_history_job_start", correlation_id=cid)
@@ -135,13 +141,20 @@ async def scheduled_history_job() -> None:
             logger.exception("scheduled_history_job_failed", correlation_id=cid)
         else:
             logger.info("scheduled_history_job_done", correlation_id=cid)
+    finally:
+        await PIPELINE_LOCK.release()
+    return "ok"
 
 
-async def scheduled_job() -> None:
-    if _pipeline_lock.locked():
+async def scheduled_job() -> str:
+    if PIPELINE_LOCK._local.locked():
         logger.info("scheduled_job_skipped_already_running")
-        return
-    async with _pipeline_lock:
+        return "skipped"
+    acquired = await PIPELINE_LOCK.acquire("pipeline")
+    if not acquired:
+        logger.info("scheduled_job_skipped_leader_is_another_instance")
+        return "skipped"
+    try:
         settings = get_settings()
         cid = correlation_id()
         logger.info("scheduled_job_start", correlation_id=cid)
@@ -170,17 +183,45 @@ async def scheduled_job() -> None:
             logger.info("scheduled_job_done", correlation_id=cid)
         except Exception:
             logger.exception("scheduled_job_failed", correlation_id=cid)
+    finally:
+        await PIPELINE_LOCK.release()
+    return "ok"
 
 
-def _wrap(name: str, fn: Callable[[], Awaitable[None]]) -> Callable[[], Awaitable[None]]:
-    async def wrapper() -> None:
+def _exc_summary() -> str:
+    """Single-line error summary for the job_runs table."""
+    import sys
+
+    exc = sys.exc_info()[1]
+    if exc is None:
+        return ""
+    text = str(exc) or exc.__class__.__name__
+    return text.replace("\n", " ").strip()[:512]
+
+
+def _wrap(name: str, fn: Callable[[], Awaitable[Any]]) -> Callable[[], Awaitable[str | None]]:
+    async def wrapper() -> str | None:
+        from datetime import UTC, datetime
+
+        from scraper.job_runs import finish_job_run, start_job_run
+
         cid = correlation_id()
+        started_at = datetime.now(UTC)
+        run_id = await start_job_run(name)
         logger.info(f"{name}_start", correlation_id=cid)
         try:
-            await fn()
+            outcome = str(await fn())
+            if outcome in ("skipped",):
+                logger.info(f"{name}_skipped", correlation_id=cid)
+                await finish_job_run(run_id, "skipped", started_at=started_at)
+                return outcome
             logger.info(f"{name}_done", correlation_id=cid)
+            await finish_job_run(run_id, "ok", started_at=started_at)
+            return outcome
         except Exception:
             logger.exception(f"{name}_failed", correlation_id=cid)
+            await finish_job_run(run_id, "failed", started_at=started_at, error=_exc_summary())
+            return None
 
     wrapper.__name__ = name
     return wrapper
@@ -189,7 +230,7 @@ def _wrap(name: str, fn: Callable[[], Awaitable[None]]) -> Callable[[], Awaitabl
 def build_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Minsk")
 
-    jobs = [
+    jobs: list[tuple[str, str, Callable[[], Awaitable[Any]], int]] = [
         ("scrape_all_6h", "0 */6 * * *", scheduled_job, 900),
         # History-only refresh — NOT a duplicate full pipeline.
         ("scrape_history_daily", "0 3 * * *", scheduled_history_job, 1800),
@@ -272,9 +313,11 @@ async def run_forever() -> None:
     from contextlib import suppress
 
     loop = asyncio.get_running_loop()
+    from functools import partial
+
     for sig in (signal.SIGINT, signal.SIGTERM):
         with suppress(NotImplementedError):
-            loop.add_signal_handler(sig, lambda s=sig: _shutdown(s))
+            loop.add_signal_handler(sig, partial(_shutdown, sig))
 
     try:
         try:
