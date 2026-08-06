@@ -23,6 +23,7 @@ Env tunables: LOAD_USERS (threads, 40), LOAD_REQUESTS_PER_USER (25),
 LOAD_PORT (8731), LOAD_MAX_MS (per-request ceiling, 5000),
 LOAD_MAX_FAILURE_RATE (0.0).
 """
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -100,11 +101,16 @@ def test_server_withstands_concurrent_load(tmp_path):
 
     server = subprocess.Popen(
         [
-            sys.executable, "-m", "uvicorn",
+            sys.executable,
+            "-m",
+            "uvicorn",
             "api.main:app",
-            "--host", HOST,
-            "--port", str(PORT),
-            "--log-level", "error",
+            "--host",
+            HOST,
+            "--port",
+            str(PORT),
+            "--log-level",
+            "error",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

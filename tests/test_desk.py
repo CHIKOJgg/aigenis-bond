@@ -3,6 +3,7 @@
 These verify numerical correctness of the core calculations without any DB or
 network access, so they run fast and are a good safety net for refactors.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -144,8 +145,13 @@ def test_signals_from_curve_requires_three_points():
 def _make_curve(currency: str, params: NelsonSiegelParams):
 
     tenors = {"1Y": 1.0, "3Y": 3.0, "5Y": 5.0, "10Y": 10.0}
-    points = [CurvePoint(tenor=t, years=y, rate_pct=_ns_rate(y, **params.model_dump())) for t, y in tenors.items()]
-    return YieldCurve(currency=currency, observed_at=datetime(2026, 1, 1), points=points, ns_params=params)
+    points = [
+        CurvePoint(tenor=t, years=y, rate_pct=_ns_rate(y, **params.model_dump()))
+        for t, y in tenors.items()
+    ]
+    return YieldCurve(
+        currency=currency, observed_at=datetime(2026, 1, 1), points=points, ns_params=params
+    )
 
 
 def test_signals_from_curve_full():
@@ -167,7 +173,9 @@ def test_carry_for_bond_positive_coupon_minus_funding():
 
 
 def test_carry_for_bond_returns_none_without_inputs():
-    bond = Bond(internal_id="X", name="x", currency="USD", status="active", fetched_at=datetime(2026, 1, 1))
+    bond = Bond(
+        internal_id="X", name="x", currency="USD", status="active", fetched_at=datetime(2026, 1, 1)
+    )
     assert carry_for_bond(bond, funding_rate_pct=5.0) is None
 
 
@@ -185,7 +193,9 @@ def test_rank_carry_sorts_descending():
 # --------------------------------------------------------------------------- #
 def test_repo_deal_haircut_reduces_collateral():
     bond = _rv_bond("A", 8.0)
-    deal: RepoDeal = repo_deal(bond, notional=Decimal("1000"), haircut_pct=5.0, repo_rate_pct=10.0, tenor_days=30)
+    deal: RepoDeal = repo_deal(
+        bond, notional=Decimal("1000"), haircut_pct=5.0, repo_rate_pct=10.0, tenor_days=30
+    )
     assert deal.collateral_value == Decimal("1000.00")
     assert deal.cash_lent == Decimal("950.00")  # 1000 - 5%
     assert deal.accrued_interest > 0

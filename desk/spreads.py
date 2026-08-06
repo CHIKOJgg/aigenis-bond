@@ -12,6 +12,7 @@
   (model_price − market_price) / market_price × 100. Положительный → облигация
   дешевле модели (cheap), отрицательный → дороже (rich).
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -128,9 +129,7 @@ def compute_spreads(
                 tenor_years=round(tenor, 4),
                 ytm_pct=round(ytm_pct, 4),
                 flat_yield_pct=round(flat_pct, 4) if flat_pct is not None else None,
-                z_spread_pct=round(flat_pct - curve_rate, 4)
-                if flat_pct is not None
-                else None,
+                z_spread_pct=round(flat_pct - curve_rate, 4) if flat_pct is not None else None,
                 g_spread_pct=round(ytm_pct - curve_rate, 4),
                 curve_rate_pct=round(curve_rate, 4),
                 model_price=round(model_dirty, 4) if model_dirty is not None else None,

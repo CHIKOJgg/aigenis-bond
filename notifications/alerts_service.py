@@ -6,6 +6,7 @@
 пользователю уведомление. Дедуп — не чаще одного события в 24 часа на правило,
 чтобы не спамить при удержании порога.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -21,24 +22,41 @@ from notifications.alerts_repository import (
 from notifications.delivery import deliver_telegram, emit_partner_alert
 from scraper.db import session_scope
 from scraper.logging import get_logger
-from scraper.orm import AlertEventORM, BondORM
+from scraper.orm import AlertEventORM, BondORM, StockORM
 
 logger = get_logger("alerts.service")
 
 _DEDUP_WINDOW = timedelta(hours=24)
 
+_METRIC_LABELS = {
+    "price": "Цена",
+    "ytm": "Доходность",
+    "pbr": "P/B",
+    "pe": "P/E",
+    "dividend_yield": "Див. доходность",
+}
 
-def _current_value(orm_bond: BondORM, metric: str) -> Decimal | None:
+
+def _current_value(orm: object, metric: str) -> Decimal | None:
     if metric == "price":
-        return orm_bond.price
+        return getattr(orm, "price", None)
     if metric == "ytm":
-        return orm_bond.yield_to_maturity
+        return getattr(orm, "yield_to_maturity", None)
+    if metric == "pbr":
+        return getattr(orm, "pbr_ratio", None)
+    if metric == "pe":
+        return getattr(orm, "pe_ratio", None)
+    if metric == "dividend_yield":
+        return getattr(orm, "dividend_yield", None)
     return None
 
 
 def _build_message(rule: object, value: Decimal) -> str:
-    verb = "выросла" if rule.direction == "above" else "упала"  # type: ignore[attr-defined]
-    metric_name = "Цена" if rule.metric == "price" else "Доходность"  # type: ignore[attr-defined]
+    verb = "вырос" if rule.direction == "above" else "упал"  # type: ignore[attr-defined]
+    metric_name = _METRIC_LABELS.get(  # type: ignore[attr-defined]
+        rule.metric,
+        rule.metric,  # type: ignore[attr-defined]
+    )
     return (
         f"🔔 {metric_name} {rule.internal_id} {verb} до {value:.2f} "  # type: ignore[attr-defined]
         f"(порог {rule.threshold:.2f})"  # type: ignore[attr-defined]
@@ -73,15 +91,21 @@ async def run_alert_checks() -> int:
         if not rules:
             return 0
         bonds = (await session.execute(select(BondORM))).scalars().all()
+        stocks = (await session.execute(select(StockORM))).scalars().all()
         by_id = {b.internal_id: b for b in bonds}
+        by_id.update({s.internal_id: s for s in stocks})
 
         recent = (
-            await session.execute(
-                select(AlertEventORM.rule_id).where(
-                    AlertEventORM.created_at >= datetime.now(UTC) - _DEDUP_WINDOW
+            (
+                await session.execute(
+                    select(AlertEventORM.rule_id).where(
+                        AlertEventORM.created_at >= datetime.now(UTC) - _DEDUP_WINDOW
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         recent_rules = set(recent)
 
         fired = 0
@@ -111,9 +135,7 @@ async def run_alert_checks() -> int:
                 from sqlalchemy import update
 
                 await session.execute(
-                    update(AlertEventORM)
-                    .where(AlertEventORM.id == event.id)
-                    .values(delivered=True)
+                    update(AlertEventORM).where(AlertEventORM.id == event.id).values(delivered=True)
                 )
             # B2B partners subscribed to alert.triggered also get the event.
             await emit_partner_alert(

@@ -4,6 +4,7 @@ Implements a lightweight FSM-lite for editing portfolio preferences via inline
 buttons and text replies. Shared per-user edit state lives in
 `telegram_bot.handler_state`.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -118,14 +119,14 @@ async def cb_preset(callback_query) -> None:
             f"✅ Применён пресет «{_PRESET_LABELS.get(label, label)}»: "
             f"USD {shares[0]:.0%}, BYN {shares[1]:.0%}, "
             f"Металлы {shares[2]:.0%}, EUR {shares[3]:.0%}",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="⚙️ К настройкам", callback_data="menu:settings")],
-                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
-            ]
-        ),
-    )
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⚙️ К настройкам", callback_data="menu:settings")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")],
+                ]
+            ),
+        )
     await callback_query.answer()
 
 
@@ -152,9 +153,7 @@ async def cb_edit(callback_query) -> None:
         "Или нажмите «❌ Отмена».",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="❌ Отмена", callback_data="edit:cancel")]
-            ]
+            inline_keyboard=[[InlineKeyboardButton(text="❌ Отмена", callback_data="edit:cancel")]]
         ),
     )
     await callback_query.answer()

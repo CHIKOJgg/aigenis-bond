@@ -34,9 +34,9 @@ def _generate_portfolio_pdf(
         rows += f"""
         <tr>
             <td style="padding:8px;border-bottom:1px solid #d6e2e6">{name}</td>
-            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right">{p['weight']*100:.1f}%</td>
-            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right">{p['current_value']:,.2f}</td>
-            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right;{pnl_class}">{p['total_pnl']:+,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right">{p["weight"] * 100:.1f}%</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right">{p["current_value"]:,.2f}</td>
+            <td style="padding:8px;border-bottom:1px solid #d6e2e6;text-align:right;{pnl_class}">{p["total_pnl"]:+,.2f}</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>
@@ -59,21 +59,21 @@ def _generate_portfolio_pdf(
 
 <div class="stats">
   <div class="stat">
-    <div class="stat-value">{pnl_data.get('total_invested', 0):,.2f}</div>
+    <div class="stat-value">{pnl_data.get("total_invested", 0):,.2f}</div>
     <div class="stat-label">Инвестировано</div>
   </div>
   <div class="stat">
-    <div class="stat-value">{pnl_data.get('total_value', 0):,.2f}</div>
+    <div class="stat-value">{pnl_data.get("total_value", 0):,.2f}</div>
     <div class="stat-label">Текущая стоимость</div>
   </div>
   <div class="stat">
-    <div class="stat-value" style="color: {'#008f5e' if pnl_data.get('total_pnl', 0) >= 0 else '#b91c1c'}">
-      {pnl_data.get('total_pnl', 0):+,.2f}
+    <div class="stat-value" style="color: {"#008f5e" if pnl_data.get("total_pnl", 0) >= 0 else "#b91c1c"}">
+      {pnl_data.get("total_pnl", 0):+,.2f}
     </div>
     <div class="stat-label">P&L</div>
   </div>
   <div class="stat">
-    <div class="stat-value">{pnl_data.get('total_return_pct', 0):+.2f}%</div>
+    <div class="stat-value">{pnl_data.get("total_return_pct", 0):+.2f}%</div>
     <div class="stat-label">Доходность</div>
   </div>
 </div>
@@ -100,9 +100,7 @@ async def export_portfolio_report(
     async with session_scope() as session:
         positions = await list_positions(session, uid)
         txs = await list_transactions(session, uid, limit=1000)
-        bond_rows = (
-            await session.execute(select(BondORM))
-        ).scalars().all()
+        bond_rows = (await session.execute(select(BondORM))).scalars().all()
 
     bonds_by_id = {b.internal_id: _h.orm_to_bond(b) for b in bond_rows}
 

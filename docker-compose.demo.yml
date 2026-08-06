@@ -1,11 +1,36 @@
 # =============================================================================
-# Demo override: собирает frontend через vite build (без tsc --no-typecheck)
-# Использование: docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d
+# Demo deployment — standalone fixtures-only frontend
+# =============================================================================
+# Запускает только демо-интерфейс (SPA на фикстурах). Без API, без платежей,
+# без Telegram-бота, без внешних сервисов. По умолчанию работает на
+# http://localhost:8080 (можно переопределить через DEMO_PORT).
+#
+# Использование:
+#   docker compose -f docker-compose.demo.yml up -d --build
+#
+# Безопасность (6.8/6.9):
+#   - X-Robots-Tag: noindex, nofollow на всех ответах
+#   - robots.txt -> Disallow: /
+#   - нет проксирования /api, /billing, /admin, /webhook
 # =============================================================================
 
 services:
-  frontend:
+  demo:
     build:
       context: ./frontend
       dockerfile: Dockerfile.demo
     image: aigenis-frontend-demo:latest
+    container_name: aigenis-demo
+    restart: unless-stopped
+    ports:
+      - "${DEMO_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 128M

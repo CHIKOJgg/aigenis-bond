@@ -122,7 +122,10 @@ def pricing_cashflows(
     if issue_date is not None:
         schedule = coupon_dates(issue_date, maturity, freq)
         flows = [
-            (year_fraction(asof, d, convention), cf_per_period + (nominal if d == maturity else 0.0))
+            (
+                year_fraction(asof, d, convention),
+                cf_per_period + (nominal if d == maturity else 0.0),
+            )
             for d in schedule
             if d > asof
         ]

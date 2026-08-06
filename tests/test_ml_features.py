@@ -1,4 +1,5 @@
 """Unit tests for ML feature engineering (ml/features.py)."""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -43,7 +44,9 @@ def test_build_features_basic_fields():
 
 def test_build_features_spread_to_avg():
     bonds = [_bond_dict(internal_id="A", ytm=10.0), _bond_dict(internal_id="B", ytm=8.0)]
-    f = build_features(bond_dict=bonds[0], avg_yield_by_currency={"USD": 9.0}, asof=date(2026, 1, 1))
+    f = build_features(
+        bond_dict=bonds[0], avg_yield_by_currency={"USD": 9.0}, asof=date(2026, 1, 1)
+    )
     assert f.spread_to_avg == 1.0  # 10 - 9
 
 

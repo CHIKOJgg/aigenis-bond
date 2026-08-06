@@ -1,16 +1,16 @@
 """Reward/Risk Score v4 — professional multi-factor scoring engine.
 
-    score = yield + currency + duration + liquidity + metal + credit
-          + inflation + coupon + volatility + hist_volatility + peer_relative
+score = yield + currency + duration + liquidity + metal + credit
+      + inflation + coupon + volatility + hist_volatility + peer_relative
 
-    Также вычисляет:
-      reward_subtotal  — сумма всех положительных вкладов
-      risk_subtotal    — сумма модулей отрицательных вкладов
-      efficiency_ratio — reward / (1 + risk), Sharpe-подобный коэффициент
-      risk_adjusted_score — efficiency_ratio × 100 (отдельный score)
+Также вычисляет:
+  reward_subtotal  — сумма всех положительных вкладов
+  risk_subtotal    — сумма модулей отрицательных вкладов
+  efficiency_ratio — reward / (1 + risk), Sharpe-подобный коэффициент
+  risk_adjusted_score — efficiency_ratio × 100 (отдельный score)
 
-    Калибровка выверена на 60+ реалистичных профилях (аудит 2026-08).
-    Тиры: S≥85, A≥75, B≥60, C≥45, D<45.
+Калибровка выверена на 60+ реалистичных профилях (аудит 2026-08).
+Тиры: S≥85, A≥75, B≥60, C≥45, D<45.
 """
 
 from __future__ import annotations
@@ -107,7 +107,9 @@ def _historical_volatility_component(ytm_history: list[float] | None) -> float:
 
 
 def _peer_relative_component(
-    ytm_pct: float | None, currency: str, peer_ytms: list[float] | None
+    ytm_pct: float | None,
+    currency: str,  # noqa: ARG001
+    peer_ytms: list[float] | None,
 ) -> float:
     """Сравнение с аналогами в той же валюте: z-score выше среднего = бонус."""
     if ytm_pct is None or ytm_pct <= 0:
@@ -184,16 +186,41 @@ _CREDIT_TIERS: dict[str, float] = {
 }
 
 _GOV_KEYWORDS = {
-    "министерство", "республика", "государ", "treasury", "government",
-    "минфин", "евразэс", "евразийск", "еабр", "счётная", "счетная",
-    "правительство", "казначейство", "муниципальн", "субъект",
-    "republic", "sovereign", "central bank", "centrobank",
+    "министерство",
+    "республика",
+    "государ",
+    "treasury",
+    "government",
+    "минфин",
+    "евразэс",
+    "евразийск",
+    "еабр",
+    "счётная",
+    "счетная",
+    "правительство",
+    "казначейство",
+    "муниципальн",
+    "субъект",
+    "republic",
+    "sovereign",
+    "central bank",
+    "centrobank",
 }
 _BANK_KEYWORDS = {"bank", "банк", "сбер", "втб", "вэб", "газпромбанк", "альфа"}
 _STATE_CORP_KEYWORDS = {
-    "газпром", "роснефть", "росатом", "роскосмос", "русгидро",
-    "транснефть", "ржд", "аэрофлот", "почта", "связь",
-    "лукойл", "сургут", "татнефть",
+    "газпром",
+    "роснефть",
+    "росатом",
+    "роскосмос",
+    "русгидро",
+    "транснефть",
+    "ржд",
+    "аэрофлот",
+    "почта",
+    "связь",
+    "лукойл",
+    "сургут",
+    "татнефть",
 }
 _SYSTEMIC_BANKS = {"сбер", "втб", "газпромбанк", "альфа-банк", "вэб"}
 
@@ -287,9 +314,8 @@ def _volatility_component(
             score -= 1.0
     if status in {"delisted", "defaulted", "suspended"}:
         score -= 5.0
-    if coupon_pct is not None and coupon_pct <= 0 and ytm_pct is not None:
-        if ytm_pct < 3:
-            score -= 2.0
+    if coupon_pct is not None and coupon_pct <= 0 and ytm_pct is not None and ytm_pct < 3:
+        score -= 2.0
     return score
 
 
@@ -324,21 +350,37 @@ def _inflation_component_market(currency: str, ytm_pct: float | None, is_moex: b
 
 def _compute_efficiency_ratio(breakdown: ScoreBreakdown) -> float:
     """Sharpe-подобный коэффициент. reward/(reward+risk+1)*15 → диапазон 0-15."""
-    reward = sum(max(v, 0.0) for v in [
-        breakdown.yield_component, breakdown.currency_component,
-        breakdown.duration_component, breakdown.liquidity_component,
-        breakdown.metal_component, breakdown.credit_risk_component,
-        breakdown.inflation_component, breakdown.coupon_component,
-        breakdown.historical_volatility_component, breakdown.peer_relative_component,
-    ])
-    risk = sum(abs(min(v, 0.0)) for v in [
-        breakdown.yield_component, breakdown.currency_component,
-        breakdown.duration_component, breakdown.liquidity_component,
-        breakdown.metal_component, breakdown.credit_risk_component,
-        breakdown.inflation_component, breakdown.coupon_component,
-        breakdown.volatility_component, breakdown.historical_volatility_component,
-        breakdown.peer_relative_component,
-    ])
+    reward = sum(
+        max(v, 0.0)
+        for v in [
+            breakdown.yield_component,
+            breakdown.currency_component,
+            breakdown.duration_component,
+            breakdown.liquidity_component,
+            breakdown.metal_component,
+            breakdown.credit_risk_component,
+            breakdown.inflation_component,
+            breakdown.coupon_component,
+            breakdown.historical_volatility_component,
+            breakdown.peer_relative_component,
+        ]
+    )
+    risk = sum(
+        abs(min(v, 0.0))
+        for v in [
+            breakdown.yield_component,
+            breakdown.currency_component,
+            breakdown.duration_component,
+            breakdown.liquidity_component,
+            breakdown.metal_component,
+            breakdown.credit_risk_component,
+            breakdown.inflation_component,
+            breakdown.coupon_component,
+            breakdown.volatility_component,
+            breakdown.historical_volatility_component,
+            breakdown.peer_relative_component,
+        ]
+    )
     if reward < 0.5:
         return 0.0
     ratio = reward / (reward + risk + 1.0)
@@ -375,43 +417,65 @@ def score_bond(
     duration = _duration_years(maturity_date, ref_date)
     has_price = price is not None
     days_to_maturity = duration * 365.25 if duration is not None else None
-    is_moex = (market == "moex")
+    is_moex = market == "moex"
 
     breakdown = ScoreBreakdown(
         yield_component=_yield_component(ytm_pct),
         currency_component=_currency_component(currency),
         duration_component=_duration_component(duration),
         liquidity_component=_liquidity_component(
-            has_price=has_price, status=status, days_to_maturity=days_to_maturity,
-            price=price_f, nominal=nominal_f,
+            has_price=has_price,
+            status=status,
+            days_to_maturity=days_to_maturity,
+            price=price_f,
+            nominal=nominal_f,
         ),
         metal_component=_metal_component(currency),
         credit_risk_component=_credit_risk_component(issuer, status),
         inflation_component=_inflation_component_market(currency, ytm_pct, is_moex),
         coupon_component=_coupon_component(coupon_pct, ytm_pct),
         volatility_component=_volatility_component(
-            ytm_pct=ytm_pct, price=price_f, nominal=nominal_f,
-            status=status, coupon_pct=coupon_pct,
+            ytm_pct=ytm_pct,
+            price=price_f,
+            nominal=nominal_f,
+            status=status,
+            coupon_pct=coupon_pct,
         ),
         historical_volatility_component=_historical_volatility_component(ytm_history),
         peer_relative_component=_peer_relative_component(ytm_pct, currency, peer_ytms),
     )
 
-    reward_sum = sum(max(v, 0.0) for v in [
-        breakdown.yield_component, breakdown.currency_component,
-        breakdown.duration_component, breakdown.liquidity_component,
-        breakdown.metal_component, breakdown.credit_risk_component,
-        breakdown.inflation_component, breakdown.coupon_component,
-        breakdown.historical_volatility_component, breakdown.peer_relative_component,
-    ])
-    risk_sum = sum(abs(min(v, 0.0)) for v in [
-        breakdown.yield_component, breakdown.currency_component,
-        breakdown.duration_component, breakdown.liquidity_component,
-        breakdown.metal_component, breakdown.credit_risk_component,
-        breakdown.inflation_component, breakdown.coupon_component,
-        breakdown.volatility_component, breakdown.historical_volatility_component,
-        breakdown.peer_relative_component,
-    ])
+    reward_sum = sum(
+        max(v, 0.0)
+        for v in [
+            breakdown.yield_component,
+            breakdown.currency_component,
+            breakdown.duration_component,
+            breakdown.liquidity_component,
+            breakdown.metal_component,
+            breakdown.credit_risk_component,
+            breakdown.inflation_component,
+            breakdown.coupon_component,
+            breakdown.historical_volatility_component,
+            breakdown.peer_relative_component,
+        ]
+    )
+    risk_sum = sum(
+        abs(min(v, 0.0))
+        for v in [
+            breakdown.yield_component,
+            breakdown.currency_component,
+            breakdown.duration_component,
+            breakdown.liquidity_component,
+            breakdown.metal_component,
+            breakdown.credit_risk_component,
+            breakdown.inflation_component,
+            breakdown.coupon_component,
+            breakdown.volatility_component,
+            breakdown.historical_volatility_component,
+            breakdown.peer_relative_component,
+        ]
+    )
 
     breakdown.reward_subtotal = round(reward_sum, 2)
     breakdown.risk_subtotal = round(risk_sum, 2)

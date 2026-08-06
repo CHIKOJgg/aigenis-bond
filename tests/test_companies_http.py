@@ -1,4 +1,5 @@
 """HTTP tests for companies, search and detailed recommendations (V6)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -25,29 +26,64 @@ def _auth(user_id: int) -> dict[str, str]:
 
 async def _seed():
     async with session_scope() as s:
-        s.add(UserORM(id=1, email="pro@example.com", name="Pro", password_hash="x",
-                      role="user", is_active=True, is_verified=False,
-                      subscription_tier="pro",
-                      subscription_expires_at=datetime.now(UTC) + timedelta(days=30)))
-        s.add(CompanyORM(issuer="ОАО Ромашка", name="ОАО Ромашка", sector="Банки",
-                         description="Крупный банк.", why_important="Системно значимый.",
-                         updated_at=datetime.now(UTC)))
+        s.add(
+            UserORM(
+                id=1,
+                email="pro@example.com",
+                name="Pro",
+                password_hash="x",
+                role="user",
+                is_active=True,
+                is_verified=False,
+                subscription_tier="pro",
+                subscription_expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
+        s.add(
+            CompanyORM(
+                issuer="ОАО Ромашка",
+                name="ОАО Ромашка",
+                sector="Банки",
+                description="Крупный банк.",
+                why_important="Системно значимый.",
+                updated_at=datetime.now(UTC),
+            )
+        )
         for i in range(2):
-            s.add(BondORM(internal_id=f"ROM-{i}", name=f"Ромашка {i}", currency="USD",
-                          yield_to_maturity=10.0 + i, price=100.0, status="active",
-                          issuer="ОАО Ромашка", maturity_date=date(2030, 1, 1),
-                          fetched_at=datetime.now(UTC)))
+            s.add(
+                BondORM(
+                    internal_id=f"ROM-{i}",
+                    name=f"Ромашка {i}",
+                    currency="USD",
+                    yield_to_maturity=10.0 + i,
+                    price=100.0,
+                    status="active",
+                    issuer="ОАО Ромашка",
+                    maturity_date=date(2030, 1, 1),
+                    fetched_at=datetime.now(UTC),
+                )
+            )
 
 
 def _stub_predict(monkeypatch):
     def fake(features, *, regressor_path=None, classifier_path=None):
         out = []
         for f in features:
-            out.append(Prediction(
-                internal_id=f.internal_id, model_version="t", model_kind="ytm_regression",
-                asof_date=date(2026, 1, 1), predicted_ytm=5.0, predicted_return_pct=5.0,
-                decision="buy", confidence=0.8, feature_importance={},
-                explanation=["высокая доходность"], created_at=datetime.now(UTC)))
+            out.append(
+                Prediction(
+                    internal_id=f.internal_id,
+                    model_version="t",
+                    model_kind="ytm_regression",
+                    asof_date=date(2026, 1, 1),
+                    predicted_ytm=5.0,
+                    predicted_return_pct=5.0,
+                    decision="buy",
+                    confidence=0.8,
+                    feature_importance={},
+                    explanation=["высокая доходность"],
+                    created_at=datetime.now(UTC),
+                )
+            )
         return out
 
     monkeypatch.setattr("recommendations.engine.predict_batch", fake)

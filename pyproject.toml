@@ -87,11 +87,17 @@ target-version = "py314"
 extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM", "ARG", "C4", "RUF"]
+select = ["E", "F", "I", "N", "W", "UP", "B", "ASYNC", "SIM", "ARG", "C4", "RUF", "C901"]
 # E501 (long lines) and RUF012 (mutable default in dataclass) are intentionally allowed.
 # RUF001/002/003 fire on the project's intentional Russian (Cyrillic) UI strings.
 # B008 (Depends(...) in FastAPI route signatures) is idiomatic and unavoidable.
 ignore = ["E501", "RUF012", "RUF001", "RUF002", "RUF003", "B008"]
+
+[tool.ruff.lint.mccabe]
+# Complexity budget (A-12): functions must stay <= 12 branches. The legacy
+# files listed in per-file-ignores carry a C901 baseline and are refactor
+# targets; the limit applies to all new code.
+max-complexity = 12
 
 [tool.ruff.lint.per-file-ignores]
 # scikit-learn convention: `X` holds the feature matrix.
@@ -99,6 +105,31 @@ ignore = ["E501", "RUF012", "RUF001", "RUF002", "RUF003", "B008"]
 # pytest fixtures are passed as test-function arguments but never referenced directly;
 # mock callables in tests commonly have unused/unpacked parameters by design.
 "tests/**" = ["ARG001", "ARG002", "ARG005", "RUF059"]
+# Stub endpoints for the Aigenis integration contract: parameters are part of the
+# OpenAPI contract and will be used once the real data feed is connected.
+"api/aigenis/__init__.py" = ["ARG001"]
+# Legacy C901 baseline (see scripts/check_size_budget.py): these modules
+# predate the complexity budget and are scheduled for refactoring.
+"api/billing/service.py" = ["C901"]
+"api/notifications/reminders.py" = ["C901"]
+"api/seo/calculator.py" = ["C901"]
+"api/seo/pages.py" = ["C901"]
+"ml/features.py" = ["C901"]
+"monitoring/engine.py" = ["C901"]
+"portfolio/backtest.py" = ["C901"]
+"portfolio/pnl.py" = ["C901"]
+"recommendations/engine.py" = ["C901"]
+"scoring/data_quality.py" = ["C901"]
+"scoring/engine.py" = ["C901"]
+"scraper/__main__.py" = ["C901"]
+"scraper/fallback_source.py" = ["C901"]
+"scraper/parsers/xlsx.py" = ["C901"]
+"scraper/pipeline.py" = ["C901"]
+"scraper/scheduler.py" = ["C901"]
+"scraper/sources/aigenis/client.py" = ["C901"]
+"scraper/sources/aigenis/parsers/detail.py" = ["C901"]
+"scraper/sources/aigenis/parsers/listing.py" = ["C901"]
+"telegram_bot/bond_picker.py" = ["C901"]
 
 fixable = ["I", "UP", "W"]
 
@@ -129,6 +160,13 @@ strict = true
 [[tool.mypy.overrides]]
 module = "scraper.config"
 strict = true
+
+# Phase 0, item 0.5: core packages must pass mypy strict before merge.
+[[tool.mypy.overrides]]
+module = ["api.aigenis", "scoring", "portfolio"]
+strict = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

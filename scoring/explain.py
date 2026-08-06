@@ -4,6 +4,7 @@ Turns the numeric :class:`ScoreBreakdown` into plain-language factors, a verdict
 and a short summary — the "why should I buy this?" answer that makes the score
 actionable for a non-professional investor. Pure functions, no I/O.
 """
+
 from __future__ import annotations
 
 from scoring.models import BondScore, ScoreBreakdown
@@ -36,7 +37,16 @@ class ScoreFactor:
 class ExplainedScore:
     """Full explanation payload."""
 
-    __slots__ = ("disclaimer", "factors", "score", "strengths", "summary", "tier", "verdict", "weaknesses")
+    __slots__ = (
+        "disclaimer",
+        "factors",
+        "score",
+        "strengths",
+        "summary",
+        "tier",
+        "verdict",
+        "weaknesses",
+    )
 
     def __init__(
         self,
@@ -206,7 +216,9 @@ def explain_score(
     b: ScoreBreakdown = score.breakdown
     factors: list[ScoreFactor] = []
 
-    def add(component: str, label: str, pts: float, detail: str, *, skip_zero: bool = False) -> None:
+    def add(
+        component: str, label: str, pts: float, detail: str, *, skip_zero: bool = False
+    ) -> None:
         if skip_zero and pts == 0:
             return
         factors.append(ScoreFactor(component, label, pts, detail))
@@ -215,12 +227,37 @@ def explain_score(
     add("currency", "Валюта", b.currency_component, _currency_detail(currency))
     add("duration", "Срок / дюрация", b.duration_component, _duration_detail(b.duration_component))
     add("liquidity", "Ликвидность", b.liquidity_component, _liquidity_detail(b.liquidity_component))
-    add("credit", "Кредитный риск", b.credit_risk_component, _credit_detail(b.credit_risk_component))
+    add(
+        "credit", "Кредитный риск", b.credit_risk_component, _credit_detail(b.credit_risk_component)
+    )
     add("inflation", "Инфляция", b.inflation_component, _inflation_detail(b.inflation_component))
-    add("coupon", "Купонный доход", b.coupon_component, _coupon_detail(b.coupon_component, coupon_pct))
-    add("volatility", "Волатильность", b.volatility_component, _volatility_detail(b.volatility_component), skip_zero=True)
-    add("hist_vol", "Истор. волатильность", b.historical_volatility_component, _historical_volatility_detail(b.historical_volatility_component), skip_zero=True)
-    add("peer", "vs Аналоги", b.peer_relative_component, _peer_relative_detail(b.peer_relative_component, currency), skip_zero=True)
+    add(
+        "coupon",
+        "Купонный доход",
+        b.coupon_component,
+        _coupon_detail(b.coupon_component, coupon_pct),
+    )
+    add(
+        "volatility",
+        "Волатильность",
+        b.volatility_component,
+        _volatility_detail(b.volatility_component),
+        skip_zero=True,
+    )
+    add(
+        "hist_vol",
+        "Истор. волатильность",
+        b.historical_volatility_component,
+        _historical_volatility_detail(b.historical_volatility_component),
+        skip_zero=True,
+    )
+    add(
+        "peer",
+        "vs Аналоги",
+        b.peer_relative_component,
+        _peer_relative_detail(b.peer_relative_component, currency),
+        skip_zero=True,
+    )
     add("metal", "Драгметалл", b.metal_component, _metal_detail(), skip_zero=True)
 
     factors.sort(key=lambda f: abs(f.points), reverse=True)

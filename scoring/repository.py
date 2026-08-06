@@ -45,7 +45,9 @@ async def upsert_scores_batch(session: AsyncSession, scores: list[BondScore]) ->
     return len(scores)
 
 
-async def top_scores(session: AsyncSession, limit: int = 20, offset: int = 0, market: str | None = None) -> list[BondScoreORM]:
+async def top_scores(
+    session: AsyncSession, limit: int = 20, offset: int = 0, market: str | None = None
+) -> list[BondScoreORM]:
     stmt = select(BondScoreORM)
     if market:
         stmt = stmt.join(BondORM, BondScoreORM.internal_id == BondORM.internal_id, isouter=True)

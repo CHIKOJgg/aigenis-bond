@@ -16,10 +16,23 @@
   --color-aigenis-text: #01121a;
   --color-aigenis-text-secondary: #516c79;
   --color-aigenis-text-muted: #717680;
+  --color-aigenis-placeholder: #a4a7ae;
   --color-aigenis-border: #d6e2e6;
+  --color-aigenis-border-strong: #b2c9d1;
   --color-aigenis-card: #ffffff;
   --color-aigenis-bg: #f5f9fb;
   --color-aigenis-input: #f8fafb;
+  --color-aigenis-surface: #fafafa;
+  --color-aigenis-surface-subtle: #f5f5f5;
+  --color-aigenis-hover: #f8fafb;
+  --color-aigenis-row-border: #f2f2f2;
+  --color-aigenis-success-600: #06b663;
+  --color-aigenis-success-50: #ebfff2;
+  --color-aigenis-warning-600: #dc6803;
+  --color-aigenis-warning-500: #f79009;
+  --color-aigenis-warning-50: #fffaeb;
+  --color-aigenis-error-600: #e03400;
+  --color-aigenis-error-50: #fff4ef;
   --font-aigenis-heading: "Montserrat Variable", "Montserrat", system-ui, sans-serif;
   --font-aigenis-body: "Onest Variable", "Onest", system-ui, sans-serif;
 }

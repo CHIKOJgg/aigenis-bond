@@ -1,4 +1,5 @@
 """Tests for API subscription gating (no DB / network required)."""
+
 from __future__ import annotations
 
 import asyncio

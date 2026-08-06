@@ -48,9 +48,7 @@ async def upsert_stock(session: AsyncSession, stock: Stock) -> None:
     values = _stock_to_orm(stock)
     stmt = pg_insert(StockORM).values(**values)
     update_cols = {c: stmt.excluded[c] for c in values if c not in {"internal_id"}}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[StockORM.internal_id], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[StockORM.internal_id], set_=update_cols)
     await session.execute(stmt)
 
 
@@ -60,9 +58,7 @@ async def upsert_stocks_batch(session: AsyncSession, stocks: Iterable[Stock]) ->
         return 0
     stmt = pg_insert(StockORM).values(rows)
     update_cols = {c: stmt.excluded[c] for c in rows[0] if c not in {"internal_id"}}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[StockORM.internal_id], set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=[StockORM.internal_id], set_=update_cols)
     await session.execute(stmt)
     return len(rows)
 
@@ -74,19 +70,13 @@ async def get_all_stock_internal_ids(session: AsyncSession) -> Sequence[str]:
 
 async def get_stocks_by_board(session: AsyncSession, board: str) -> Sequence[StockORM]:
     result = await session.execute(
-        select(StockORM)
-        .where(StockORM.board == board)
-        .order_by(StockORM.value_traded.desc())
+        select(StockORM).where(StockORM.board == board).order_by(StockORM.value_traded.desc())
     )
     return result.scalars().all()
 
 
-async def get_stock_by_internal_id(
-    session: AsyncSession, internal_id: str
-) -> StockORM | None:
-    result = await session.execute(
-        select(StockORM).where(StockORM.internal_id == internal_id)
-    )
+async def get_stock_by_internal_id(session: AsyncSession, internal_id: str) -> StockORM | None:
+    result = await session.execute(select(StockORM).where(StockORM.internal_id == internal_id))
     return result.scalar_one_or_none()
 
 
@@ -115,9 +105,7 @@ def _history_to_orm(row: StockHistory) -> dict:
     }
 
 
-async def upsert_stock_history_batch(
-    session: AsyncSession, rows: Iterable[StockHistory]
-) -> int:
+async def upsert_stock_history_batch(session: AsyncSession, rows: Iterable[StockHistory]) -> int:
     payload = [_history_to_orm(r) for r in rows]
     if not payload:
         return 0

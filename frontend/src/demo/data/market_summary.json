@@ -1,0 +1,32 @@
+{
+  "as_of": "2026-08-06T09:42:00+03:00",
+  "markets": {
+    "bcse": {
+      "total_bonds": 6,
+      "attractive_ideas": 2,
+      "needs_review": 1,
+      "neutral": 2,
+      "high_risk": 1,
+      "best_yield_pct": 14.5,
+      "best_yield_id": "demo-bond-007",
+      "source": "demo snapshot"
+    },
+    "moex": {
+      "total_bonds": 4,
+      "attractive_ideas": 0,
+      "needs_review": 2,
+      "neutral": 2,
+      "high_risk": 0,
+      "best_yield_pct": 11.8,
+      "best_yield_id": "demo-bond-008",
+      "source": "demo snapshot"
+    }
+  },
+  "global": {
+    "attractive_ideas": 2,
+    "needs_review": 3,
+    "best_yield_pct": 14.5,
+    "data_status": "ok",
+    "updated_at": "2026-08-06T09:42:00+03:00"
+  }
+}

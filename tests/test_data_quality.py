@@ -1,13 +1,11 @@
 """Tests for scoring/data_quality.py — gate that ensures scoring never lies."""
+
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, date, datetime, timedelta
 
 from scoring.data_quality import (
     MAX_DATA_AGE_HOURS,
-    DataQualityResult,
     score_bond_safe,
     validate_bond_data,
 )
@@ -24,7 +22,7 @@ def test_valid_bond_passes_all_checks():
         price=100.0,
         nominal=100.0,
         coupon_rate=8.0,
-        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        fetched_at=datetime.now(UTC) - timedelta(hours=1),
         isin="US1234567890",
     )
     assert dq.overall == "ok"
@@ -125,7 +123,7 @@ def test_stale_data_is_warning():
         price=100.0,
         nominal=100.0,
         coupon_rate=5.0,
-        fetched_at=datetime.now(timezone.utc) - timedelta(hours=MAX_DATA_AGE_HOURS * 4),
+        fetched_at=datetime.now(UTC) - timedelta(hours=MAX_DATA_AGE_HOURS * 4),
         isin="US1234567890",
     )
     assert dq.overall == "warning"
@@ -220,7 +218,7 @@ def test_score_bond_safe_returns_score_for_valid_data():
         price=100.0,
         nominal=100.0,
         coupon_rate=8.0,
-        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        fetched_at=datetime.now(UTC) - timedelta(hours=1),
     )
     assert dq.overall == "ok"
     assert score is not None
@@ -254,7 +252,7 @@ def test_score_bond_safe_discounts_warnings():
         price=100.0,
         nominal=100.0,
         coupon_rate=5.0,
-        fetched_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        fetched_at=datetime.now(UTC) - timedelta(hours=1),
     )
     assert dq.overall == "warning"
     assert score is not None
@@ -316,7 +314,7 @@ def test_multiple_warnings_do_not_escalate_to_critical():
         price=100.0,
         nominal=100.0,
         coupon_rate=5.0,
-        fetched_at=datetime.now(timezone.utc) - timedelta(hours=MAX_DATA_AGE_HOURS * 4),
+        fetched_at=datetime.now(UTC) - timedelta(hours=MAX_DATA_AGE_HOURS * 4),
     )
     assert dq.overall == "warning"
     assert len(dq.issues) >= 3

@@ -3,6 +3,7 @@
 This module re-exports for backward compatibility.
 New code should import directly from ``scraper.sources.aigenis.api``.
 """
+
 from __future__ import annotations
 
 from scraper.sources.aigenis.api import (  # noqa: F401

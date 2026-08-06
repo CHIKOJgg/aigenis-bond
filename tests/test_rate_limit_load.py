@@ -1,4 +1,4 @@
-﻿"""Load / rate-limit enforcement tests for the API.
+"""Load / rate-limit enforcement tests for the API.
 
 Two concerns, both required by the brief:
 
@@ -14,6 +14,7 @@ Two concerns, both required by the brief:
 The in-memory limiter is exercised directly (deterministic) plus via the full
 ASGI stack (real middleware) so both the store logic and the wiring are checked.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -194,4 +195,3 @@ def test_burst_does_not_breach_limit_under_concurrency(monkeypatch):
     throttled = sum(1 for c in codes if c == 429)
     assert allowed == limit, f"allowed={allowed} expected exactly {limit}"
     assert throttled == attempts - limit
-

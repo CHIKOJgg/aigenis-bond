@@ -40,7 +40,7 @@ def _d(value: object) -> Decimal | None:
         return None
     try:
         return Decimal(str(value))
-    except (InvalidOperation, ValueError):
+    except InvalidOperation, ValueError:
         return None
 
 
@@ -137,9 +137,7 @@ async def _delisted_placeholder(iid: str) -> Bond:
     try:
         async with session_scope() as session:
             existing = (
-                await session.execute(
-                    select(BondORM).where(BondORM.internal_id == iid)
-                )
+                await session.execute(select(BondORM).where(BondORM.internal_id == iid))
             ).scalar_one_or_none()
             if existing:
                 known_currency = existing.currency
@@ -275,7 +273,10 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
 
                 # Find bond by internal_id like "Оп17" or issue_number
                 for bond_orm in all_bonds:
-                    if bond_orm.internal_id.lower().replace("-", "").replace(" ", "") == iid.lower():
+                    if (
+                        bond_orm.internal_id.lower().replace("-", "").replace(" ", "")
+                        == iid.lower()
+                    ):
                         readable = enrichment.name.strip()
                         register_xlsx_names({bond_orm.internal_id: readable})
                         await update_bond_name(session, bond_orm.internal_id, readable)
@@ -294,7 +295,7 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
             for acc in xlsx_data.daily_accruals:
                 try:
                     issue_num = int(acc.internal_id)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     continue
                 real_iid = issue_to_iid.get(issue_num)
                 if real_iid is None:
@@ -374,14 +375,22 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                     existing.issuer = b.issuer or existing.issuer
                     existing.currency = b.currency or existing.currency
                     existing.nominal = b.nominal or existing.nominal
-                    existing.coupon_rate = b.coupon_rate if b.coupon_rate is not None else existing.coupon_rate
+                    existing.coupon_rate = (
+                        b.coupon_rate if b.coupon_rate is not None else existing.coupon_rate
+                    )
                     existing.coupon_frequency = b.coupon_frequency or existing.coupon_frequency
                     existing.maturity_date = b.maturity_date or existing.maturity_date
                     existing.price = b.price if b.price is not None else existing.price
-                    existing.yield_to_maturity = b.yield_to_maturity if b.yield_to_maturity is not None else existing.yield_to_maturity
+                    existing.yield_to_maturity = (
+                        b.yield_to_maturity
+                        if b.yield_to_maturity is not None
+                        else existing.yield_to_maturity
+                    )
                     existing.isin = b.isin or existing.isin
                     existing.status = b.status or existing.status
-                    existing.is_government = b.is_government if b.is_government else existing.is_government
+                    existing.is_government = (
+                        b.is_government if b.is_government else existing.is_government
+                    )
                     existing.fetched_at = datetime.now(UTC)
                 saved += 1
             await session.commit()
@@ -400,22 +409,24 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
     async with session_scope() as session:
         for cur in cur_list:
             rows = (
-                await session.execute(
-                    select(BondORM.internal_id)
-                    .where(BondORM.currency == cur.upper())
-                    .order_by(BondORM.yield_to_maturity.desc())
-                    .limit(cap)
+                (
+                    await session.execute(
+                        select(BondORM.internal_id)
+                        .where(BondORM.currency == cur.upper())
+                        .order_by(BondORM.yield_to_maturity.desc())
+                        .limit(cap)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             sample_ids.extend(rows)
     for iid in sample_ids:
         try:
             hist = await client.fetch_history(iid, _days=30)
             if hist:
                 async with session_scope() as session:
-                    history_rows += await repositories.history.upsert_history_batch(
-                        session, hist
-                    )
+                    history_rows += await repositories.history.upsert_history_batch(session, hist)
         except Exception:
             history_err += 1
 
@@ -429,9 +440,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                 schedule = _build_coupon_schedule(coupons)
                 async with session_scope() as session:
                     orm = (
-                        await session.execute(
-                            select(BondORM).where(BondORM.internal_id == iid)
-                        )
+                        await session.execute(select(BondORM).where(BondORM.internal_id == iid))
                     ).scalar_one_or_none()
                     if orm is not None:
                         orm.coupon_schedule = schedule
@@ -468,16 +477,37 @@ def _build_coupon_schedule(coupons: list[dict[str, Any]]) -> dict[str, list[str]
     return sched
 
 
+_stock_consecutive_failures = 0
+
+
+def _bump_stock_failures() -> None:
+    global _stock_consecutive_failures
+    _stock_consecutive_failures += 1
+
+
+def _reset_stock_failures() -> None:
+    global _stock_consecutive_failures
+    _stock_consecutive_failures = 0
+
+
 async def run_once_moex_stocks(boards: list[str] | None = None) -> dict[str, int]:
     """MOEX stock pipeline: fetch stocks, upsert, backfill history.
 
     Fully independent of the bond pipeline — uses ``MoexStockClient``
-    and the ``stocks`` / ``stock_history`` tables.
+    and the ``stocks`` / ``stock_history`` tables. Gated by
+    ``settings.stock.enabled``; after ``settings.stock.error_budget``
+    consecutive failed runs the pipeline stops hammering MOEX until a
+    successful run resets the counter.
     """
     from scraper.config import get_settings
     from scraper.moex_stocks import MoexStockClient
 
     settings = get_settings()
+    stock_cfg = getattr(settings, "stock", None)
+    if stock_cfg is not None and not stock_cfg.enabled:
+        logger.info("moex_stocks_disabled")
+        return {"stocks_saved": 0, "history_rows": 0, "history_err": 0, "skipped": 1}
+
     client = MoexStockClient(settings)
     if boards:
         client._boards = boards
@@ -486,19 +516,34 @@ async def run_once_moex_stocks(boards: list[str] | None = None) -> dict[str, int
 
     saved = 0
     async with client:
-        stocks = await client.fetch_stocks()
+        try:
+            stocks = await client.fetch_stocks()
+        except Exception as exc:
+            logger.warning("moex_stocks_fetch_failed", error=str(exc))
+            stocks = []
         if not stocks:
+            _bump_stock_failures()
+            budget = stock_cfg.error_budget if stock_cfg is not None else 3
+            if _stock_consecutive_failures >= budget:
+                logger.error(
+                    "moex_stocks_error_budget_exceeded", failures=_stock_consecutive_failures
+                )
             logger.info("moex_stocks_no_stocks")
-            return {"stocks_saved": 0, "history_rows": 0, "history_err": 0}
+            return {"stocks_saved": 0, "history_rows": 0, "history_err": 0, "fetch_failed": 1}
+
+        _reset_stock_failures()
 
         async with session_scope() as session:
             saved = await repositories.stocks.upsert_stocks_batch(session, stocks)
             await session.commit()
 
-        # History backfill (best-effort): top-N stocks by value_traded
+        # History backfill (best-effort): top-N stocks by value_traded,
+        # trimmed to the configured retention window.
         history_rows = 0
         history_err = 0
         cap = int(os.getenv("MOEX_STOCK_HISTORY_SAMPLE", "100"))
+        days = stock_cfg.history_backfill_days if stock_cfg is not None else 730
+        cutoff = date.today() - timedelta(days=days)
         sample_ids = []
         async with session_scope() as session:
             all_ids = await repositories.stocks.get_all_stock_internal_ids(session)
@@ -508,10 +553,12 @@ async def run_once_moex_stocks(boards: list[str] | None = None) -> dict[str, int
             try:
                 hist = await client.fetch_stock_history(iid, _days=30)
                 if hist:
-                    async with session_scope() as session:
-                        history_rows += await repositories.stocks.upsert_stock_history_batch(
-                            session, hist
-                        )
+                    hist = [h for h in hist if h.date >= cutoff]
+                    if hist:
+                        async with session_scope() as session:
+                            history_rows += await repositories.stocks.upsert_stock_history_batch(
+                                session, hist
+                            )
             except Exception:
                 history_err += 1
 
@@ -552,15 +599,13 @@ async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
                     if not iid:
                         continue
                     existing = (
-                        await session.execute(
-                            select(BondORM).where(BondORM.internal_id == iid)
-                        )
+                        await session.execute(select(BondORM).where(BondORM.internal_id == iid))
                     ).scalar_one_or_none()
                     maturity = None
                     if b.get("maturity_date"):
                         try:
                             maturity = datetime.fromisoformat(b["maturity_date"]).date()
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             maturity = None
                     if existing is None:
                         session.add(

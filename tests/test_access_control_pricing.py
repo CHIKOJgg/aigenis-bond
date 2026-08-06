@@ -3,6 +3,7 @@
 Covers: tier->feature flags, the RequireFeature dependency's 402 decision,
 per-tier API rate-limit values, and pricing plan math.
 """
+
 from __future__ import annotations
 
 import pytest

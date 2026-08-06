@@ -3,6 +3,7 @@
 Covers: auth endpoints, billing webhooks, partner webhooks,
 rate limiting, CORS, security headers, and error visibility.
 """
+
 from __future__ import annotations
 
 import pytest

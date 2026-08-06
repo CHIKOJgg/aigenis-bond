@@ -5,6 +5,7 @@ Run from the scheduler (``scraper.scheduler``) once per day. Sends a reminder
 delivery reuses the live bot instance registered by ``telegram_bot.bot.main``
 via ``telegram_bot._bot_instance``.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -40,8 +41,10 @@ async def notify_expiring_trials() -> int:
     sent = 0
     async with session_scope() as session:
         users = (
-            await session.execute(select(UserORM).where(UserORM.is_active.is_(True)))
-        ).scalars().all()
+            (await session.execute(select(UserORM).where(UserORM.is_active.is_(True))))
+            .scalars()
+            .all()
+        )
 
         # Resolve the live Telegram bot, if registered.
         bot = _get_bot()

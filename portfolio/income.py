@@ -4,6 +4,7 @@ Pure, deterministic functions (no I/O) that turn a bond's coupon terms into a
 concrete cashflow schedule, and aggregate a set of holdings into an income
 calendar: annual income, yield-on-cost, next payment and month-by-month totals.
 """
+
 from __future__ import annotations
 
 import calendar
@@ -55,7 +56,7 @@ def _face_value(amount_invested: Decimal, price: Decimal | None) -> Decimal:
     buys ~1020.41 of face value. If price is missing we assume par.
     """
     if price and price > 0:
-        return (amount_invested * Decimal("100") / price)
+        return amount_invested * Decimal("100") / price
     return amount_invested
 
 
@@ -102,9 +103,7 @@ def bond_cashflows(
                 prev = schedule[i - 1] if i > 0 else issue_date
                 yf = Decimal(str(year_fraction(prev, d, day_count)))
                 per = face * (coupon_rate / Decimal("100")) * yf
-                flows.append(
-                    CashFlow(date=d, amount=per, kind="coupon", internal_id=internal_id)
-                )
+                flows.append(CashFlow(date=d, amount=per, kind="coupon", internal_id=internal_id))
         else:
             step = 12 // freq
             per_period = face * (coupon_rate / Decimal("100")) / Decimal(freq)
@@ -176,8 +175,12 @@ def portfolio_income(
             internal_id=str(h["internal_id"]),
             amount_invested=amount,
             coupon_rate=coupon_rate,
-            coupon_frequency=int(h["coupon_frequency"]) if h.get("coupon_frequency") is not None else None,
-            maturity_date=date.fromisoformat(h["maturity_date"]) if isinstance(h.get("maturity_date"), str) else h.get("maturity_date"),
+            coupon_frequency=int(h["coupon_frequency"])
+            if h.get("coupon_frequency") is not None
+            else None,
+            maturity_date=date.fromisoformat(h["maturity_date"])
+            if isinstance(h.get("maturity_date"), str)
+            else h.get("maturity_date"),
             price=price,
             from_date=from_date,
             include_redemption=False,

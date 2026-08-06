@@ -70,7 +70,7 @@ def validate_bond_data(
     currency: str | None,
     maturity_date: date | None,
     status: str | None,
-    issuer: str | None,
+    issuer: str | None,  # noqa: ARG001 (reserved for future use)
     price: float | None,
     nominal: float | None,
     coupon_rate: float | None,
@@ -98,21 +98,22 @@ def validate_bond_data(
         return result
 
     # 2. Проверка ISIN (если есть)
-    if isin is not None and isin.strip():
-        if not ISIN_RE.match(isin.strip()):
-            result.issues.append(f"INVALID_ISIN: '{isin}' не соответствует формату")
-            _downgrade(result, "warning")
+    if isin is not None and isin.strip() and not ISIN_RE.match(isin.strip()):
+        result.issues.append(f"INVALID_ISIN: '{isin}' не соответствует формату")
+        _downgrade(result, "warning")
 
     # 3. Проверка свежести данных
     if fetched_at is not None:
         age_hours = (datetime.now(fetched_at.tzinfo) - fetched_at).total_seconds() / 3600
         if age_hours > MAX_DATA_AGE_HOURS * 3:
-            result.issues.append(f"STALE_DATA: данные старше {MAX_DATA_AGE_HOURS * 3}ч "
-                                f"(возраст: {age_hours:.0f}ч)")
+            result.issues.append(
+                f"STALE_DATA: данные старше {MAX_DATA_AGE_HOURS * 3}ч (возраст: {age_hours:.0f}ч)"
+            )
             _downgrade(result, "warning")
         elif age_hours > MAX_DATA_AGE_HOURS:
-            result.issues.append(f"DATA_AGE_WARN: данные старше {MAX_DATA_AGE_HOURS}ч "
-                                f"(возраст: {age_hours:.0f}ч)")
+            result.issues.append(
+                f"DATA_AGE_WARN: данные старше {MAX_DATA_AGE_HOURS}ч (возраст: {age_hours:.0f}ч)"
+            )
             _downgrade(result, "warning")
 
     # 4. Проверка YTM
@@ -156,7 +157,9 @@ def validate_bond_data(
             result.issues.append(f"COUPON_NEGATIVE: {coupon_rate}%")
             _downgrade(result, "critical")
         elif coupon_rate > MAX_REALISTIC_COUPON:
-            result.issues.append(f"COUPON_EXCESSIVE: {coupon_rate}% (макс: {MAX_REALISTIC_COUPON}%)")
+            result.issues.append(
+                f"COUPON_EXCESSIVE: {coupon_rate}% (макс: {MAX_REALISTIC_COUPON}%)"
+            )
             _downgrade(result, "warning")
 
     # 8. Проверка статуса
@@ -200,7 +203,7 @@ def score_bond_safe(
     ref_date: date | None = None,
     fetched_at: datetime | None = None,
     isin: str | None = None,
-) -> "tuple[DataQualityResult, object | None]":  # BondScore | None
+) -> tuple[DataQualityResult, object | None]:  # BondScore | None
     """Безопасный скоринг с валидацией данных.
 
     Возвращает (DataQualityResult, BondScore | None).

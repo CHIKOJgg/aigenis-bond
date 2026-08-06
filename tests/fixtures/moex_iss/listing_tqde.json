@@ -1,0 +1,64 @@
+{
+  "securities": {
+    "columns": [
+      "SECID",
+      "BOARDID",
+      "SHORTNAME",
+      "LOTSIZE",
+      "SECNAME",
+      "ISSUESIZE",
+      "ISIN",
+      "SECTOR",
+      "ISSUER",
+      "P-E",
+      "P/B",
+      "DIVYIELD",
+      "EPS"
+    ],
+    "data": [
+      [
+        "SBER",
+        "TQDE",
+        "Sber",
+        10,
+        "Sberbank (EUR)",
+        21586948318,
+        "RU0009029540",
+        "Banks",
+        "Sberbank PJSC",
+        "6.5",
+        "0.8",
+        "8.2",
+        "23.1"
+      ]
+    ]
+  },
+  "marketdata": {
+    "columns": [
+      "SECID",
+      "IS_TRADED",
+      "LAST",
+      "PREVPRICE",
+      "OPEN",
+      "HIGH",
+      "LOW",
+      "CLOSE",
+      "VOLUME",
+      "VALTODAY"
+    ],
+    "data": [
+      [
+        "SBER",
+        1,
+        "2.61",
+        "2.60",
+        "2.61",
+        "2.62",
+        "2.59",
+        "2.61",
+        452100,
+        1174323
+      ]
+    ]
+  }
+}

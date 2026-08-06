@@ -45,7 +45,9 @@ def is_jwt_secret_weak() -> bool:
 SECRET_KEY = _resolve_jwt_secret()
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 if ALGORITHM.lower() in ("none", "null"):
-    raise RuntimeError("JWT_ALGORITHM cannot be 'none' — this would allow signature-less token forgery")
+    raise RuntimeError(
+        "JWT_ALGORITHM cannot be 'none' — this would allow signature-less token forgery"
+    )
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
@@ -60,12 +62,16 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(user_id: int) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    return jwt.encode({"sub": str(user_id), "exp": expire, "type": "access"}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        {"sub": str(user_id), "exp": expire, "type": "access"}, SECRET_KEY, algorithm=ALGORITHM
+    )
 
 
 def create_refresh_token(user_id: int) -> str:
     expire = datetime.now(UTC) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    return jwt.encode({"sub": str(user_id), "exp": expire, "type": "refresh"}, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(
+        {"sub": str(user_id), "exp": expire, "type": "refresh"}, SECRET_KEY, algorithm=ALGORITHM
+    )
 
 
 def create_email_verification_token(user_id: int) -> str:
@@ -149,7 +155,9 @@ async def _resolve_referrer(session: AsyncSession, referral_code: str) -> UserOR
         return None
     partner = (
         await session.execute(
-            select(PartnerKeyORM).where(PartnerKeyORM.referral_code == code, PartnerKeyORM.active.is_(True))
+            select(PartnerKeyORM).where(
+                PartnerKeyORM.referral_code == code, PartnerKeyORM.active.is_(True)
+            )
         )
     ).scalar_one_or_none()
     if partner and partner.owner_user_id:
@@ -187,7 +195,9 @@ async def _grant_referral_bonus(referrer: UserORM) -> None:
         referrer.subscription_expires_at = paid_end + timedelta(days=bonus_days)
 
 
-async def login_user(session: AsyncSession, email: str, password: str) -> tuple[UserORM | None, str | None]:
+async def login_user(
+    session: AsyncSession, email: str, password: str
+) -> tuple[UserORM | None, str | None]:
     result = await session.execute(select(UserORM).where(UserORM.email == email))
     user = result.scalar_one_or_none()
     if not user or not user.password_hash:
@@ -199,7 +209,9 @@ async def login_user(session: AsyncSession, email: str, password: str) -> tuple[
     return user, None
 
 
-async def find_or_create_google_user(session: AsyncSession, google_id: str, email: str, name: str) -> tuple[UserORM, bool]:
+async def find_or_create_google_user(
+    session: AsyncSession, google_id: str, email: str, name: str
+) -> tuple[UserORM, bool]:
     result = await session.execute(select(UserORM).where(UserORM.google_id == google_id))
     user = result.scalar_one_or_none()
     if user:
@@ -239,7 +251,11 @@ async def create_password_reset_token(session: AsyncSession, email: str) -> str 
     if not user:
         return None
     expire = datetime.now(UTC) + timedelta(hours=1)
-    token = jwt.encode({"sub": str(user.id), "exp": expire, "type": "password_reset"}, SECRET_KEY, algorithm=ALGORITHM)
+    token = jwt.encode(
+        {"sub": str(user.id), "exp": expire, "type": "password_reset"},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
     # Store a hash of the token for one-time use. Use SHA-256 hash first, then
     # bcrypt, to avoid the 72-byte bcrypt input limit.
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()

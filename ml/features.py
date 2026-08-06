@@ -24,7 +24,7 @@ def _safe_float(v) -> float:
         return float(v)
     try:
         return float(v)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
 
 
@@ -111,9 +111,7 @@ def build_features(
         try:
             price_d = Decimal(str(price)) if price is not None else None
             nominal_d = (
-                Decimal(str(bond_dict["nominal"]))
-                if bond_dict.get("nominal") is not None
-                else None
+                Decimal(str(bond_dict["nominal"])) if bond_dict.get("nominal") is not None else None
             )
             b = Bond(
                 internal_id=str(bond_dict["internal_id"]),
@@ -236,9 +234,7 @@ class TrainingSample:
     future_return_pct: float  # future_ytm - current_ytm (realized YTM move)
 
 
-def _nearest_future_row(
-    history: list[dict], target_day: date, tolerance_days: int
-) -> dict | None:
+def _nearest_future_row(history: list[dict], target_day: date, tolerance_days: int) -> dict | None:
     """Return the history row closest to ``target_day`` (on/after preferred),
     within ``tolerance_days``; ``None`` if no row is close enough."""
     best: dict | None = None

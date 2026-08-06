@@ -1,4 +1,5 @@
 """Tests for the subscription / tier logic (no DB or network required)."""
+
 from __future__ import annotations
 
 from telegram_bot import subscriptions as s

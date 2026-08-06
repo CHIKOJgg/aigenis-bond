@@ -45,15 +45,42 @@ class _FakeClient:
 _PAYLOAD = {
     "securities": {
         "columns": [
-            "SECID", "SECNAME", "ISSUER", "SHORTNAME",
-            "FACEUNIT", "FACEVALUE", "COUPONVALUE", "COUPONPERIOD",
-            "MATDATE", "ISIN",
+            "SECID",
+            "SECNAME",
+            "ISSUER",
+            "SHORTNAME",
+            "FACEUNIT",
+            "FACEVALUE",
+            "COUPONVALUE",
+            "COUPONPERIOD",
+            "MATDATE",
+            "ISIN",
         ],
         "data": [
-            ["TEST1", "Test Bond 1", "OOO Test", "TEST1",
-             "SUR", "1000", "90", "2", "2029-01-01", "RU000TEST1"],
-            ["TEST2", "Test Eurobond", "Republic", "TEST2",
-             "USD", "1000", "50", "2", "2030-05-15", "XS000TEST2"],
+            [
+                "TEST1",
+                "Test Bond 1",
+                "OOO Test",
+                "TEST1",
+                "SUR",
+                "1000",
+                "90",
+                "2",
+                "2029-01-01",
+                "RU000TEST1",
+            ],
+            [
+                "TEST2",
+                "Test Eurobond",
+                "Republic",
+                "TEST2",
+                "USD",
+                "1000",
+                "50",
+                "2",
+                "2030-05-15",
+                "XS000TEST2",
+            ],
         ],
     },
     "marketdata": {
@@ -89,7 +116,11 @@ async def test_fetch_bonds_parses_and_normalizes(monkeypatch) -> None:  # type: 
 _HISTORY_PAYLOAD = {
     "history": {
         "columns": [
-            "BOARDID", "TRADEDATE", "SECID", "CLOSE", "YIELDCLOSE",
+            "BOARDID",
+            "TRADEDATE",
+            "SECID",
+            "CLOSE",
+            "YIELDCLOSE",
         ],
         "data": [
             ["TQOB", "2025-01-21", "TEST2", "84.6", "5.10"],

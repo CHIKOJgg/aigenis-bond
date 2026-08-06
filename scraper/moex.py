@@ -52,7 +52,7 @@ def _freq_from_coupon_period(value: Any) -> CouponFrequency | None:
     """
     try:
         n = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if n in (1, 2, 4, 12):
         return n  # type: ignore[return-value]
@@ -85,7 +85,7 @@ def _to_dec(value: Any) -> Decimal | None:
         return None
     try:
         return Decimal(str(value))
-    except (ValueError, ArithmeticError):
+    except ValueError, ArithmeticError:
         return None
 
 
@@ -110,7 +110,7 @@ def _coupon_rate_pct(sec: dict) -> Decimal | None:
         return None
     try:
         period_days = int(period)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if period_days <= 0:
         return None
@@ -126,7 +126,7 @@ def _to_date(value: Any) -> date | None:
         return value.date()
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -180,8 +180,7 @@ class MoexClient:
         """Return rows shaped like aigenis listing payloads."""
         bonds = await self.fetch_bonds(currency)
         return [
-            {"internal_id": b.internal_id, "currency": b.currency, "name": b.name}
-            for b in bonds
+            {"internal_id": b.internal_id, "currency": b.currency, "name": b.name} for b in bonds
         ]
 
     async def fetch_bonds(self, currency: str | None = None) -> list[Bond]:
@@ -216,9 +215,7 @@ class MoexClient:
         resp.raise_for_status()
         payload = resp.json()
         securities = _parse_iss_rows(payload, "securities")
-        marketdata = {
-            r.get("SECID"): r for r in _parse_iss_rows(payload, "marketdata")
-        }
+        marketdata = {r.get("SECID"): r for r in _parse_iss_rows(payload, "marketdata")}
         bonds: list[Bond] = []
         for sec in securities:
             secid = sec.get("SECID")
@@ -260,7 +257,7 @@ class MoexClient:
         """Return a single bond by its MOEX-derived internal id."""
         secid = self._id_by_internal.get(internal_id)
         if secid is None and internal_id.startswith("MOEX_"):
-            secid = internal_id[len("MOEX_"):]
+            secid = internal_id[len("MOEX_") :]
         if secid is None:
             from scraper.errors import NotFoundError
 
@@ -315,11 +312,13 @@ class MoexClient:
         """
         secid = self._id_by_internal.get(internal_id)
         if secid is None and internal_id.startswith("MOEX_"):
-            secid = internal_id[len("MOEX_"):]
+            secid = internal_id[len("MOEX_") :]
         if secid is None:
             return []
         # Try both boards: eurobonds live on TQOB, corporates on TQCB.
-        boards = ["TQOB", "TQCB"] if internal_id.upper().endswith(("USD", "EUR")) else ["TQCB", "TQOB"]
+        boards = (
+            ["TQOB", "TQCB"] if internal_id.upper().endswith(("USD", "EUR")) else ["TQCB", "TQOB"]
+        )
         history: list[BondHistory] = []
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -369,7 +368,7 @@ class MoexClient:
         """
         secid = self._id_by_internal.get(internal_id)
         if secid is None and internal_id.startswith("MOEX_"):
-            secid = internal_id[len("MOEX_"):]
+            secid = internal_id[len("MOEX_") :]
         if secid is None:
             return []
         url = f"{MOEX_ISS_BASE}/securities/{secid}/bondization.json?iss.meta=off"

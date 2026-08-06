@@ -45,6 +45,19 @@ async def last_history_date(session: AsyncSession, internal_id: str) -> date | N
     return result.scalar_one_or_none()
 
 
+async def bond_history_since(
+    session: AsyncSession, internal_id: str, cutoff: date
+) -> list[BondHistoryORM]:
+    """Ascending price/yield history rows from ``cutoff`` (inclusive)."""
+    result = await session.execute(
+        select(BondHistoryORM)
+        .where(BondHistoryORM.internal_id == internal_id)
+        .where(BondHistoryORM.date >= cutoff)
+        .order_by(BondHistoryORM.date)
+    )
+    return list(result.scalars().all())
+
+
 async def count_history(session: AsyncSession) -> int:
     from sqlalchemy import func as sa_func
 

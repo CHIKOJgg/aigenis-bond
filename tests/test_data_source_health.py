@@ -37,7 +37,12 @@ def test_classify_degraded_when_stale():
 
 def test_classify_down_when_no_data():
     rep = DataQualityReport(
-        total=0, active=0, empty_ytm=0, empty_ytm_pct=0.0,
-        latest_fetch=None, stale_hours=None, issues=["нет данных"],
+        total=0,
+        active=0,
+        empty_ytm=0,
+        empty_ytm_pct=0.0,
+        latest_fetch=None,
+        stale_hours=None,
+        issues=["нет данных"],
     )
     assert classify_source_health(rep) == SOURCE_DOWN

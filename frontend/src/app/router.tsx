@@ -4,7 +4,8 @@ import { useAuth } from '../lib/AuthContext';
 import { useI18n } from '../i18n';
 import { useToast } from '../lib/ToastContext';
 import { WidgetPage } from '../WidgetPage';
-import { LandingPage } from '../LandingPage';
+import { LandingPage } from '../features/landing/LandingPage';
+import { CatalogPage } from '../features/catalog/CatalogPage';
 import { LegalPages } from '../LegalPages';
 import { OnboardingFlow, isOnboardingNeeded } from '../OnboardingFlow';
 import AppLayout from '../layouts/AppLayout';
@@ -19,7 +20,7 @@ const StockPage = lazy(() => import('../pages/StockPage'));
 const NewsPage = lazy(() => import('../pages/NewsPage'));
 const ChatPage = lazy(() => import('../pages/ChatPage'));
 const ScoresPage = lazy(() => import('../pages/ScoresPage'));
-const AnalyticsPage = lazy(() => import('../pages/AnalyticsPage'));
+const AnalyticsPage = lazy(() => import('../features/analytics/AnalyticsPage'));
 const DeskPage = lazy(() => import('../pages/DeskPage'));
 const PortfolioPage = lazy(() => import('../pages/PortfolioPage'));
 const PortfolioAdvancedPage = lazy(() => import('../pages/PortfolioAdvancedPage'));
@@ -34,6 +35,7 @@ const LoginPage = lazy(() => import('../pages/AuthPages').then((m) => ({ default
 const RegisterPage = lazy(() => import('../pages/AuthPages').then((m) => ({ default: m.RegisterPage })));
 const CompanyPage = lazy(() => import('../pages/CompanyPage').then((m) => ({ default: m.CompanyPage })));
 const RecommendationsPage = lazy(() => import('../pages/RecommendationsPage').then((m) => ({ default: m.RecommendationsPage })));
+const DemoApp = lazy(() => import('../demo/DemoApp'));
 
 function Page({ children }: { children: ReactNode }) {
   return <Suspense fallback={<PageFallback />}>{children}</Suspense>;
@@ -80,6 +82,10 @@ export default function AppRoutes() {
   return (
     <Routes>
       <Route path={ROUTES.widget} element={<WidgetPage />} />
+      <Route path="/demo/*" element={<Page><DemoApp /></Page>} />
+      {import.meta.env.DEV && (
+        <Route path="/catalog" element={<CatalogPage />} />
+      )}
 
       {!user ? (
         <>

@@ -4,6 +4,7 @@ Covers registration, login, JWT refresh, password reset, verification,
 tier-based /me, and the security-sensitive edge cases (weak password,
 duplicate email, inactive account, forged tokens).
 """
+
 from __future__ import annotations
 
 import asyncio

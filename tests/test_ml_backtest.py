@@ -98,4 +98,13 @@ def test_backtest_report_rejects_tiny_samples():
     with pytest.raises(ValueError):
         backtest_report([])
     with pytest.raises(ValueError):
-        backtest_report([TrainingSample(features=_feature(8.0, date(2026, 1, 1)), asof=date(2026, 1, 1), future_ytm=8.0, future_return_pct=0.0)])
+        backtest_report(
+            [
+                TrainingSample(
+                    features=_feature(8.0, date(2026, 1, 1)),
+                    asof=date(2026, 1, 1),
+                    future_ytm=8.0,
+                    future_return_pct=0.0,
+                )
+            ]
+        )

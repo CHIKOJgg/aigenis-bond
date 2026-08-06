@@ -7,6 +7,7 @@ for deployment monitoring.
 ``get_logger`` returns a loguru Logger, so these tests capture output with a
 temporary loguru sink (pytest's ``caplog`` only sees the stdlib logging module).
 """
+
 from __future__ import annotations
 
 import io

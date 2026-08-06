@@ -1,0 +1,21 @@
+{
+  "moderate_byn": {
+    "id": "moderate_byn",
+    "label": "Марина К. · Умеренный профиль",
+    "total_value_byn": 50000,
+    "description": "Частный инвестор, цель — регулярный доход при умеренном риске",
+    "positions": [
+      { "instrument_id": "demo-bond-004", "name": "Беларусбанк 2027", "weight_pct": 20, "value_byn": 10000 },
+      { "instrument_id": "demo-bond-007", "name": "Банк развития РБ 2026", "weight_pct": 15, "value_byn": 7500 },
+      { "instrument_id": "demo-bond-002", "name": "Газпром нефть 2029", "weight_pct": 25, "value_byn": 12500 },
+      { "instrument_id": "demo-bond-005", "name": "Евроторг 2027", "weight_pct": 10, "value_byn": 5000 }
+    ],
+    "free_cash_byn": 15000,
+    "benchmarks": {
+      "expected_yield_pct": 12.4,
+      "duration_years": 2.7,
+      "issuer_concentration_max_pct": 25,
+      "low_liquidity_share_pct": 10
+    }
+  }
+}

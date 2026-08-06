@@ -3,11 +3,16 @@
 Бесплатные эндпоинты: листинг, детали, история.
 Pro-эндпоинты: секторальная аналитика, фильтры, рекомендации.
 """
+
 from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import case, select
+from sqlalchemy import func as sa_func
 
 from api.access_control import RequireFeature
 from scraper.db import session_scope
@@ -72,6 +77,14 @@ class StockSectorSummary(BaseModel):
     total_market_cap: float | None = None
 
 
+class StockFreshnessResponse(BaseModel):
+    board: str
+    last_ingest: str | None = None
+    status: Literal["ok", "stale", "critical"]
+    instruments: int = 0
+    active_instruments: int = 0
+
+
 # --- Helpers ---
 
 
@@ -93,11 +106,15 @@ def _stock_to_response(s: StockORM) -> StockResponse:
         close_price=float(s.close_price) if s.close_price is not None else None,
         volume=s.volume,
         value_traded=float(s.value_traded) if s.value_traded is not None else None,
-        market_capitalization=float(s.market_capitalization) if s.market_capitalization is not None else None,
+        market_capitalization=float(s.market_capitalization)
+        if s.market_capitalization is not None
+        else None,
         pe_ratio=float(s.pe_ratio) if s.pe_ratio is not None else None,
         pbr_ratio=float(s.pbr_ratio) if s.pbr_ratio is not None else None,
         dividend_yield=float(s.dividend_yield) if s.dividend_yield is not None else None,
-        earnings_per_share=float(s.earnings_per_share) if s.earnings_per_share is not None else None,
+        earnings_per_share=float(s.earnings_per_share)
+        if s.earnings_per_share is not None
+        else None,
         sector=s.sector,
         status=s.status,
         fetched_at=s.fetched_at.isoformat() if s.fetched_at else None,
@@ -119,8 +136,17 @@ async def list_stocks(
     # Validate sort_by against a whitelist of model columns — arbitrary
     # strings could resolve to non-column attributes and 500 the endpoint.
     sortable = {
-        "internal_id", "name", "board", "sector", "price", "pe_ratio",
-        "eps", "dividend_yield", "market_cap", "value_traded", "volume",
+        "internal_id",
+        "name",
+        "board",
+        "sector",
+        "price",
+        "pe_ratio",
+        "eps",
+        "dividend_yield",
+        "market_cap",
+        "value_traded",
+        "volume",
         "status",
     }
     if sort_by not in sortable:
@@ -149,7 +175,9 @@ async def stock_stats() -> StockStatsResponse:
             await session.execute(sa_text("SELECT COUNT(*) FROM stocks WHERE status = 'active'"))
         ).scalar() or 0
         by_sector = await session.execute(
-            sa_text("SELECT COALESCE(sector, 'Unknown') as s, COUNT(*) as cnt FROM stocks GROUP BY s")
+            sa_text(
+                "SELECT COALESCE(sector, 'Unknown') as s, COUNT(*) as cnt FROM stocks GROUP BY s"
+            )
         )
         by_board = await session.execute(
             sa_text("SELECT board, COUNT(*) as cnt FROM stocks GROUP BY board")
@@ -194,13 +222,62 @@ async def stock_sectors() -> list[StockSectorSummary]:
     ]
 
 
+def _freshness_status(
+    last: datetime | None, stale_hours: int, critical_hours: int
+) -> Literal["ok", "stale", "critical"]:
+    if last is None:
+        return "critical"
+    # SQLite returns naive datetimes; treat them as UTC for the SLA math.
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    age = datetime.now(UTC) - last
+    if age <= timedelta(hours=stale_hours):
+        return "ok"
+    if age <= timedelta(hours=critical_hours):
+        return "stale"
+    return "critical"
+
+
+@router.get("/freshness", response_model=list[StockFreshnessResponse])
+async def stock_freshness(
+    stale_hours: int = Query(default=4, ge=1, le=72),
+    critical_hours: int = Query(default=24, ge=1, le=720),
+) -> list[StockFreshnessResponse]:
+    """Свежесть данных по каждой торговой доске (SLA-мониторинг).
+
+    ``ok`` — последний сбор в пределах ``stale_hours``, ``stale`` — между
+    ``stale_hours`` и ``critical_hours``, ``critical`` — старше либо данных нет.
+    """
+    async with session_scope() as session:
+        stmt = (
+            select(
+                StockORM.board,
+                sa_func.max(StockORM.fetched_at).label("last"),
+                sa_func.count(StockORM.internal_id).label("cnt"),
+                sa_func.sum(case((StockORM.status == "active", 1), else_=0)).label("active"),
+            )
+            .group_by(StockORM.board)
+            .order_by(sa_func.max(StockORM.fetched_at).desc())
+        )
+        result = await session.execute(stmt)
+        rows = result.all()
+    return [
+        StockFreshnessResponse(
+            board=row[0],
+            last_ingest=row[1].isoformat() if row[1] is not None else None,
+            status=_freshness_status(row[1], stale_hours, critical_hours),
+            instruments=row[2],
+            active_instruments=int(row[3] or 0),
+        )
+        for row in rows
+    ]
+
+
 @router.get("/{internal_id}", response_model=StockResponse)
 async def get_stock(internal_id: str) -> StockResponse:
     """Детали одной акции."""
     async with session_scope() as session:
-        result = await session.execute(
-            select(StockORM).where(StockORM.internal_id == internal_id)
-        )
+        result = await session.execute(select(StockORM).where(StockORM.internal_id == internal_id))
         stock = result.scalar_one_or_none()
     if stock is None:
         raise HTTPException(status_code=404, detail=f"Stock {internal_id} not found")
@@ -214,9 +291,7 @@ async def stock_history(
 ) -> list[StockHistoryPoint]:
     """История торгов акцией (дневные свечи)."""
     async with session_scope() as session:
-        result = await session.execute(
-            select(StockORM).where(StockORM.internal_id == internal_id)
-        )
+        result = await session.execute(select(StockORM).where(StockORM.internal_id == internal_id))
         stock = result.scalar_one_or_none()
     if stock is None:
         raise HTTPException(status_code=404, detail=f"Stock {internal_id} not found")
@@ -238,7 +313,9 @@ async def stock_history(
             close_price=float(r.close_price) if r.close_price is not None else None,
             volume=r.volume,
             value_traded=float(r.value_traded) if r.value_traded is not None else None,
-            weighted_avg_price=float(r.weighted_avg_price) if r.weighted_avg_price is not None else None,
+            weighted_avg_price=float(r.weighted_avg_price)
+            if r.weighted_avg_price is not None
+            else None,
         )
         for r in reversed(rows)
     ]

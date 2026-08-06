@@ -3,6 +3,7 @@
 Covers: bond leaderboard, bond detail, sitemap, robots.txt,
 calculator pages, partners page, lead rate limiting, and error handling.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -10,7 +11,6 @@ from datetime import UTC, date, datetime
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 from api.seo import router as seo_router
 from scraper.db import dispose, get_engine, session_scope
@@ -27,8 +27,17 @@ async def _ensure_schema() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-def _make_bond(iid, name, currency="USD", ytm=10.0, price=100.0, coupon=8.0,
-               freq=2, maturity=date(2030, 1, 1), status="active"):
+def _make_bond(
+    iid,
+    name,
+    currency="USD",
+    ytm=10.0,
+    price=100.0,
+    coupon=8.0,
+    freq=2,
+    maturity=date(2030, 1, 1),
+    status="active",
+):
     return BondORM(
         internal_id=iid,
         name=name,
@@ -48,16 +57,40 @@ async def _seed() -> None:
     async with session_scope() as s:
         s.add(_make_bond("OP-51", "Acme 2029", "USD", ytm=11.5, price=101.2))
         s.add(_make_bond("RU-01", "Gazprom 2027", "RUB", ytm=14.0, price=98.0, coupon=9.0))
-        s.add(BondScoreORM(internal_id="OP-51", score=82.0, tier="A",
-                           breakdown={}, computed_at=datetime.now(UTC)))
-        s.add(BondScoreORM(internal_id="RU-01", score=55.0, tier="C",
-                           breakdown={}, computed_at=datetime.now(UTC)))
-        s.add(CompanyORM(issuer="Acme Corp", name="Acme Corporation",
-                         sector="Technology", description="Эмитент тест."))
-        for d, p in [(date(2026, 1, 1), 99.0), (date(2026, 2, 1), 100.1),
-                     (date(2026, 3, 1), 101.2)]:
-            s.add(BondHistoryORM(internal_id="OP-51", date=d, price=p,
-                                 yield_=11.0, status="active"))
+        s.add(
+            BondScoreORM(
+                internal_id="OP-51",
+                score=82.0,
+                tier="A",
+                breakdown={},
+                computed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            BondScoreORM(
+                internal_id="RU-01",
+                score=55.0,
+                tier="C",
+                breakdown={},
+                computed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            CompanyORM(
+                issuer="Acme Corp",
+                name="Acme Corporation",
+                sector="Technology",
+                description="Эмитент тест.",
+            )
+        )
+        for d, p in [
+            (date(2026, 1, 1), 99.0),
+            (date(2026, 2, 1), 100.1),
+            (date(2026, 3, 1), 101.2),
+        ]:
+            s.add(
+                BondHistoryORM(internal_id="OP-51", date=d, price=p, yield_=11.0, status="active")
+            )
 
 
 @pytest.mark.asyncio

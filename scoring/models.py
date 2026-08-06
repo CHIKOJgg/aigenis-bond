@@ -45,14 +45,24 @@ class ScoreBreakdown(BaseModel):
 
     def total(self) -> float:
         """Сумма 11 компонентов (без reward/risk/efficiency мета-полей)."""
-        return float(sum(
-            getattr(self, f) for f in (
-                "yield_component", "currency_component", "duration_component",
-                "liquidity_component", "metal_component", "credit_risk_component",
-                "inflation_component", "coupon_component", "volatility_component",
-                "historical_volatility_component", "peer_relative_component",
+        return float(
+            sum(
+                getattr(self, f)
+                for f in (
+                    "yield_component",
+                    "currency_component",
+                    "duration_component",
+                    "liquidity_component",
+                    "metal_component",
+                    "credit_risk_component",
+                    "inflation_component",
+                    "coupon_component",
+                    "volatility_component",
+                    "historical_volatility_component",
+                    "peer_relative_component",
+                )
             )
-        ))
+        )
 
 
 class BondScore(BaseModel):

@@ -100,7 +100,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Список валют через запятую (пусто = все из MOEX_BOARDS)",
     )
 
-    p_moex_stocks = sub.add_parser("moex-stocks", help="Сбор акций с MOEX ISS (публичный, без логина)")
+    p_moex_stocks = sub.add_parser(
+        "moex-stocks", help="Сбор акций с MOEX ISS (публичный, без логина)"
+    )
     p_moex_stocks.add_argument(
         "--boards",
         type=str,
@@ -188,11 +190,7 @@ async def _cmd_moex(currencies_csv: str) -> int:
 async def _cmd_moex_stocks(boards_csv: str) -> int:
     from scraper.pipeline import run_once_moex_stocks
 
-    boards = (
-        [b.strip().upper() for b in boards_csv.split(",") if b.strip()]
-        if boards_csv
-        else None
-    )
+    boards = [b.strip().upper() for b in boards_csv.split(",") if b.strip()] if boards_csv else None
     summary = await run_once_moex_stocks(boards)
     print(summary)
     return 0

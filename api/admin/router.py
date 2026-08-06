@@ -36,11 +36,17 @@ async def _get_session():
         yield session
 
 
-async def _require_admin(request: Request, session: AsyncSession = Depends(_get_session)) -> UserORM:
-    token = request.cookies.get("admin_token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+async def _require_admin(
+    request: Request, session: AsyncSession = Depends(_get_session)
+) -> UserORM:
+    token = request.cookies.get("admin_token") or request.headers.get("Authorization", "").replace(
+        "Bearer ", ""
+    )
     user_id = _verify_admin_token(token)
     if not user_id:
-        raise HTTPException(status_code=302, detail="Not authenticated", headers={"Location": "/admin/login"})
+        raise HTTPException(
+            status_code=302, detail="Not authenticated", headers={"Location": "/admin/login"}
+        )
     user = await get_user_by_id(session, user_id)
     if not user or user.role != "admin":
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -49,6 +55,7 @@ async def _require_admin(request: Request, session: AsyncSession = Depends(_get_
 
 def _verify_admin_token(token: str) -> int | None:
     from api.auth.service import decode_token
+
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         return None
@@ -57,7 +64,7 @@ def _verify_admin_token(token: str) -> int | None:
         return None
     try:
         return int(sub)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -94,7 +101,9 @@ def _check_admin_login_rate_limit(request: Request) -> None:
 def _record_admin_login_failure(request: Request) -> None:
     ip = _admin_client_ip(request)
     with _LOGIN_LOCK:
-        attempts = [ts for ts in _LOGIN_ATTEMPTS.get(ip, []) if time.time() - ts < _LOGIN_WINDOW_SECONDS]
+        attempts = [
+            ts for ts in _LOGIN_ATTEMPTS.get(ip, []) if time.time() - ts < _LOGIN_WINDOW_SECONDS
+        ]
         attempts.append(time.time())
         _LOGIN_ATTEMPTS[ip] = attempts
 
@@ -145,13 +154,18 @@ async def admin_login(request: Request, session: AsyncSession = Depends(_get_ses
     email = form.get("email", "")
     password = form.get("password", "")
     from api.auth.service import create_access_token, login_user
+
     user, error = await login_user(session, email, password)
     if error or not user:
         _record_admin_login_failure(request)
-        return _templates.TemplateResponse(request, "login.html", {"error": "Invalid credentials"}, status_code=401)
+        return _templates.TemplateResponse(
+            request, "login.html", {"error": "Invalid credentials"}, status_code=401
+        )
     if user.role != "admin":
         _record_admin_login_failure(request)
-        return _templates.TemplateResponse(request, "login.html", {"error": "Access denied"}, status_code=403)
+        return _templates.TemplateResponse(
+            request, "login.html", {"error": "Access denied"}, status_code=403
+        )
     token = create_access_token(user.id)
     resp = RedirectResponse(url="/admin", status_code=302)
     settings = get_settings()
@@ -167,48 +181,75 @@ async def admin_login(request: Request, session: AsyncSession = Depends(_get_ses
 
 
 @router.get("")
-async def admin_dashboard(request: Request, admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_dashboard(
+    request: Request,
+    admin: UserORM = Depends(_require_admin),
+    session: AsyncSession = Depends(_get_session),
+):
     total_users = (await session.execute(select(func.count(UserORM.id)))).scalar() or 0
-    active_users = (await session.execute(select(func.count(UserORM.id)).where(UserORM.is_active.is_(True)))).scalar() or 0
+    active_users = (
+        await session.execute(select(func.count(UserORM.id)).where(UserORM.is_active.is_(True)))
+    ).scalar() or 0
     by_tier = await session.execute(
-        select(UserORM.subscription_tier, func.count(UserORM.id)).group_by(UserORM.subscription_tier)
+        select(UserORM.subscription_tier, func.count(UserORM.id)).group_by(
+            UserORM.subscription_tier
+        )
     )
-    return _templates.TemplateResponse(request, "dashboard.html", {
-        "admin": admin,
-        "total_users": total_users,
-        "active_users": active_users,
-        "by_tier": dict(by_tier.fetchall()),
-    })
+    return _templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            "admin": admin,
+            "total_users": total_users,
+            "active_users": active_users,
+            "by_tier": dict(by_tier.fetchall()),
+        },
+    )
 
 
 @router.get("/users")
-async def admin_users(request: Request, admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_users(
+    request: Request,
+    admin: UserORM = Depends(_require_admin),
+    session: AsyncSession = Depends(_get_session),
+):
     search = request.query_params.get("search", "")
     try:
         page = max(1, int(request.query_params.get("page", "1")))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         page = 1
     per_page = 20
     stmt = select(UserORM).order_by(UserORM.created_at.desc())
     if search:
         # SQLAlchemy's ilike() parameterizes the value automatically; bindparam
         # used explicitly to avoid any f-string misinterpretation.
-        stmt = stmt.where(UserORM.email.ilike(search, escape="\\") | UserORM.name.ilike(search, escape="\\"))
+        stmt = stmt.where(
+            UserORM.email.ilike(search, escape="\\") | UserORM.name.ilike(search, escape="\\")
+        )
     stmt = stmt.offset((page - 1) * per_page).limit(per_page)
     result = await session.execute(stmt)
     users = result.scalars().all()
     total = await session.execute(select(func.count(UserORM.id)))
-    return _templates.TemplateResponse(request, "users.html", {
-        "admin": admin,
-        "users": users,
-        "search": search,
-        "page": page,
-        "total_pages": max(1, (total.scalar() or 0) // per_page + 1),
-    })
+    return _templates.TemplateResponse(
+        request,
+        "users.html",
+        {
+            "admin": admin,
+            "users": users,
+            "search": search,
+            "page": page,
+            "total_pages": max(1, (total.scalar() or 0) // per_page + 1),
+        },
+    )
 
 
 @router.post("/users/{user_id}/toggle")
-async def admin_toggle_user(user_id: int, request: Request, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_toggle_user(
+    user_id: int,
+    request: Request,
+    _admin: UserORM = Depends(_require_admin),
+    session: AsyncSession = Depends(_get_session),
+):
     # CSRF protection via Origin/Referer header check
     origin = request.headers.get("origin", "")
     referer = request.headers.get("referer", "")
@@ -223,7 +264,12 @@ async def admin_toggle_user(user_id: int, request: Request, _admin: UserORM = De
 
 
 @router.post("/users/{user_id}/tier")
-async def admin_set_tier(user_id: int, request: Request, _admin: UserORM = Depends(_require_admin), session: AsyncSession = Depends(_get_session)):
+async def admin_set_tier(
+    user_id: int,
+    request: Request,
+    _admin: UserORM = Depends(_require_admin),
+    session: AsyncSession = Depends(_get_session),
+):
     # CSRF protection via Origin/Referer header check
     origin = request.headers.get("origin", "")
     referer = request.headers.get("referer", "")

@@ -45,7 +45,9 @@ curl http://localhost:8000/health
 - **Refund validation** — full-amount only, cross-channel protection
 - **Webhook replay guard** — YooKassa re-deliveries never double-extend a subscription
 - **Referral abuse protection** — bonuses only extend active trials, never (re)arm new ones
-- **306 tests**, all green, ruff-clean
+- **451 Python tests** (427 core + 24 stock foundation), ruff-clean (lint + format + size budget), mypy strict on `api/aigenis`, `scoring`, `portfolio`, frontend lint-clean
+- **Frontend tests**: 83 Vitest unit/component tests, Playwright E2E smoke (`npm run test:e2e`), visual-regression baselines (`npm run test:e2e:visual`)
+- **Demo deploy** (`/demo/*`): standalone fixtures-only SPA — `docker compose -f docker-compose.demo.yml up -d --build` (noindex, no API, no payments)
 
 ## Project structure
 
@@ -65,7 +67,7 @@ bonds-engine/
 ├── notifications/    Email/SMS alert delivery
 ├── alembic/          DB migrations
 ├── frontend/         React SPA + nginx
-├── tests/            pytest suite (298)
+├── tests/            pytest suite (451)
 ├── docker-compose.yml  Full stack (postgres, redis, parser, api, bot, frontend)
 ├── Dockerfile          Multi-stage production image
 └── README.md           This file
@@ -76,7 +78,7 @@ bonds-engine/
 - **Python 3.13**, FastAPI, SQLAlchemy 2.0, asyncpg
 - **scikit-learn**, scipy, pandas, numpy
 - **aiogram 3** (Telegram bot)
-- **React 18**, Vite, nginx (frontend)
+- **React 19**, Vite, nginx (frontend)
 - **PostgreSQL 16**, Redis 7
 - **Playwright** (headless browser for scraper)
 - **Docker**, Docker Compose

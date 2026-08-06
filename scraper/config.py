@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
         try:
             return _json.loads(self.currencies_raw)
-        except (_json.JSONDecodeError, TypeError):
+        except _json.JSONDecodeError, TypeError:
             pass
         return [c.strip().upper() for c in self.currencies_raw.split(",") if c.strip()]
 
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
                 raw_items = [str(x).strip().upper() for x in parsed]
             else:
                 raw_items = [x.strip().upper() for x in v.split(",") if x.strip()]
-        except (_json.JSONDecodeError, TypeError):
+        except _json.JSONDecodeError, TypeError:
             raw_items = [x.strip().upper() for x in v.split(",") if x.strip()]
         bad = [c for c in raw_items if c not in allowed]
         if bad:
@@ -191,11 +191,12 @@ class TelegramSettings(BaseSettings):
         if not self.admin_ids_raw.strip():
             return []
         import json as _json
+
         try:
             parsed = _json.loads(self.admin_ids_raw)
             if isinstance(parsed, list):
                 return [int(x) for x in parsed]
-        except (_json.JSONDecodeError, TypeError, ValueError):
+        except _json.JSONDecodeError, TypeError, ValueError:
             pass
         # Fall back to comma-separated ints; a garbage value must not crash
         # startup, so non-numeric entries are skipped.
@@ -217,6 +218,50 @@ class TelegramSettings(BaseSettings):
     rate_limit_window: int = 1
 
 
+class StockSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="STOCK_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    enabled: bool = True
+    data_source: str = "moex"
+    boards_raw: str = ""
+    history_backfill_days: int = 730
+    refresh_cadence_min: int = 30
+    error_budget: int = 3
+
+    @property
+    def boards(self) -> list[str]:
+        raw = self.boards_raw.strip()
+        if raw:
+            return [b.strip().upper() for b in raw.split(",") if b.strip()]
+        return ["TQBR", "TQOD", "TQDE"]
+
+    @field_validator("history_backfill_days")
+    @classmethod
+    def _validate_history_days(cls, v: int) -> int:
+        if v < 1:
+            return 1
+        if v > 3650:
+            return 3650
+        return v
+
+    @field_validator("refresh_cadence_min")
+    @classmethod
+    def _validate_cadence(cls, v: int) -> int:
+        if v < 1:
+            return 1
+        return v
+
+    @field_validator("error_budget")
+    @classmethod
+    def _validate_error_budget(cls, v: int) -> int:
+        return max(v, 1)
+
+
 class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -228,6 +273,7 @@ class AppSettings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
     telegram: TelegramSettings = Field(default_factory=TelegramSettings)
+    stock: StockSettings = Field(default_factory=StockSettings)
 
     debug: bool = False
 

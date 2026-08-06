@@ -13,6 +13,7 @@ The CLI also honours these env vars:
     LOAD_USER_ID     — id of a Pro user to authenticate as (default 1)
     LOAD_AUTH_TOKEN  — a pre-generated Bearer token (overrides LOAD_USER_ID)
 """
+
 from __future__ import annotations
 
 import os

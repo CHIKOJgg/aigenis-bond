@@ -4,6 +4,7 @@ Ensures the limiter keys authenticated callers per user id (so shared-NAT users
 don't exhaust each other) and only trusts X-Forwarded-For behind a configured
 proxy — otherwise the header cannot be used to spoof a fresh identity.
 """
+
 from __future__ import annotations
 
 import pytest

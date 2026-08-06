@@ -1,0 +1,104 @@
+[
+  {
+    "internal_id": "demo-bond-001",
+    "status": "attractive",
+    "factors": [
+      {
+        "label": "Доходность к погашению",
+        "direction": "positive",
+        "plainText": "YTM 14.2% существенно выше среднего по рынку BCSE для государственных бумаг (среднее ~10.5%)",
+        "importance": "high"
+      },
+      {
+        "label": "Кредитное качество",
+        "direction": "positive",
+        "plainText": "Эмитент — Министерство финансов РБ, суверенный уровень надёжности",
+        "importance": "high"
+      },
+      {
+        "label": "Дюрация",
+        "direction": "positive",
+        "plainText": "До погашения ~2 года — комфортный горизонт для инвестора с умеренным риском",
+        "importance": "medium"
+      },
+      {
+        "label": "Ликвидность",
+        "direction": "positive",
+        "plainText": "Объём выпуска 50 млн BYN, достаточный оборот на BCSE",
+        "importance": "medium"
+      },
+      {
+        "label": "Купонный доход",
+        "direction": "positive",
+        "plainText": "Фиксированный купон 12.5% обеспечивает стабильный денежный поток",
+        "importance": "medium"
+      },
+      {
+        "label": "Инфляционный риск",
+        "direction": "negative",
+        "plainText": "Необходимо учитывать, что часть реальной доходности может быть снижена инфляцией",
+        "importance": "low"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-002",
+    "status": "neutral",
+    "factors": [
+      {
+        "label": "Доходность к погашению",
+        "direction": "positive",
+        "plainText": "YTM 12.0% выше среднего по корпоративным бумагам BCSE",
+        "importance": "high"
+      },
+      {
+        "label": "Кредитное качество",
+        "direction": "positive",
+        "plainText": "Газпром нефть — государственная корпорация с высоким рейтингом",
+        "importance": "high"
+      },
+      {
+        "label": "Дюрация",
+        "direction": "neutral",
+        "plainText": "До погашения ~2.6 года — средний горизонт, требует сравнения с альтернативами",
+        "importance": "medium"
+      },
+      {
+        "label": "Цена к номиналу",
+        "direction": "neutral",
+        "plainText": "Текущая цена 95.0% от номинала — дисконт создаёт дополнительный потенциал дохода при погашении",
+        "importance": "medium"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-003",
+    "status": "review",
+    "factors": [
+      {
+        "label": "Валютный риск",
+        "direction": "negative",
+        "plainText": "Номинирована в RUB — для инвестора с базовой валютой BYN присутствует валютный риск",
+        "importance": "high"
+      },
+      {
+        "label": "Кредитное качество",
+        "direction": "positive",
+        "plainText": "ОФЗ — суверенные облигации РФ, высокий уровень надёжности",
+        "importance": "high"
+      },
+      {
+        "label": "Доходность",
+        "direction": "neutral",
+        "plainText": "YTM 10.5% — умеренная для рынка RUB, ниже доступных альтернатив в BYN",
+        "importance": "medium"
+      },
+      {
+        "label": "Дюрация",
+        "direction": "negative",
+        "plainText": "До погашения ~3.8 года — длинный горизонт увеличивает чувствительность к изменению ставок",
+        "importance": "medium"
+      }
+    ]
+  }
+]

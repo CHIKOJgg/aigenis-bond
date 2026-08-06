@@ -105,7 +105,7 @@ def fmt_num(value) -> str:
     """Human-friendly number: drop trailing zeros (95.00 -> 95, 95.50 -> 95.5)."""
     try:
         d = Decimal(str(value))
-    except (InvalidOperation, ValueError, TypeError):
+    except InvalidOperation, ValueError, TypeError:
         return str(value)
     s = format(d, "f")
     if "." in s:
@@ -115,7 +115,14 @@ def fmt_num(value) -> str:
 
 def alert_metric_label(metric: str) -> str:
     """Display name for an alert metric (kept consistent across the bot)."""
-    return "Цена" if metric == "price" else "Доходность"
+    labels = {
+        "price": "Цена",
+        "ytm": "Доходность",
+        "pbr": "P/B",
+        "pe": "P/E",
+        "dividend_yield": "Див. доходность",
+    }
+    return labels.get(metric, metric)
 
 
 def alert_direction_sign(direction: str) -> str:

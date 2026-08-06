@@ -19,6 +19,7 @@ why_important, website, logo_url) can be supplied via
 Usage:
     python scripts/seed_companies.py
 """
+
 from __future__ import annotations
 
 import argparse
@@ -83,9 +84,7 @@ async def seed(overrides: dict[str, dict], verbose: bool = False) -> int:
         rows = (await session.execute(select(BondORM.issuer))).scalars().all()
         issuers = sorted({i for i in rows if i})
 
-        existing = (
-            await session.execute(select(CompanyORM))
-        ).scalars().all()
+        existing = (await session.execute(select(CompanyORM))).scalars().all()
         by_issuer = {c.issuer: c for c in existing}
 
         created = 0

@@ -3,6 +3,7 @@
 Covers the bond leaderboard, per-bond page, sitemap and robots.txt. These are
 the free organic acquisition surface described in docs/sales/cmo_audit.md (§2/§6).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,8 +38,17 @@ def _run(coro_fn):
     asyncio.run(wrapper())
 
 
-def _make_bond(iid, name, currency="USD", ytm=10.0, price=100.0, coupon=8.0,
-               freq=2, maturity=date(2030, 1, 1), status="active"):
+def _make_bond(
+    iid,
+    name,
+    currency="USD",
+    ytm=10.0,
+    price=100.0,
+    coupon=8.0,
+    freq=2,
+    maturity=date(2030, 1, 1),
+    status="active",
+):
     return BondORM(
         internal_id=iid,
         name=name,
@@ -58,16 +68,40 @@ async def _seed():
     async with session_scope() as s:
         s.add(_make_bond("OP-51", "Acme 2029", "USD", ytm=11.5, price=101.2))
         s.add(_make_bond("RU-01", "Gazprom 2027", "RUB", ytm=14.0, price=98.0, coupon=9.0))
-        s.add(BondScoreORM(internal_id="OP-51", score=82.0, tier="A",
-                           breakdown={}, computed_at=datetime.now(UTC)))
-        s.add(BondScoreORM(internal_id="RU-01", score=55.0, tier="C",
-                           breakdown={}, computed_at=datetime.now(UTC)))
-        s.add(CompanyORM(issuer="Acme Corp", name="Acme Corporation",
-                         sector="Technology", description="Эмитент тест."))
-        for d, p in [(date(2026, 1, 1), 99.0), (date(2026, 2, 1), 100.1),
-                     (date(2026, 3, 1), 101.2)]:
-            s.add(BondHistoryORM(internal_id="OP-51", date=d, price=p,
-                                 yield_=11.0, status="active"))
+        s.add(
+            BondScoreORM(
+                internal_id="OP-51",
+                score=82.0,
+                tier="A",
+                breakdown={},
+                computed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            BondScoreORM(
+                internal_id="RU-01",
+                score=55.0,
+                tier="C",
+                breakdown={},
+                computed_at=datetime.now(UTC),
+            )
+        )
+        s.add(
+            CompanyORM(
+                issuer="Acme Corp",
+                name="Acme Corporation",
+                sector="Technology",
+                description="Эмитент тест.",
+            )
+        )
+        for d, p in [
+            (date(2026, 1, 1), 99.0),
+            (date(2026, 2, 1), 100.1),
+            (date(2026, 3, 1), 101.2),
+        ]:
+            s.add(
+                BondHistoryORM(internal_id="OP-51", date=d, price=p, yield_=11.0, status="active")
+            )
 
 
 def test_seo_bonds_leaderboard():
@@ -346,7 +380,9 @@ def test_spa_fallback_and_bot_split(tmp_path, monkeypatch):
         try:
             transport = httpx.ASGITransport(app=app)
             human = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"}
-            bot = {"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"}
+            bot = {
+                "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+            }
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
                 # Human on any SPA path -> the app shell.
                 resp = await client.get("/stocks", headers=human)

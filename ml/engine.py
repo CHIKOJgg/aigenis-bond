@@ -37,7 +37,7 @@ def _version_from_path(path: str | None) -> str | None:
     name = Path(path).stem  # e.g. ytm_regressor_20240101120000
     for prefix in ("ytm_regressor_", "buy_classifier_", "volatility_"):
         if name.startswith(prefix):
-            return name[len(prefix):]
+            return name[len(prefix) :]
     return None
 
 
@@ -72,9 +72,7 @@ def _explanation(features: BondFeatures, predicted_ytm: float) -> list[str]:
     return notes
 
 
-def _time_split(
-    samples: list[Any], test_fraction: float = 0.25
-) -> tuple[list[Any], list[Any]]:
+def _time_split(samples: list[Any], test_fraction: float = 0.25) -> tuple[list[Any], list[Any]]:
     """Walk-forward split: train on the earlier samples, validate on the latest.
 
     Financial series must never be shuffled — a random split leaks future
@@ -87,9 +85,7 @@ def _time_split(
     return ordered[:cut], ordered[cut:]
 
 
-def _rolling_windows(
-    samples: list[Any], n_folds: int = 5
-) -> list[tuple[list[Any], list[Any]]]:
+def _rolling_windows(samples: list[Any], n_folds: int = 5) -> list[tuple[list[Any], list[Any]]]:
     """Expanding-window walk-forward folds: each fold trains on all samples up
     to a boundary and validates on the next chunk — no future leakage."""
     ordered = sorted(samples, key=lambda s: s.asof)
@@ -292,7 +288,9 @@ def train_buy_classifier(
 _DECISION_FROM_CLASS = {0: "avoid", 1: "hold", 2: "buy"}
 
 
-def _outcome_label(move: float, buy_threshold_pct: float = -0.25, avoid_threshold_pct: float = 0.5) -> int:
+def _outcome_label(
+    move: float, buy_threshold_pct: float = -0.25, avoid_threshold_pct: float = 0.5
+) -> int:
     """Map a realized future YTM move (pp) to a decision class index.
 
     Mirrors ``train_buy_classifier`` so the backtest report and the trained
@@ -330,19 +328,25 @@ def backtest_report(samples: list[Any], *, target_horizon_days: int = 90, top_n:
     Xtr = scaler.fit_transform(X_train)
     Xte = scaler.transform(X_test)
 
-    reg = GradientBoostingRegressor(n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42)
+    reg = GradientBoostingRegressor(
+        n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42
+    )
     reg.fit(Xtr, y_train)
     preds = reg.predict(Xte)
     mae = float(mean_absolute_error(y_test, preds))
     r2 = float(r2_score(y_test, preds)) if len(set(y_test.tolist())) > 1 else 0.0
     baseline_mae = float(
-        mean_absolute_error(y_test, np.array([s.features.yield_to_maturity for s in test_s], dtype=float))
+        mean_absolute_error(
+            y_test, np.array([s.features.yield_to_maturity for s in test_s], dtype=float)
+        )
     )
     cv_mae = _cv_mae(samples)
 
     yc_train = np.array([_outcome_label(s.future_return_pct) for s in train_s], dtype=int)
     yc_test = np.array([_outcome_label(s.future_return_pct) for s in test_s], dtype=int)
-    clf = GradientBoostingClassifier(n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42)
+    clf = GradientBoostingClassifier(
+        n_estimators=120, max_depth=3, learning_rate=0.05, random_state=42
+    )
     if len(set(yc_train.tolist())) >= 2:
         clf.fit(Xtr, yc_train)
         acc = float(clf.score(Xte, yc_test)) if len(yc_test) else 0.0
@@ -377,7 +381,6 @@ def backtest_report(samples: list[Any], *, target_horizon_days: int = 90, top_n:
     }
 
 
-
 def load_artifact(path: str) -> dict[str, Any]:
     """Backward-compatible alias for the cached artifact loader."""
     return load_artifact_cached(path)
@@ -405,7 +408,9 @@ def predict_one(
         Xs = scaler.transform(X)
         predicted_ytm = float(model.predict(Xs)[0])
         if hasattr(model, "feature_importances_"):
-            feature_importance = dict(zip(names, (float(x) for x in model.feature_importances_), strict=False))
+            feature_importance = dict(
+                zip(names, (float(x) for x in model.feature_importances_), strict=False)
+            )
         used_reg = True
 
     predicted_return: float | None = (

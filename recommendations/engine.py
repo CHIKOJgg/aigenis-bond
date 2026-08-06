@@ -54,9 +54,7 @@ def recommend_bonds(
         classifier_path=clf_path,
     )
 
-    bonds_by_issuer: dict[str, str | None] = {
-        b["internal_id"]: b.get("issuer") for b in bonds
-    }
+    bonds_by_issuer: dict[str, str | None] = {b["internal_id"]: b.get("issuer") for b in bonds}
 
     out: list[Recommendation] = []
     for bond, feature, pred in zip(bonds, features, predictions, strict=True):
@@ -162,9 +160,7 @@ def recommend_for_issuer(
         allowed |= {"XAU", "XAG", "XPT"}
     if prefs.share_eur > 0:
         allowed.add("EUR")
-    filtered_bonds = [
-        b for b in bonds if str(b.get("currency", "USD")).upper() in allowed
-    ] or bonds
+    filtered_bonds = [b for b in bonds if str(b.get("currency", "USD")).upper() in allowed] or bonds
 
     features = [
         build_features(

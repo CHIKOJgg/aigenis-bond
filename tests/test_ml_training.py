@@ -11,6 +11,7 @@ assert that:
 * the regressor reports an out-of-time baseline comparison so degradation is
   observable.
 """
+
 from __future__ import annotations
 
 import math

@@ -3,6 +3,7 @@
 Covers bonds listing/get, scores, stats, health/readiness, watchlist CRUD,
 parameter validation (400s), 404s, and the per-tier feature-gating headers.
 """
+
 from __future__ import annotations
 
 import asyncio

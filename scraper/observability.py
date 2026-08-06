@@ -14,7 +14,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def init_sentry(dsn: str | None, *, environment: str = "production", release: str | None = None) -> bool:
+def init_sentry(
+    dsn: str | None, *, environment: str = "production", release: str | None = None
+) -> bool:
     """Инициализировать Sentry, если задан DSN.
 
     Возвращает True, если клиент реально включён.

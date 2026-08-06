@@ -59,104 +59,78 @@ export default function AppLayout() {
       <button
         key={item.path}
         onClick={() => handleNav(item)}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '11px 14px',
-          borderRadius: 10, border: 'none', cursor: 'pointer',
-          fontSize: 14, fontWeight: 500, textAlign: 'left', width: '100%',
-          background: active ? 'rgba(255,255,255,.14)' : 'transparent',
-          color: active ? '#ffffff' : '#b2c9d1',
-          transition: 'all .12s',
-        }}
+        className={`flex items-center gap-3 px-3.5 py-2.5 rounded-[10px] border-none cursor-pointer text-sm font-medium text-left w-full font-aigenis-body transition-all duration-[120ms] ${
+          active ? 'bg-white/15 text-white' : 'bg-transparent text-aigenis-300'
+        }`}
       >
         {item.icon}
         <span className="flex-1 text-left">{item.label}</span>
-        {locked && <span style={{ fontSize: 10, color: '#759eac' }}>PRO</span>}
+        {locked && <span className="text-[10px] text-aigenis-300">PRO</span>}
       </button>
     );
   };
 
   return (
-    <div style={{
-      fontFamily: "'Onest Variable', 'Onest', -apple-system, sans-serif",
-      backgroundColor: '#f5f9fb',
-      color: '#01121a',
-      minHeight: '100vh',
-      display: 'flex',
-    }}>
+    <div className="font-aigenis-body bg-aigenis-bg text-aigenis-text min-h-screen flex">
       {/* ──── Desktop sidebar (dark teal) ──── */}
-      <aside style={{
-        width: 210,
-        backgroundColor: '#004b65',
-        display: 'none',
-        flexDirection: 'column',
-        flexShrink: 0,
-        zIndex: 10,
-        height: '100vh',
-        position: 'fixed',
-      }} className="md:flex">
-        <div style={{ padding: '18px 16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'baseline', padding: 0 }}>
-            <span style={{
-              fontFamily: "'Montserrat Variable', Montserrat, sans-serif",
-              fontSize: 18, fontWeight: 800, color: '#ffffff', letterSpacing: '-0.5px',
-            }}>aigenis</span>
-            <span style={{ fontSize: 13, fontWeight: 400, color: '#b2c9d1', marginLeft: 4 }}>invest</span>
+      <aside className="hidden md:flex w-[210px] bg-aigenis-500 flex-col shrink-0 z-10 h-screen fixed">
+        <div className="px-4 pb-3.5 pt-4.5 flex items-center justify-between">
+          <button onClick={() => navigate('/')} className="bg-transparent border-none cursor-pointer flex items-baseline p-0">
+            <span className="font-aigenis-heading text-lg font-extrabold text-white tracking-tight">aigenis</span>
+            <span className="text-[13px] font-normal text-aigenis-300 ml-1">invest</span>
           </button>
         </div>
 
-        <nav style={{ flex: 1, padding: '0 6px', display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
+        <nav className="flex-1 px-1.5 flex flex-col gap-0.5 overflow-y-auto">
           {SIDEBAR_MAIN.map(renderNavItem)}
-          <div style={{ margin: '12px 14px 6px', fontSize: 10, letterSpacing: '1px', color: '#759eac', textTransform: 'uppercase', fontWeight: 600 }}>
+          <div className="mx-3.5 mt-3 mb-1.5 text-[10px] tracking-widest text-aigenis-300 uppercase font-semibold">
             Сервисы
           </div>
           {SIDEBAR_EXTRA.map(renderNavItem)}
         </nav>
 
-        <div style={{ padding: '12px 14px', margin: '8px 6px 10px', background: 'rgba(255,255,255,.08)', borderRadius: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }} onClick={() => navigate('/account')}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.12)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b2c9d1',
-              fontSize: 14, fontFamily: "'Montserrat Variable', sans-serif", fontWeight: 700,
-            }}>
-              {(user?.name || 'П').charAt(0).toUpperCase()}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {user?.name || 'Гость'}
-              </div>
-              <div style={{ fontSize: 11, color: '#759eac' }}>A0418012025</div>
-            </div>
+        <button
+          className="px-3.5 py-3 mx-1.5 mb-2.5 bg-white/10 rounded-xl cursor-pointer flex items-center gap-2.5 text-left"
+          onClick={() => navigate('/account')}
+        >
+          <div className="w-9 h-9 rounded-[10px] bg-white/10 flex items-center justify-center text-aigenis-300 text-sm font-aigenis-heading font-bold">
+            {(user?.name || 'П').charAt(0).toUpperCase()}
           </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold text-white whitespace-nowrap overflow-hidden text-ellipsis">
+              {user?.name || 'Гость'}
+            </div>
+            <div className="text-[11px] text-aigenis-300">A0418012025</div>
+          </div>
+        </button>
 
-        <div style={{ padding: '0 14px 14px', display: 'flex', gap: 8 }}>
-          <div style={{ background: '#01121a', borderRadius: 8, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, color: '#ffffff', lineHeight: 1 }}>
+        <div className="px-3.5 pb-3.5 flex gap-2">
+          <div className="bg-aigenis-900 rounded-lg px-2.5 py-1.5 flex items-center gap-1 text-[9px] text-white leading-none">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-1.4l2.807 1.626a1 1 0 010 1.734l-2.808 1.626-2.53-2.53 2.53-2.456zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/></svg>
             <div>
-              <div style={{ fontSize: 7, opacity: .7 }}>GET IT ON</div>
-              <div style={{ fontSize: 10, fontWeight: 600 }}>Google Play</div>
+              <div className="text-[7px] opacity-70">GET IT ON</div>
+              <div className="text-[10px] font-semibold">Google Play</div>
             </div>
           </div>
-          <div style={{ background: '#01121a', borderRadius: 8, padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, color: '#ffffff', lineHeight: 1 }}>
+          <div className="bg-aigenis-900 rounded-lg px-2.5 py-1.5 flex items-center gap-1 text-[9px] text-white leading-none">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
             <div>
-              <div style={{ fontSize: 7, opacity: .7 }}>Download on the</div>
-              <div style={{ fontSize: 10, fontWeight: 600 }}>App Store</div>
+              <div className="text-[7px] opacity-70">Download on the</div>
+              <div className="text-[10px] font-semibold">App Store</div>
             </div>
           </div>
         </div>
       </aside>
 
       {/* ──── Mobile top bar ──── */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 h-14"
-        style={{ background: '#004b65', color: '#ffffff' }}>
-        <button onClick={() => setMobileOpen(true)} style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', padding: 4 }}>
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 h-14 bg-aigenis-500 text-white">
+        <button onClick={() => setMobileOpen(true)} className="bg-transparent border-none text-white cursor-pointer p-1" aria-label="Открыть меню">
           <Menu size={22} />
         </button>
-        <span style={{ fontFamily: "'Montserrat Variable', sans-serif", fontWeight: 800, fontSize: 16 }}>aigenis invest</span>
-        <button onClick={() => navigate('/alerts')} style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', padding: 4, position: 'relative' }}>
+        <span className="font-aigenis-heading font-extrabold text-base">aigenis invest</span>
+        <button onClick={() => navigate('/alerts')} className="bg-transparent border-none text-white cursor-pointer p-1 relative" aria-label="Алерты">
           <Bell size={20} />
-          <span style={{ position: 'absolute', top: 0, right: 0, width: 8, height: 8, borderRadius: 10, background: '#e03400', border: '1.5px solid #004b65' }} />
+          <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-aigenis-error-600 border-[1.5px] border-aigenis-500" aria-hidden="true" />
         </button>
       </div>
 
@@ -164,115 +138,95 @@ export default function AppLayout() {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-[60]">
           <div className="fixed inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
-          <div className="fixed left-0 top-0 bottom-0 w-[280px] bg-[#004b65] p-4 flex flex-col animate-slideInLeft" style={{ fontFamily: "'Onest Variable', sans-serif" }}>
+          <div className="fixed left-0 top-0 bottom-0 w-[280px] bg-aigenis-500 p-4 flex flex-col animate-slideInLeft font-aigenis-body">
             <div className="flex items-center justify-between mb-4">
-              <span style={{ fontFamily: "'Montserrat Variable', sans-serif", fontWeight: 800, color: '#ffffff', fontSize: 18 }}>aigenis invest</span>
-              <button onClick={() => setMobileOpen(false)} style={{ background: 'rgba(255,255,255,.12)', border: 'none', width: 30, height: 30, borderRadius: 8, color: '#ffffff', cursor: 'pointer' }}>
+              <span className="font-aigenis-heading font-extrabold text-white text-lg">aigenis invest</span>
+              <button onClick={() => setMobileOpen(false)} className="bg-white/10 border-none w-7.5 h-7.5 rounded-lg text-white cursor-pointer flex items-center justify-center" aria-label="Закрыть меню">
                 <X size={16} />
               </button>
             </div>
-            <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
+            <nav className="flex-1 flex flex-col gap-0.5 overflow-y-auto">
               {[...SIDEBAR_MAIN, ...SIDEBAR_EXTRA].map((item) => {
                 const locked = item.premium && tier === 'free';
                 return (
                   <button
                     key={item.path}
                     onClick={() => { handleNav(item); setMobileOpen(false); }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-                      borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500,
-                      textAlign: 'left', width: '100%', background: 'transparent', color: '#b2c9d1',
-                    }}
+                    className="flex items-center gap-3 py-3 px-3.5 rounded-[10px] border-none cursor-pointer text-sm font-medium text-left w-full bg-transparent text-aigenis-300"
                   >
                     {item.icon}
                     <span className="flex-1 text-left">{item.label}</span>
-                    {locked && <span style={{ fontSize: 10, color: '#759eac' }}>PRO</span>}
+                    {locked && <span className="text-[10px] text-aigenis-300">PRO</span>}
                   </button>
                 );
               })}
             </nav>
-            <button onClick={() => { navigate('/account'); setMobileOpen(false); }}
-              style={{ padding: '12px 14px', background: 'rgba(255,255,255,.08)', borderRadius: 12, color: '#ffffff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontFamily: "'Montserrat Variable', sans-serif" }}>
+            <button
+              onClick={() => { navigate('/account'); setMobileOpen(false); }}
+              className="py-3 px-3.5 bg-white/10 rounded-xl text-white border-none cursor-pointer flex items-center gap-2.5"
+            >
+              <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-bold font-aigenis-heading">
                 {(user?.name || 'П').charAt(0).toUpperCase()}
               </div>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{user?.name || 'Гость'}</span>
+              <span className="text-[13px] font-semibold">{user?.name || 'Гость'}</span>
             </button>
           </div>
         </div>
       )}
 
       {/* ──── Main content ──── */}
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column',
-        marginLeft: 0, minHeight: '100vh', width: '100%',
-      }} className="md:ml-[210px]">
-        <header style={{
-          height: 56, background: '#ffffff', borderBottom: '1px solid #eef3f5',
-          display: 'none', alignItems: 'center', justifyContent: 'space-between',
-          padding: '0 24px', position: 'sticky', top: 0, zIndex: 5,
-        }} className="md:flex">
-          <div style={{ display: 'flex', gap: 4 }}>
-            {(['BCSE', 'MOEX'] as Exchange[]).map((ex) => (
-              <button
-                key={ex}
-                onClick={() => setExchange(ex)}
-                style={{
-                  padding: '8px 20px', borderRadius: 9999,
-                  border: exchange === ex ? '2px solid #004b65' : '2px solid #d6e2e6',
-                  background: exchange === ex ? '#004b65' : '#ffffff',
-                  color: exchange === ex ? '#ffffff' : '#516c79',
-                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                  fontFamily: "'Onest Variable', Onest, sans-serif",
-                  display: 'flex', alignItems: 'center', gap: 8, transition: 'all .15s',
-                }}
-              >
-                {ex === 'BCSE' && (
-                  <span style={{
-                    width: 20, height: 20, borderRadius: 4,
-                    background: exchange === 'BCSE' ? '#ffffff' : '#004b65',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Globe2 size={12} color={exchange === 'BCSE' ? '#004b65' : '#ffffff'} />
-                  </span>
-                )}
-                {ex === 'MOEX' && (
-                  <span style={{
-                    width: 20, height: 20, borderRadius: 4, background: '#ff0000',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 8, fontWeight: 800, color: '#ffffff',
-                    fontFamily: "'Montserrat Variable', sans-serif",
-                  }}>MOEX</span>
-                )}
-                {ex === 'BCSE' ? 'Белорусская биржа (BCSE)' : 'Московская биржа (MOEX)'}
-              </button>
-            ))}
+      <div className="flex-1 flex flex-col md:ml-[210px] min-h-screen w-full">
+        <header className="hidden md:flex h-14 bg-white border-b border-aigenis-50 items-center justify-between px-6 sticky top-0 z-5">
+          <div className="flex gap-1">
+            {(['BCSE', 'MOEX'] as Exchange[]).map((ex) => {
+              const active = exchange === ex;
+              return (
+                <button
+                  key={ex}
+                  onClick={() => setExchange(ex)}
+                  aria-pressed={active}
+                  className={`px-5 py-2 rounded-full text-sm font-semibold cursor-pointer font-aigenis-body flex items-center gap-2 transition-all duration-150 ${
+                    active
+                      ? 'border-2 border-aigenis-500 bg-aigenis-500 text-white'
+                      : 'border-2 border-aigenis-border bg-white text-aigenis-text-secondary'
+                  }`}
+                >
+                  {ex === 'BCSE' && (
+                    <span className={`w-5 h-5 rounded-[4px] flex items-center justify-center ${active ? 'bg-white' : 'bg-aigenis-500'}`}>
+                      <Globe2 size={12} color={active ? '#004b65' : '#ffffff'} />
+                    </span>
+                  )}
+                  {ex === 'MOEX' && (
+                    <span className="w-5 h-5 rounded-[4px] bg-[#ff0000] flex items-center justify-center text-[8px] font-extrabold text-white font-aigenis-heading">
+                      MOEX
+                    </span>
+                  )}
+                  {ex === 'BCSE' ? 'Белорусская биржа (BCSE)' : 'Московская биржа (MOEX)'}
+                </button>
+              );
+            })}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className="flex items-center gap-2">
             <LanguageToggle />
-            <button onClick={() => navigate(ROUTES.chat)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#516c79', padding: 6 }} title="AI-ассистент">
+            <button onClick={() => navigate(ROUTES.chat)} className="bg-transparent border-none cursor-pointer text-aigenis-text-secondary p-1.5" title="AI-ассистент" aria-label="AI-ассистент">
               <Brain size={20} />
             </button>
             {tier === 'free' && (
               <button
                 onClick={() => navigate('/subscribe')}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px',
-                  borderRadius: 9999, border: '1px solid #004b65', background: '#ffffff',
-                  color: '#004b65', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-aigenis-500 bg-white text-aigenis-500 text-[13px] font-semibold cursor-pointer"
               >
                 <Star size={14} /> {t('nav.subscribe')}
               </button>
             )}
-            <button onClick={() => navigate('/alerts')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#516c79', padding: 6, position: 'relative' }}>
+            <button onClick={() => navigate('/alerts')} className="bg-transparent border-none cursor-pointer text-aigenis-text-secondary p-1.5 relative" aria-label="Алерты">
               <Bell size={22} />
-              <span style={{ position: 'absolute', top: 2, right: 2, width: 10, height: 10, borderRadius: 10, background: '#e03400', border: '2px solid #ffffff' }} />
+              <span className="absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-aigenis-error-600 border-2 border-white" aria-hidden="true" />
             </button>
           </div>
         </header>
 
-        <main className="md:pt-0 pt-14" style={{ flex: 1, overflowY: 'auto', paddingBottom: 48 }}>
+        <main className="md:pt-0 pt-14 flex-1 overflow-y-auto pb-12">
           <div className="md:px-6 px-4 pb-8">
             <ExchangeHint />
             <Outlet />
@@ -287,15 +241,10 @@ function ExchangeHint() {
   const { exchange } = useExchange();
   if (exchange !== 'BCSE') return null;
   return (
-    <div style={{
-      display: 'none',
-      marginBottom: 16,
-      gap: 12, alignItems: 'center', background: '#fffaeb', border: '1px solid #fedf89',
-      borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#b54708',
-    }} className="md:flex">
+    <div className="hidden md:flex mb-4 gap-3 items-center bg-aigenis-warning-50 border border-aigenis-warning-500 rounded-[10px] px-3.5 py-2.5 text-[13px] text-aigenis-warning-600">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc6803" strokeWidth="2"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
       <span>Расписание торгов на БВФБ: 10:30–12:20, 13:45–15:45</span>
-      <span style={{ marginLeft: 'auto', fontSize: 12, color: '#dc6803', cursor: 'pointer' }}>Подробнее</span>
+      <span className="ml-auto text-xs text-aigenis-warning-600 cursor-pointer">Подробнее</span>
     </div>
   );
 }

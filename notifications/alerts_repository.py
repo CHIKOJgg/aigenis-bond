@@ -6,6 +6,7 @@
 актуальными котировками и складывает срабатывания в ``alert_events`` —
 отдельную ленту, не смешивая с системными алертами качества данных.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -55,9 +56,7 @@ async def list_rules(
 async def delete_rule(session: AsyncSession, user_id: int, rule_id: int) -> bool:
     rule = (
         await session.execute(
-            select(AlertRuleORM).where(
-                AlertRuleORM.id == rule_id, AlertRuleORM.user_id == user_id
-            )
+            select(AlertRuleORM).where(AlertRuleORM.id == rule_id, AlertRuleORM.user_id == user_id)
         )
     ).scalar_one_or_none()
     if rule is None:
@@ -67,9 +66,7 @@ async def delete_rule(session: AsyncSession, user_id: int, rule_id: int) -> bool
 
 
 async def list_active_rules(session: AsyncSession) -> list[AlertRuleORM]:
-    result = await session.execute(
-        select(AlertRuleORM).where(AlertRuleORM.active.is_(True))
-    )
+    result = await session.execute(select(AlertRuleORM).where(AlertRuleORM.active.is_(True)))
     return list(result.scalars().all())
 
 

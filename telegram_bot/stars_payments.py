@@ -9,6 +9,7 @@ each Stars payment is a **one-off** purchase that grants a fixed
 by paying again via /subscribe. Handling is idempotent (keyed on
 ``telegram_payment_charge_id``) and Stars refunds revoke the tier.
 """
+
 from __future__ import annotations
 
 from aiogram import F, Router
@@ -52,7 +53,9 @@ def _subscribe_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-@stars_router.message(F.text.func(lambda t: (t or "").split()[0].lstrip("/").split("@")[0] == "subscribe"))
+@stars_router.message(
+    F.text.func(lambda t: (t or "").split()[0].lstrip("/").split("@")[0] == "subscribe")
+)
 async def cmd_subscribe(message) -> None:
     await _show_subscribe(message)
 
@@ -114,7 +117,7 @@ async def cb_stars_close(callback_query) -> None:
 @stars_router.pre_checkout_query()
 async def on_pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
     # Validate the invoice payload before accepting.
-    payload = (getattr(pre_checkout_query, "invoice_payload", None) or "")
+    payload = getattr(pre_checkout_query, "invoice_payload", None) or ""
     if not payload.startswith("stars_sub:"):
         logger.warning("stars_pre_checkout_invalid_payload", payload=payload)
         await pre_checkout_query.answer(ok=False, error_message="Invalid subscription payload")
@@ -125,7 +128,9 @@ async def on_pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
         await pre_checkout_query.answer(ok=False, error_message="Unknown plan tier")
         return
     # Verify the total amount matches the plan price.
-    total = sum(getattr(p, "amount", 0) for p in (getattr(pre_checkout_query, "prices", None) or []))
+    total = sum(
+        getattr(p, "amount", 0) for p in (getattr(pre_checkout_query, "prices", None) or [])
+    )
     expected = STAR_PLANS[tier].stars
     if total != expected:
         logger.warning("stars_pre_checkout_amount_mismatch", total=total, expected=expected)
@@ -149,9 +154,7 @@ async def on_successful_payment(message) -> None:
         return
     charge_id = getattr(payment, "telegram_payment_charge_id", None)
     duration = plan.duration_days
-    applied = await set_tier_by_telegram(
-        tg_id, tier, duration_days=duration, charge_id=charge_id
-    )
+    applied = await set_tier_by_telegram(tg_id, tier, duration_days=duration, charge_id=charge_id)
     if not applied:
         # Duplicate delivery of the same payment — acknowledge without double-granting.
         return

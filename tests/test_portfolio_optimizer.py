@@ -1,4 +1,5 @@
 """Unit tests for the portfolio optimizer (portfolio/optimizer)."""
+
 from __future__ import annotations
 
 from datetime import datetime

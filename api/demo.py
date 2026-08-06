@@ -1,0 +1,171 @@
+"""Demo blueprint — fixtures-only public surface for `/demo/*`.
+
+All responses are deterministic and read from the bundled
+``demo-data/v1/`` dataset; no live API calls, no payments, no Telegram,
+no audit of real users. Guarded by DEMO_DISABLE_SIDE_EFFECTS so the
+blueprint is a safe showcase for pre-sale and pilot presentations.
+
+Phase 1 (item 1.13) — deterministic ``POST /api/v1/demo/portfolio-impact``.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Literal
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+
+from scraper.logging import get_logger
+
+logger = get_logger("api.demo")
+
+router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
+
+DATA_ROOT = Path(__file__).resolve().parents[1] / "demo-data" / "v1"
+
+AllocationPct = Literal[5, 10, 15]
+
+
+class PortfolioImpactRequest(BaseModel):
+    bond_id: str = Field(..., description="demo-bond-001..003 from fixtures")
+    allocation_pct: AllocationPct = Field(10, description="5, 10 or 15 percent of demo portfolio")
+
+
+class PortfolioImpactBefore(BaseModel):
+    expected_yield_pct: float
+    duration_years: float
+    concentration_by_issuer: dict[str, float]
+
+
+class PortfolioImpactAfter(BaseModel):
+    expected_yield_pct: float
+    duration_years: float
+    concentration_by_issuer: dict[str, float]
+
+
+class PortfolioImpactResponse(BaseModel):
+    bond_id: str
+    allocation_pct: AllocationPct
+    delta_expected_yield_bps: float
+    delta_duration_years: float
+    concentration_warning: str
+    risk_profile_fit: Literal["ok", "borderline", "off"]
+    before: PortfolioImpactBefore
+    after: PortfolioImpactAfter
+    fixtures_version: str
+
+
+def _load_manifest() -> dict[str, Any]:
+    p = DATA_ROOT / "manifest.json"
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("demo_manifest_read_failed", error=str(exc))
+        return {}
+
+
+def _load_json(name: str) -> dict[str, Any] | list[Any]:
+    p = DATA_ROOT / name
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("demo_fixture_read_failed", file=name, error=str(exc))
+        return []
+
+
+def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
+    templates = _load_json("portfolio_templates.json")
+    persona = _load_json("bonds_bcse.json") + _load_json("bonds_moex.json")
+
+    bond = next(
+        (b for b in persona if b.get("internal_id") == req.bond_id),
+        None,
+    )
+    if bond is None:
+        raise HTTPException(status_code=404, detail=f"Bond {req.bond_id} not in fixtures")
+
+    template = templates.get("marina_50000_byn") if isinstance(templates, dict) else None
+    if not isinstance(template, dict):
+        template = {
+            "expected_yield_pct": 9.5,
+            "duration_years": 2.4,
+            "concentration_by_issuer": {"demo": 100.0},
+        }
+
+    before_yield = float(template.get("expected_yield_pct", 9.5))
+    before_duration = float(template.get("duration_years", 2.4))
+    before_concentration = dict(template.get("concentration_by_issuer", {"demo": 100.0}))
+
+    alloc = req.allocation_pct / 100.0
+    bond_yield = float(bond.get("yield_to_maturity") or 0)
+    bond_duration = float(bond.get("duration_years") or 3.0)
+
+    after_yield = before_yield * (1.0 - alloc) + bond_yield * alloc
+    after_duration = before_duration * (1.0 - alloc) + bond_duration * alloc
+
+    issuer_key = str(bond.get("issuer") or req.bond_id)
+    after_concentration = dict(before_concentration)
+    after_concentration[issuer_key] = after_concentration.get(issuer_key, 0.0) + alloc * 100.0
+
+    delta_yield_bps = round((after_yield - before_yield) * 100.0, 1)
+    delta_duration = round(after_duration - before_duration, 2)
+
+    if after_concentration.get(issuer_key, 0.0) > 25.0:
+        risk_fit: Literal["ok", "borderline", "off"] = "off"
+        concentration_warning = (
+            f"Концентрация на эмитента {issuer_key} превысит 25% "
+            "— изменение недопустимо при умеренном риск-профиле."
+        )
+    elif bond_duration > 4.0:
+        risk_fit = "borderline"
+        concentration_warning = "Дюрация > 4 лет — проверьте горизонт инвестирования."
+    else:
+        risk_fit = "ok"
+        concentration_warning = "Изменение допустимо при умеренном риск-профиле."
+
+    manifest = _load_manifest()
+    fixtures_version = str(manifest.get("dataset_version", "v1"))
+
+    return PortfolioImpactResponse(
+        bond_id=req.bond_id,
+        allocation_pct=req.allocation_pct,
+        delta_expected_yield_bps=delta_yield_bps,
+        delta_duration_years=delta_duration,
+        concentration_warning=concentration_warning,
+        risk_profile_fit=risk_fit,
+        before=PortfolioImpactBefore(
+            expected_yield_pct=round(before_yield, 2),
+            duration_years=round(before_duration, 2),
+            concentration_by_issuer={k: round(v, 2) for k, v in before_concentration.items()},
+        ),
+        after=PortfolioImpactAfter(
+            expected_yield_pct=round(after_yield, 2),
+            duration_years=round(after_duration, 2),
+            concentration_by_issuer={k: round(v, 2) for k, v in after_concentration.items()},
+        ),
+        fixtures_version=fixtures_version,
+    )
+
+
+@router.post("/portfolio-impact", response_model=PortfolioImpactResponse)
+async def portfolio_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
+    """Детерминированный расчёт влияния бумаги на демо-портфель.
+
+    Safe demo endpoint: never mutates DB, never calls live APIs.
+    Side effects (Telegram, emails, payments) are blocked when
+    ``DEMO_DISABLE_SIDE_EFFECTS=1`` is set; this endpoint also returns
+    a static fixture-derived payload even when the flag is off.
+    """
+    if os.getenv("AIGENIS_ENV") == "production" and not os.getenv("DEMO_DISABLE_SIDE_EFFECTS"):
+        raise HTTPException(
+            status_code=403,
+            detail="Demo endpoints require DEMO_DISABLE_SIDE_EFFECTS=1 in production.",
+        )
+    return _build_impact(req)

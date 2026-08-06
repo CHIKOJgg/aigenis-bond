@@ -101,8 +101,11 @@ async def create_partner_key(
         await session.commit()
         await session.refresh(key)
     return CreateKeyResponse(
-        id=key.id, name=key.name, api_key=raw,
-        tier=key.tier, rate_limit=key.rate_limit,
+        id=key.id,
+        name=key.name,
+        api_key=raw,
+        tier=key.tier,
+        rate_limit=key.rate_limit,
     )
 
 
@@ -110,13 +113,20 @@ async def create_partner_key(
 async def list_partner_keys(user_id: int = Depends(_require_user)):
     async with session_scope() as session:
         rows = (
-            await session.execute(
-                select(PartnerKeyORM).where(PartnerKeyORM.owner_user_id == user_id)
+            (
+                await session.execute(
+                    select(PartnerKeyORM).where(PartnerKeyORM.owner_user_id == user_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [
             KeyInfo(
-                id=k.id, name=k.name, tier=k.tier, rate_limit=k.rate_limit,
+                id=k.id,
+                name=k.name,
+                tier=k.tier,
+                rate_limit=k.rate_limit,
                 active=k.active,
                 created_at=k.created_at.isoformat() if k.created_at else None,
             )
@@ -157,10 +167,14 @@ class ReferralStats(BaseModel):
 async def partner_referral_stats(user_id: int = Depends(_require_user)):
     async with session_scope() as session:
         key = (
-            await session.execute(
-                select(PartnerKeyORM).where(PartnerKeyORM.owner_user_id == user_id)
+            (
+                await session.execute(
+                    select(PartnerKeyORM).where(PartnerKeyORM.owner_user_id == user_id)
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if key is None:
             # Regular (non-partner) users get their own shareable referral code
             # (generated at registration, see api/auth/service.py).
@@ -169,14 +183,18 @@ async def partner_referral_stats(user_id: int = Depends(_require_user)):
             ).scalar_one_or_none()
             if user is None or not user.referral_code:
                 return ReferralStats(
-                    referral_code=None, total_referrals=0, conversions=0,
-                    pending_payouts=0, paid_payouts=0, total_commission=0.0,
+                    referral_code=None,
+                    total_referrals=0,
+                    conversions=0,
+                    pending_payouts=0,
+                    paid_payouts=0,
+                    total_commission=0.0,
                 )
             referred = (
-                await session.execute(
-                    select(UserORM).where(UserORM.referred_by == user_id)
-                )
-            ).scalars().all()
+                (await session.execute(select(UserORM).where(UserORM.referred_by == user_id)))
+                .scalars()
+                .all()
+            )
             return ReferralStats(
                 referral_code=user.referral_code,
                 total_referrals=len(referred),
@@ -186,10 +204,14 @@ async def partner_referral_stats(user_id: int = Depends(_require_user)):
                 total_commission=0.0,
             )
         rows = (
-            await session.execute(
-                select(PartnerReferralORM).where(PartnerReferralORM.partner_key_id == key.id)
+            (
+                await session.execute(
+                    select(PartnerReferralORM).where(PartnerReferralORM.partner_key_id == key.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         conversions = len(rows)
         pending = sum(1 for r in rows if r.payout_status == "pending")
         paid = sum(1 for r in rows if r.payout_status == "paid")
@@ -235,7 +257,9 @@ async def create_webhook(
         raise HTTPException(status_code=400, detail=tr(lang, "invalid_url"))
     bad = [e for e in body.events if e not in SUPPORTED_EVENTS]
     if bad:
-        raise HTTPException(status_code=400, detail=tr(lang, "event_unsupported", event=", ".join(bad)))
+        raise HTTPException(
+            status_code=400, detail=tr(lang, "event_unsupported", event=", ".join(bad))
+        )
     secret = secrets.token_urlsafe(24)
     wh = await register_webhook(
         partner_key_id=key.id, url=body.url, events=body.events, secret=secret
@@ -308,9 +332,7 @@ async def partner_bond_detail(internal_id: str, _key: PartnerKeyORM = Depends(pa
 
 
 @router.get("/bonds/{internal_id}/analysis")
-async def partner_bond_analysis(
-    internal_id: str, key: PartnerKeyORM = Depends(partner_rate_limit)
-):
+async def partner_bond_analysis(internal_id: str, key: PartnerKeyORM = Depends(partner_rate_limit)):
     if key.tier == "trial":
         # Self-served keys (public /partners form) are a free evaluation tier:
         # listing + detail work, premium analysis requires a paid key tier.
@@ -323,10 +345,7 @@ async def partner_bond_analysis(
     ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity else None
     explained = explain_score(score, currency=bond.currency, ytm_pct=ytm)
 
-    all_bonds = [
-        _h.orm_to_bond(b)
-        async for b in _iter_bonds()
-    ]
+    all_bonds = [_h.orm_to_bond(b) async for b in _iter_bonds()]
     rv_signal = None
     for s in desk_rv.relative_value_signals(all_bonds):
         if s.internal_id == internal_id:

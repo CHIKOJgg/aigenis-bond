@@ -1,0 +1,15 @@
+{
+  "dataset_version": "2026-08-demo-01",
+  "prepared_at": "2026-08-06T09:42:00+03:00",
+  "source_policy": "demo snapshot — synthetic/reference data for demonstration only",
+  "valid_until": "2026-08-13T23:59:00+03:00",
+  "owner": "internal",
+  "files": {
+    "bonds_bcse": "v1/bonds_bcse.json",
+    "bonds_moex": "v1/bonds_moex.json",
+    "scores": "v1/scores.json",
+    "explanations": "v1/explanations.json",
+    "portfolio_templates": "v1/portfolio_templates.json",
+    "market_summary": "v1/market_summary.json"
+  }
+}

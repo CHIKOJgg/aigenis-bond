@@ -1,0 +1,31 @@
+{
+  "dataset_version": "v1",
+  "prepared_at": "2026-08-06",
+  "valid_until": "2026-12-31",
+  "brand_mode": "concept",
+  "primary_market": "BCSE",
+  "secondary_market": "MOEX",
+  "demo_persona": {
+    "name": "Марина К.",
+    "profile": "Частный инвестор",
+    "portfolio_size_byn": 50000,
+    "risk_profile": "умеренный"
+  },
+  "demo_bonds": [
+    "demo-bond-001",
+    "demo-bond-002",
+    "demo-bond-003"
+  ],
+  "source_policy": "fixtures-only",
+  "live_data_used": false,
+  "side_effects_enabled": false,
+  "files": [
+    "bonds_bcse.json",
+    "bonds_moex.json",
+    "scores.json",
+    "explanations.json",
+    "portfolio_templates.json",
+    "market_summary.json",
+    "brief.md"
+  ]
+}

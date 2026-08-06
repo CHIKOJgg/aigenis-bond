@@ -4,6 +4,7 @@ Kept separate from the handler modules so that `commands`, `menus`,
 `bond_picker`, `settings` and `admin` can reference the same pagination sizes,
 parse lock and per-user edit state without creating circular imports.
 """
+
 from __future__ import annotations
 
 import asyncio

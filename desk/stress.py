@@ -106,9 +106,7 @@ def run_stress(
         # bound: convexity ≈ duration²), which is conservative for coupon bonds.
         total_shock = rate_shock_pct + credit_shock_pct
         convexity = duration * duration
-        price_change_pct = (
-            -duration * total_shock + 0.5 * convexity * total_shock * total_shock
-        )
+        price_change_pct = -duration * total_shock + 0.5 * convexity * total_shock * total_shock
         new_price = float(bond.price or bond.nominal or 100) * (1 + price_change_pct)
 
         fx_impact = 1.0

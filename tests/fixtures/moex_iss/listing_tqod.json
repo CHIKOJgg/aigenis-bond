@@ -1,0 +1,91 @@
+{
+  "securities": {
+    "columns": [
+      "SECID",
+      "BOARDID",
+      "SHORTNAME",
+      "LOTSIZE",
+      "SECNAME",
+      "ISSUESIZE",
+      "ISIN",
+      "SECTOR",
+      "ISSUER",
+      "P-E",
+      "P/B",
+      "DIVYIELD",
+      "EPS"
+    ],
+    "data": [
+      [
+        "SBER",
+        "TQOD",
+        "Sber",
+        10,
+        "Sberbank (USD)",
+        21586948318,
+        "RU0009029540",
+        "Banks",
+        "Sberbank PJSC",
+        "6.5",
+        "0.8",
+        "8.2",
+        "23.1"
+      ],
+      [
+        "GAZP",
+        "TQOD",
+        "Gazprom",
+        10,
+        "Gazprom (USD)",
+        23673512900,
+        "RU0007661625",
+        "Oil and Gas",
+        "Gazprom PJSC",
+        "3.1",
+        "0.3",
+        "14.5",
+        "8.9"
+      ]
+    ]
+  },
+  "marketdata": {
+    "columns": [
+      "SECID",
+      "IS_TRADED",
+      "LAST",
+      "PREVPRICE",
+      "OPEN",
+      "HIGH",
+      "LOW",
+      "CLOSE",
+      "VOLUME",
+      "VALTODAY"
+    ],
+    "data": [
+      [
+        "SBER",
+        1,
+        "2.98",
+        "2.95",
+        "2.96",
+        "3.00",
+        "2.94",
+        "2.98",
+        1120300,
+        3328193
+      ],
+      [
+        "GAZP",
+        1,
+        "1.87",
+        "1.86",
+        "1.87",
+        "1.88",
+        "1.85",
+        "1.87",
+        987100,
+        1830412
+      ]
+    ]
+  }
+}

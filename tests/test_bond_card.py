@@ -1,4 +1,5 @@
 """Tests for the single-bond deep-dive card and its Pro/free gating."""
+
 from __future__ import annotations
 
 import asyncio

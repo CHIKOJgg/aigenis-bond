@@ -328,9 +328,7 @@ def assess_data_quality(bonds, now: datetime | None = None) -> DataQualityReport
 
     issues: list[str] = []
     if total_active and empty_pct >= THRESHOLDS["empty_ytm_pct"]:
-        issues.append(
-            f"{empty_pct:.0f}% активных облигаций без YTM ({empty_ytm}/{total_active})"
-        )
+        issues.append(f"{empty_pct:.0f}% активных облигаций без YTM ({empty_ytm}/{total_active})")
     if stale_hours is not None and stale_hours >= THRESHOLDS["stale_hours"]:
         issues.append(f"данные устарели: последнее обновление {stale_hours:.0f}ч назад")
     if not fetch_times:

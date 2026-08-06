@@ -3,6 +3,7 @@
 These use FastAPI's TestClient. The gated endpoints reject anonymous (free)
 callers with 402 *before* touching the database, so no DB is required.
 """
+
 from __future__ import annotations
 
 from fastapi.testclient import TestClient

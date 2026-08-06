@@ -1,4 +1,5 @@
 """Tests for the admin panel security: brute-force protection and CSRF checks."""
+
 from __future__ import annotations
 
 import pytest
@@ -79,7 +80,9 @@ async def test_admin_state_changes_require_csrf_origin():
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Cross-site attacker (no cookie): must NOT reach the handler.
-        resp = await client.post("/admin/users/9001/toggle", headers={"origin": "https://evil.example"})
+        resp = await client.post(
+            "/admin/users/9001/toggle", headers={"origin": "https://evil.example"}
+        )
         assert resp.status_code in (302, 403)
 
         # Authenticated but headers missing → CSRF rejection.

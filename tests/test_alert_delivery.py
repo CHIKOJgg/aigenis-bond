@@ -165,6 +165,8 @@ async def test_user_rule_alert_emits_webhook(db: AsyncSession, monkeypatch):
     events = (await db.execute(select(UserORM))).scalars().all()
     assert events  # sanity: user persisted
     rule_events = (
-        await db.execute(select(AlertRuleORM).where(AlertRuleORM.internal_id == "R"))
-    ).scalars().all()
+        (await db.execute(select(AlertRuleORM).where(AlertRuleORM.internal_id == "R")))
+        .scalars()
+        .all()
+    )
     assert rule_events[0].triggered_at is not None

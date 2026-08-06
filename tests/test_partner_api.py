@@ -83,7 +83,9 @@ def test_create_and_list_partner_key():
         headers = _auth_headers(901)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            created = await client.post("/api/v1/partner/keys", json={"name": "acme"}, headers=headers)
+            created = await client.post(
+                "/api/v1/partner/keys", json={"name": "acme"}, headers=headers
+            )
             assert created.status_code == 201
             body = created.json()
             assert body["api_key"].startswith("ak_")
@@ -156,7 +158,9 @@ def test_webhook_register_validation_and_dispatch(monkeypatch):
         headers = _auth_headers(903)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            created = await client.post("/api/v1/partner/keys", json={"name": "acme"}, headers=headers)
+            created = await client.post(
+                "/api/v1/partner/keys", json={"name": "acme"}, headers=headers
+            )
             raw_key = created.json()["api_key"]
             pheaders = {"X-Aigenis-Api-Key": raw_key}
 
@@ -218,7 +222,12 @@ def test_partner_rate_limit_enforced(monkeypatch):
         async with session_scope() as s:
             s.add(
                 PartnerKeyORM(
-                    name="rl", key_hash=key_hash, key_fp=key_fp, tier="partner", rate_limit=2, active=True
+                    name="rl",
+                    key_hash=key_hash,
+                    key_fp=key_fp,
+                    tier="partner",
+                    rate_limit=2,
+                    active=True,
                 )
             )
             await s.commit()

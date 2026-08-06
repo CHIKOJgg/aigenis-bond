@@ -3,6 +3,7 @@
 Covers: /widget/embed.js serving REAL JavaScript (not a JSON-encoded string),
 and the /widget/top payload shape.
 """
+
 from __future__ import annotations
 
 import pytest

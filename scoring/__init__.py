@@ -28,4 +28,3 @@ __all__ = [
     "score_bonds",
     "validate_bond_data",
 ]
-

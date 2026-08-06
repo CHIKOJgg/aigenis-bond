@@ -4,6 +4,7 @@ Pure presentation/navigation: builds the main menu, section submenus and the
 `menu:` callback router. Section command handlers live elsewhere; this module
 only bridges buttons to them (via lazy imports to avoid import cycles).
 """
+
 from __future__ import annotations
 
 from aiogram import Router
@@ -82,7 +83,9 @@ async def _show_main_menu(message) -> None:
     await message.answer(MENU_INTRO, parse_mode=ParseMode.HTML, reply_markup=_main_menu_kb())
 
 
-def _submenu(title: str, buttons: list, back: str = "menu:main") -> tuple[str, InlineKeyboardMarkup]:
+def _submenu(
+    title: str, buttons: list, back: str = "menu:main"
+) -> tuple[str, InlineKeyboardMarkup]:
     rows = []
     for row in buttons:
         rows.append([InlineKeyboardButton(text=t, callback_data=d) for t, d in row])

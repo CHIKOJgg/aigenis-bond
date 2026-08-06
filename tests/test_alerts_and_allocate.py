@@ -3,6 +3,7 @@
 Run against in-memory SQLite. Uses an async HTTP client (ASGITransport) so the
 full request path (gating + repositories + optimizer) runs in one event loop.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -113,9 +114,7 @@ def test_goal_allocation_returns_basket():
             assert body["projection"]["expected_capital"] > 10000
 
             # Unknown risk is rejected.
-            resp = await client.post(
-                "/api/v1/allocate", headers=headers, json={"risk": "Nope"}
-            )
+            resp = await client.post("/api/v1/allocate", headers=headers, json={"risk": "Nope"})
             assert resp.status_code == 400
 
     _run(run)
@@ -130,8 +129,12 @@ def test_build_plan_and_rebalance():
             resp = await client.post(
                 "/api/v1/build_plan",
                 headers=headers,
-                json={"positions": [{"internal_id": "OP-1", "amount": 5000},
-                                    {"internal_id": "OP-2", "amount": 3000}]},
+                json={
+                    "positions": [
+                        {"internal_id": "OP-1", "amount": 5000},
+                        {"internal_id": "OP-2", "amount": 3000},
+                    ]
+                },
             )
             assert resp.status_code == 200
             plan = resp.json()
@@ -140,11 +143,13 @@ def test_build_plan_and_rebalance():
 
             # Rebalance applies to the user's stored positions.
             await client.post(
-                "/api/v1/positions", headers=headers,
+                "/api/v1/positions",
+                headers=headers,
                 json={"internal_id": "OP-1", "amount": 5000},
             )
             await client.post(
-                "/api/v1/positions", headers=headers,
+                "/api/v1/positions",
+                headers=headers,
                 json={"internal_id": "OP-2", "amount": 3000},
             )
             resp = await client.post("/api/v1/rebalance", headers=headers)
@@ -164,7 +169,12 @@ def test_alert_rules_crud_and_feed():
             resp = await client.post(
                 "/api/v1/alerts/rules",
                 headers=headers,
-                json={"internal_id": "NOPE", "metric": "price", "direction": "below", "threshold": 95},
+                json={
+                    "internal_id": "NOPE",
+                    "metric": "price",
+                    "direction": "below",
+                    "threshold": 95,
+                },
             )
             assert resp.status_code == 404
 
@@ -172,7 +182,12 @@ def test_alert_rules_crud_and_feed():
             resp = await client.post(
                 "/api/v1/alerts/rules",
                 headers=headers,
-                json={"internal_id": "OP-1", "metric": "price", "direction": "below", "threshold": 95},
+                json={
+                    "internal_id": "OP-1",
+                    "metric": "price",
+                    "direction": "below",
+                    "threshold": 95,
+                },
             )
             assert resp.status_code == 200
             rule_id = resp.json()["id"]
@@ -202,8 +217,12 @@ def test_alert_service_fires_and_dedupes():
         await _seed()
         async with session_scope() as s:
             await create_rule(
-                s, user_id=1, internal_id="OP-1", metric="price",
-                direction="below", threshold=101,  # 100 <= 101 -> fires
+                s,
+                user_id=1,
+                internal_id="OP-1",
+                metric="price",
+                direction="below",
+                threshold=101,  # 100 <= 101 -> fires
             )
         fired = await run_alert_checks()
         assert fired == 1

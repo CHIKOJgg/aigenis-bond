@@ -43,8 +43,12 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
         if not isinstance(it, dict):
             continue
         internal_id = (
-            it.get("state_security_id") or it.get("symbol") or it.get("internal_id")
-            or it.get("slug") or it.get("id") or it.get("registration_number")
+            it.get("state_security_id")
+            or it.get("symbol")
+            or it.get("internal_id")
+            or it.get("slug")
+            or it.get("id")
+            or it.get("registration_number")
         )
         if not internal_id:
             continue
@@ -56,7 +60,9 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
                 "isin": it.get("isin"),
                 "nominal": it.get("nominal"),
                 "coupon_rate": _first_not_none(it.get("coupon_rate"), it.get("coupon")),
-                "coupon_frequency": _first_not_none(it.get("coupon_frequency"), it.get("frequency")),
+                "coupon_frequency": _first_not_none(
+                    it.get("coupon_frequency"), it.get("frequency")
+                ),
                 "registration_number": it.get("registration_number") or it.get("reg_number"),
                 "issue_number": it.get("issue_number") or it.get("issue"),
                 "issue_volume": it.get("issue_volume"),

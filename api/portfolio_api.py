@@ -2,6 +2,7 @@
 
 Phase 2 endpoints gated behind Pro/Enterprise subscription.
 """
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -245,7 +246,9 @@ async def api_pnl_history(
             "realized_pnl": float(s.realized_pnl),
             "unrealized_pnl": float(s.unrealized_pnl),
             "coupon_income": float(s.coupon_income),
-            "daily_return_pct": float(s.daily_return_pct) if s.daily_return_pct is not None else None,
+            "daily_return_pct": float(s.daily_return_pct)
+            if s.daily_return_pct is not None
+            else None,
         }
         for s in snapshots
     ]
@@ -311,12 +314,16 @@ async def api_run_backtest(
     async with session_scope() as session:
         for b in bonds:
             rows = (
-                await session.execute(
-                    select(BondHistoryORM)
-                    .where(BondHistoryORM.internal_id == b.internal_id)
-                    .order_by(BondHistoryORM.date)
+                (
+                    await session.execute(
+                        select(BondHistoryORM)
+                        .where(BondHistoryORM.internal_id == b.internal_id)
+                        .order_by(BondHistoryORM.date)
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             if rows:
                 history_by_bond[b.internal_id] = list(rows)
 
@@ -326,7 +333,9 @@ async def api_run_backtest(
         sd = date.fromisoformat(req.start_date) if req.start_date else None
         ed = date.fromisoformat(req.end_date) if req.end_date else None
     except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid date format, expected YYYY-MM-DD") from None
+        raise HTTPException(
+            status_code=422, detail="Invalid date format, expected YYYY-MM-DD"
+        ) from None
 
     try:
         result = run_backtest(

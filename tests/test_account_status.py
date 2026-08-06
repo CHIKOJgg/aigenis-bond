@@ -1,4 +1,5 @@
 """Tests for account status / onboarding trial logic and the /status callback."""
+
 from __future__ import annotations
 
 import asyncio

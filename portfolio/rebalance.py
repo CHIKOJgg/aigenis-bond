@@ -60,7 +60,10 @@ def build_plan(
     target_alloc = allocate(bonds, prefs, top_n=top_n)
     target_items = target_alloc.items
     deltas = _compute_weights(
-        current_positions, target_items, current_total, initial_capital=prefs.initial_capital,
+        current_positions,
+        target_items,
+        current_total,
+        initial_capital=prefs.initial_capital,
     )
     drift = _drift(deltas)
 

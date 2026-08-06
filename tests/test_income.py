@@ -1,4 +1,5 @@
 """Tests for coupon income projection (cashflows + portfolio income calendar)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -214,9 +215,7 @@ def test_cashflow_endpoint_gated_and_works():
             # Anonymous -> 401 login prompt (not the 402 paywall).
             assert resp.status_code == 401
 
-            resp = await client.get(
-                "/api/v1/bond/OP-1/cashflow?amount=10000", headers=_auth(1)
-            )
+            resp = await client.get("/api/v1/bond/OP-1/cashflow?amount=10000", headers=_auth(1))
             assert resp.status_code == 200
             body = resp.json()
             assert body["annual_income"] == 1000.0
@@ -260,9 +259,7 @@ def test_cashflow_endpoint_includes_accrued():
             )
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.get(
-                "/api/v1/bond/ACCR/cashflow?amount=10000", headers=_auth(2)
-            )
+            resp = await client.get("/api/v1/bond/ACCR/cashflow?amount=10000", headers=_auth(2))
             assert resp.status_code == 200
             body = resp.json()
             assert "accrued_interest" in body
@@ -283,7 +280,8 @@ def test_portfolio_income_endpoint():
             assert resp.json()["mode"] == "empty"
 
             await client.post(
-                "/api/v1/positions", headers=headers,
+                "/api/v1/positions",
+                headers=headers,
                 json={"internal_id": "OP-1", "amount": 10000},
             )
             resp = await client.get("/api/v1/portfolio/income", headers=headers)

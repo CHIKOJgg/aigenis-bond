@@ -3,6 +3,7 @@
 Pure computation functions (no I/O) that take position + transaction data and
 return structured P&L metrics. The API layer calls these and persists snapshots.
 """
+
 from __future__ import annotations
 
 import math
@@ -178,9 +179,7 @@ def compute_pnl(
         # Unrealized P&L for the remaining position (money at market price).
         pos = pos_by_id.get(iid)
         bond = bonds_by_id.get(iid)
-        current_price_val = (
-            bond.price if bond and bond.price and bond.price > 0 else Decimal("0")
-        )
+        current_price_val = bond.price if bond and bond.price and bond.price > 0 else Decimal("0")
         unrealized = Decimal("0")
         current_value = Decimal("0")
 
@@ -242,10 +241,12 @@ def compute_daily_returns(equity_curve: list[dict]) -> list[dict]:
         prev = equity_curve[i - 1]["value"]
         curr = equity_curve[i]["value"]
         ret = (curr - prev) / prev * 100 if prev > 0 else 0.0
-        returns.append({
-            "date": equity_curve[i]["date"],
-            "return_pct": round(ret, 4),
-        })
+        returns.append(
+            {
+                "date": equity_curve[i]["date"],
+                "return_pct": round(ret, 4),
+            }
+        )
     return returns
 
 

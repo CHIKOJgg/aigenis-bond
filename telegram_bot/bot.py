@@ -123,14 +123,18 @@ async def _start_metrics_server() -> None:
         from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
         async def metrics_handler(_request):
-            return web.Response(body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0])
+            return web.Response(
+                body=generate_latest(), content_type=CONTENT_TYPE_LATEST.split(";")[0]
+            )
 
         async def health_handler(_request):
             from scraper.db import check_db_health
 
             db = await check_db_health()
             status = 200 if db["status"] == "ok" else 503
-            return web.json_response({"status": "ok" if status == 200 else "degraded", "db": db["status"]}, status=status)
+            return web.json_response(
+                {"status": "ok" if status == 200 else "degraded", "db": db["status"]}, status=status
+            )
 
         app = web.Application()
         app.router.add_get("/metrics", metrics_handler)
@@ -148,14 +152,18 @@ async def main(token: str) -> None:
     from scraper.config import get_settings
     from scraper.observability import init_sentry
 
-    if init_sentry(get_settings().aigenis.sentry_dsn, environment=get_settings().aigenis.environment):
+    if init_sentry(
+        get_settings().aigenis.sentry_dsn, environment=get_settings().aigenis.environment
+    ):
         try:
             import sentry_sdk
 
             logger.add(
-                lambda msg: sentry_sdk.capture_message(msg.record["message"], "error")
-                if msg.record["level"].no >= 40
-                else None,
+                lambda msg: (
+                    sentry_sdk.capture_message(msg.record["message"], "error")
+                    if msg.record["level"].no >= 40
+                    else None
+                ),
                 level="ERROR",
             )
         except Exception:
@@ -163,6 +171,7 @@ async def main(token: str) -> None:
 
     bot = Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     from telegram_bot._bot_instance import set_bot
+
     dp = Dispatcher()
     dp.include_router(router)
     dp.include_router(stars_router)

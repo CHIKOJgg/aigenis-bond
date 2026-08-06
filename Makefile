@@ -19,7 +19,32 @@
 #   make clean          — очистка томов (ВНИМАНИЕ: удалит все данные)
 # =============================================================================
 
-.PHONY: build up up-bot up-api up-frontend up-saas down logs once health migrate shell psql clean
+.PHONY: build up up-bot up-api up-frontend up-saas down logs once health migrate shell psql clean verify verify-e2e
+
+# ---- Проверка качества (clean bill of health) ----
+verify:
+	@echo "=== Ruff check ==="
+	python -m ruff check .
+	@echo "=== Ruff format check ==="
+	python -m ruff format --check .
+	@echo "=== Size budget check ==="
+	python scripts/check_size_budget.py
+	@echo "=== Mypy (core packages) ==="
+	python -m mypy api/aigenis scraper/providers scoring portfolio
+	@echo "=== Pytest ==="
+	python -m pytest
+	@echo "=== Frontend lint ==="
+	cd frontend && npm run lint
+	@echo "=== Frontend tests ==="
+	cd frontend && npm run test
+	@echo "=== Frontend build ==="
+	cd frontend && npm run build
+	@echo "=== All checks passed ==="
+
+# ---- E2E smoke + visual regression (требует установленных браузеров Playwright) ----
+verify-e2e:
+	cd frontend && npm run test:e2e
+	cd frontend && npm run test:e2e:visual
 
 # ---- Сборка ----
 

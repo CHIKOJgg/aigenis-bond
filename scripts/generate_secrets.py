@@ -5,6 +5,7 @@ Usage:
     python scripts/generate_secrets.py              # print to stdout
     python scripts/generate_secrets.py --write-env   # update .env (creates backup)
 """
+
 from __future__ import annotations
 
 import argparse

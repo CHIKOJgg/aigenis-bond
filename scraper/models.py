@@ -199,13 +199,7 @@ class Bond(BaseModel):
             return int(v)
         # Strip thousand separators ("1 000 000", "1,000") so the first number
         # group is the real magnitude, not just the leading digit.
-        s = (
-            str(v)
-            .strip()
-            .replace("\xa0", "")
-            .replace(",", "")
-            .replace(" ", "")
-        )
+        s = str(v).strip().replace("\xa0", "").replace(",", "").replace(" ", "")
         m = re.search(r"(\d+)", s)
         if m:
             return int(m.group(1))
@@ -263,9 +257,18 @@ class Stock(BaseModel):
         return _STOCK_CURRENCY_ALIASES.get(s, s)
 
     @field_validator(
-        "price", "prev_price", "open_price", "high_price", "low_price", "close_price",
-        "market_capitalization", "pe_ratio", "pbr_ratio", "dividend_yield",
-        "earnings_per_share", "value_traded",
+        "price",
+        "prev_price",
+        "open_price",
+        "high_price",
+        "low_price",
+        "close_price",
+        "market_capitalization",
+        "pe_ratio",
+        "pbr_ratio",
+        "dividend_yield",
+        "earnings_per_share",
+        "value_traded",
         mode="before",
     )
     @classmethod
@@ -279,7 +282,7 @@ class Stock(BaseModel):
             return None
         try:
             return int(float(str(v)))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
 
     @field_validator("status", mode="before")
@@ -311,8 +314,15 @@ class StockHistory(BaseModel):
     weighted_avg_price: Decimal | None = None
     status: StockStatus = "unknown"
 
-    @field_validator("open_price", "high_price", "low_price", "close_price",
-                      "value_traded", "weighted_avg_price", mode="before")
+    @field_validator(
+        "open_price",
+        "high_price",
+        "low_price",
+        "close_price",
+        "value_traded",
+        "weighted_avg_price",
+        mode="before",
+    )
     @classmethod
     def _decimal_field(cls, v: Any) -> Decimal | None:
         return _to_decimal(v)
@@ -324,7 +334,7 @@ class StockHistory(BaseModel):
             return None
         try:
             return int(float(str(v)))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return None
 
     @field_validator("date", mode="before")
@@ -426,3 +436,39 @@ def is_government_issuer(name: str | None) -> bool:
         return False
     low = name.lower()
     return any(k in low for k in _GOVERNMENT_ISSUER_KEYWORDS)
+
+
+AssetClass = Literal["bond", "equity"]
+
+
+class InstrumentRef(BaseModel):
+    """Asset-class-agnostic reference to any traded instrument (bond/stock)."""
+
+    internal_id: str
+    asset_class: AssetClass
+    name: str
+    currency: Currency
+    status: str = "unknown"
+    fetched_at: datetime | None = None
+
+
+def bond_instrument_ref(bond: Bond) -> InstrumentRef:
+    return InstrumentRef(
+        internal_id=bond.internal_id,
+        asset_class="bond",
+        name=bond.name,
+        currency=bond.currency,
+        status=bond.status,
+        fetched_at=bond.fetched_at,
+    )
+
+
+def stock_instrument_ref(stock: Stock) -> InstrumentRef:
+    return InstrumentRef(
+        internal_id=stock.internal_id,
+        asset_class="equity",
+        name=stock.name,
+        currency=stock.currency,
+        status=stock.status,
+        fetched_at=stock.fetched_at,
+    )

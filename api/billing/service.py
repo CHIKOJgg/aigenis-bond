@@ -2,6 +2,7 @@
 
 API docs: https://yookassa.ru/developers/api
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,10 +62,10 @@ def _metadata_user_id(metadata: dict) -> int:
     raw = metadata.get("user_id", 0)
     try:
         return int(raw)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         try:
             return int(float(str(raw).strip()))
-        except (TypeError, ValueError, ArithmeticError):
+        except TypeError, ValueError, ArithmeticError:
             return 0
 
 
@@ -237,9 +238,7 @@ async def handle_webhook(body: bytes) -> str | None:
     return event_type
 
 
-async def _is_payment_processed(
-    session: AsyncSession, payment_id: str
-) -> bool:
+async def _is_payment_processed(session: AsyncSession, payment_id: str) -> bool:
     """True if this payment notification was already acted on.
 
     Guards against YooKassa webhook re-deliveries: the same payment event can
@@ -248,9 +247,7 @@ async def _is_payment_processed(
     check missed those and would extend access again for free).
     """
     result = await session.execute(
-        select(BillingPaymentEventORM).where(
-            BillingPaymentEventORM.payment_id == payment_id
-        )
+        select(BillingPaymentEventORM).where(BillingPaymentEventORM.payment_id == payment_id)
     )
     return result.scalar_one_or_none() is not None
 
@@ -295,7 +292,7 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             paid = float(obj.get("amount", {}).get("value", 0))
             expected = float(plan_config["price"])
             paid_currency = obj.get("amount", {}).get("currency", CURRENCY)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             logger.warning("payment_amount_unparseable", payment_id=payment_id)
             return
         if paid + 1e-9 < expected or paid_currency != CURRENCY:
@@ -373,8 +370,12 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             ref_code = (metadata.get("referral_code") or "").strip()
             if ref_code:
                 await _attribute_referral(
-                    session, ref_code, user_id, plan,
-                    paid, paid_currency,
+                    session,
+                    ref_code,
+                    user_id,
+                    plan,
+                    paid,
+                    paid_currency,
                 )
 
 
@@ -468,11 +469,7 @@ async def _handle_payment_canceled(obj: dict, metadata: dict) -> None:
         user_result = await session.execute(select(UserORM).where(UserORM.id == user_id))
         user = user_result.scalar_one_or_none()
         # Only revoke when YooKassa is the channel that established access.
-        if (
-            user
-            and user.subscription_tier != "free"
-            and user.payment_channel == "yookassa"
-        ):
+        if user and user.subscription_tier != "free" and user.payment_channel == "yookassa":
             user.subscription_tier = "free"
             user.subscription_expires_at = None
             user.payment_channel = None
@@ -498,7 +495,7 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
     # adjustment) must not cut an active subscription.
     try:
         refund_amount = float(obj.get("amount", {}).get("value", 0))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         refund_amount = 0.0
 
     async with session_scope() as session:

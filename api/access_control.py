@@ -203,12 +203,14 @@ FEATURE_FLAGS: dict[str, dict[str, bool]] = {
     },
 }
 
+
 def _get_current_user_from_request(request: Request) -> int | None:
     token = request.headers.get("authorization", "").replace("Bearer ", "")
     if not token:
         return None
 
     from api.auth.service import decode_token
+
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         return None
@@ -218,6 +220,7 @@ def _get_current_user_from_request(request: Request) -> int | None:
 async def _get_user_tier(session: AsyncSession, user_id: int) -> str | None:
     from scraper.orm import UserORM
     from telegram_bot.subscriptions import effective_tier
+
     result = await session.execute(
         select(UserORM.subscription_tier, UserORM.subscription_expires_at, UserORM.trial_end).where(
             UserORM.id == user_id

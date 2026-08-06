@@ -8,6 +8,7 @@ These tests assert that a forged body cannot activate/refund a subscription,
 that the amount is checked against the plan price, and that processing is
 idempotent. The YooKassa API calls are stubbed so no network is used.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -63,10 +64,10 @@ async def _tier_of(uid: int) -> str:
 
     async with session_scope() as s:
         row = (
-            await s.execute(
-                UserORM.__table__.select().where(UserORM.id == uid)
-            )
-        ).mappings().first()
+            (await s.execute(UserORM.__table__.select().where(UserORM.id == uid)))
+            .mappings()
+            .first()
+        )
     return effective_tier(
         row["subscription_tier"], row["subscription_expires_at"], row.get("trial_end")
     )
@@ -151,9 +152,7 @@ def test_verified_payment_activates_pro(monkeypatch):
                 }
 
             monkeypatch.setattr(billing_service, "fetch_payment", fake_fetch_payment)
-            event = await billing_service.handle_webhook(
-                _json(_pay_body("p-511", "pro", uid))
-            )
+            event = await billing_service.handle_webhook(_json(_pay_body("p-511", "pro", uid)))
             assert event == "payment.succeeded"
             assert await _tier_of(uid) == "pro"
 

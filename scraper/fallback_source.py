@@ -25,6 +25,7 @@ A fallback source yields lightweight bond quotes with at least:
 Wire it in via ``FALLBACK_SOURCE=moex``. Requires network egress and compliance
 with MOEX rate limits.
 """
+
 from __future__ import annotations
 
 import os
@@ -45,9 +46,7 @@ _MOEX_BOARD = os.getenv("FALLBACK_MOEX_BOARD", "TQCB")
 # Boards scanned for the fallback. Comma-separated override via FALLBACK_MOEX_BOARDS
 # (e.g. "TQCB,TQOB"). TQOB adds USD/EUR eurobond coverage without paid login.
 _MOEX_BOARDS = [
-    b.strip().upper()
-    for b in os.getenv("FALLBACK_MOEX_BOARDS", "").split(",")
-    if b.strip()
+    b.strip().upper() for b in os.getenv("FALLBACK_MOEX_BOARDS", "").split(",") if b.strip()
 ] or [_MOEX_BOARD]
 _MOEX_TIMEOUT = float(os.getenv("FALLBACK_MOEX_TIMEOUT", "30"))
 _MOEX_CAP = int(os.getenv("FALLBACK_MOEX_CAP", "1000"))
@@ -120,8 +119,7 @@ async def _fetch_moex_bonds(currency: str | None = None) -> list[dict[str, Any]]
                     if not securities:
                         break
                     marketdata = {
-                        row.get("SECID"): row
-                        for row in _parse_iss_rows(payload, "marketdata")
+                        row.get("SECID"): row for row in _parse_iss_rows(payload, "marketdata")
                     }
                     for sec in securities:
                         secid = sec.get("SECID")
@@ -139,7 +137,7 @@ async def _fetch_moex_bonds(currency: str | None = None) -> list[dict[str, Any]]
                                 if sec.get("MATDATE")
                                 else None
                             )
-                        except (ValueError, TypeError):
+                        except ValueError, TypeError:
                             maturity = None
                         all_rows.append(
                             {

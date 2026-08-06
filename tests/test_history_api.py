@@ -5,6 +5,7 @@ API mode, so history (and therefore ML/forecast/RV that depend on it) never
 populated in production. These tests exercise the new API path with a stubbed
 ``_api_request`` — no browser or network involved.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,8 +30,13 @@ def _client() -> AigenisClient:
 def test_api_history_normalizes_and_paginates():
     c = _client()
     pages = {
-        1: {"results": [{"date": f"2025-01-{i:02d}", "close": 100 + i, "instr_yield": 5 + i * 0.1}
-                        for i in range(1, 32)] * 17},  # >500 -> forces page 2
+        1: {
+            "results": [
+                {"date": f"2025-01-{i:02d}", "close": 100 + i, "instr_yield": 5 + i * 0.1}
+                for i in range(1, 32)
+            ]
+            * 17
+        },  # >500 -> forces page 2
         2: {"results": [{"trade_date": "2025-06-01", "last": 99.5, "yield": 6.2, "coupon": 5.0}]},
     }
 

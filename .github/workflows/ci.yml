@@ -17,6 +17,10 @@ jobs:
         run: pip install ruff
       - name: Ruff check (whole project)
         run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Size budget check
+        run: python scripts/check_size_budget.py
 
   test:
     runs-on: ubuntu-latest
@@ -33,11 +37,7 @@ jobs:
         run: pytest
 
   typecheck:
-    # Non-blocking for now: the codebase carries pre-existing type debt. This
-    # job surfaces regressions without failing the build. Flip continue-on-error
-    # to false once the debt is paid down.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,7 +47,7 @@ jobs:
         run: |
           pip install -e . || true
           pip install mypy
-      - name: Mypy
+      - name: Mypy (strict for core packages)
         run: mypy
 
   migrations:
@@ -99,5 +99,29 @@ jobs:
         run: npm ci
       - name: Lint
         run: npm run lint
+      - name: Unit tests (Vitest)
+        run: npm run test
       - name: Build
         run: npm run build
+
+  frontend-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: E2E smoke test
+        run: npm run test:e2e
+      # Visual regression (npm run test:e2e:visual) runs locally against the
+      # committed win32 baselines — platform-specific fonts make it unstable
+      # on Linux runners.

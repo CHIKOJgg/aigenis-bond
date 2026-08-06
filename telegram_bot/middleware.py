@@ -12,8 +12,15 @@ from scraper.db import session_scope
 
 # Команды, доступные всегда (до и после парсинга)
 ALLOWED_BEFORE_PARSE = {
-    "start", "help", "menu", "parse", "subscribe", "rates", "status",
-    "renew", "refer",
+    "start",
+    "help",
+    "menu",
+    "parse",
+    "subscribe",
+    "rates",
+    "status",
+    "renew",
+    "refer",
 }
 
 
@@ -66,9 +73,10 @@ class ThrottlingMiddleware(BaseMiddleware):
         if user is not None:
             # Payment events must NEVER be dropped — a throttled
             # successful_payment would silently fail to grant the subscription.
-            if getattr(event, "successful_payment", None) is not None or getattr(
-                event, "refunded_payment", None
-            ) is not None:
+            if (
+                getattr(event, "successful_payment", None) is not None
+                or getattr(event, "refunded_payment", None) is not None
+            ):
                 return await handler(event, data)
             now = time.monotonic()
             uid = user.id
@@ -127,18 +135,50 @@ class MetricsMiddleware(BaseMiddleware):
 
 # Commands that require a paid (Pro/Enterprise) subscription.
 PRO_COMMANDS = {
-    "rv", "duration", "carry", "repo", "stress",
-    "buy", "predict", "ml",
-    "rebalance", "rebalance_auto",
-    "portfolio", "forecast", "scenario", "desk_status", "desk_spreads", "alerts",
+    "rv",
+    "duration",
+    "carry",
+    "repo",
+    "stress",
+    "buy",
+    "predict",
+    "ml",
+    "rebalance",
+    "rebalance_auto",
+    "portfolio",
+    "forecast",
+    "scenario",
+    "desk_status",
+    "desk_spreads",
+    "alerts",
 }
 
 # Commands always allowed regardless of tier (free market overview + account).
 _ALWAYS_ALLOWED = {
-    "start", "help", "menu", "parse", "subscribe", "rates", "curve", "status",
-    "top", "usd", "byn", "metals", "new", "stats",
-    "settings", "set", "cancel", "watchlist", "watch", "unwatch",
-    "desk", "overview", "renew", "refer",
+    "start",
+    "help",
+    "menu",
+    "parse",
+    "subscribe",
+    "rates",
+    "curve",
+    "status",
+    "top",
+    "usd",
+    "byn",
+    "metals",
+    "new",
+    "stats",
+    "settings",
+    "set",
+    "cancel",
+    "watchlist",
+    "watch",
+    "unwatch",
+    "desk",
+    "overview",
+    "renew",
+    "refer",
 }
 
 

@@ -123,8 +123,10 @@ async def upsert_row(
 
         excluded = pg_insert(model).excluded
         set_ = {c: getattr(excluded, c) for c in set_columns}
-        stmt = pg_insert(model).values(**values).on_conflict_do_update(
-            index_elements=index_elements, set_=set_
+        stmt = (
+            pg_insert(model)
+            .values(**values)
+            .on_conflict_do_update(index_elements=index_elements, set_=set_)
         )
         await session.execute(stmt)
         return

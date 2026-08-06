@@ -7,6 +7,7 @@ All decisions are made on information available at the decision date:
 prices/yields come from the history rows on or before that date, never from
 the bond's current (future) state, to avoid lookahead bias.
 """
+
 from __future__ import annotations
 
 import math
@@ -58,9 +59,15 @@ class BacktestResult:
             "initial_capital": float(self.initial_capital),
             "final_value": float(self.final_value),
             "total_return_pct": round(float(self.total_return_pct), 2),
-            "annual_return_pct": round(float(self.annual_return_pct), 2) if self.annual_return_pct is not None else None,
-            "sharpe_ratio": round(float(self.sharpe_ratio), 3) if self.sharpe_ratio is not None else None,
-            "max_drawdown_pct": round(float(self.max_drawdown_pct), 2) if self.max_drawdown_pct is not None else None,
+            "annual_return_pct": round(float(self.annual_return_pct), 2)
+            if self.annual_return_pct is not None
+            else None,
+            "sharpe_ratio": round(float(self.sharpe_ratio), 3)
+            if self.sharpe_ratio is not None
+            else None,
+            "max_drawdown_pct": round(float(self.max_drawdown_pct), 2)
+            if self.max_drawdown_pct is not None
+            else None,
             "equity_curve": self.equity_curve,
             "positions_history": self.positions_history,
         }
@@ -77,7 +84,9 @@ def _score_bond_for_strategy(
     Uses the historical ``price``/``ytm`` observed at the decision date when
     available; otherwise falls back to the bond's current catalog values.
     """
-    ytm_f = float(ytm) if ytm else (float(bond.yield_to_maturity) if bond.yield_to_maturity else 0.0)
+    ytm_f = (
+        float(ytm) if ytm else (float(bond.yield_to_maturity) if bond.yield_to_maturity else 0.0)
+    )
     price_f = float(price) if price else (float(bond.price) if bond.price else 100.0)
 
     if strategy == "Conservative":
@@ -217,10 +226,12 @@ def run_backtest(
             if px and px > 0:
                 total_value += amount * px
 
-        equity_curve.append({
-            "date": current_date.isoformat(),
-            "value": round(float(total_value), 2),
-        })
+        equity_curve.append(
+            {
+                "date": current_date.isoformat(),
+                "value": round(float(total_value), 2),
+            }
+        )
 
         # Check if it's time to rebalance
         days_since = (current_date - last_rebalance).days
@@ -232,9 +243,7 @@ def run_backtest(
             for b in bonds:
                 snap = _snapshot_on_or_before(price_rows, b.internal_id, current_date)
                 if snap is not None:
-                    score = _score_bond_for_strategy(
-                        b, strategy, price=snap[0], ytm=snap[1]
-                    )
+                    score = _score_bond_for_strategy(b, strategy, price=snap[0], ytm=snap[1])
                 elif b.price and b.price > 0:
                     score = _score_bond_for_strategy(b, strategy)
                 else:
@@ -262,11 +271,13 @@ def run_backtest(
                         holdings[iid] = amount
                         capital -= amount * px
 
-            positions_history.append({
-                "date": current_date.isoformat(),
-                "holdings": {iid: float(amt) for iid, amt in holdings.items()},
-                "capital": round(float(capital), 2),
-            })
+            positions_history.append(
+                {
+                    "date": current_date.isoformat(),
+                    "holdings": {iid: float(amt) for iid, amt in holdings.items()},
+                    "capital": round(float(capital), 2),
+                }
+            )
 
     # Final value at last known prices on/before end_date.
     final_value = capital
@@ -277,7 +288,9 @@ def run_backtest(
 
     result.final_value = final_value.quantize(_Q)
     if initial_capital > 0:
-        result.total_return_pct = ((final_value - initial_capital) / initial_capital * 100).quantize(_Q)
+        result.total_return_pct = (
+            (final_value - initial_capital) / initial_capital * 100
+        ).quantize(_Q)
 
     # Annualized return
     years = (result.end_date - result.start_date).days / 365.25

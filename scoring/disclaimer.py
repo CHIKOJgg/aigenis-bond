@@ -5,12 +5,12 @@ carry this text. Fixed-income analytics on this platform are informational only
 and are NOT individual investment advice. Keeping a single constant avoids drift
 between the bot, the API and the website.
 """
+
 from __future__ import annotations
 
 # Short one-liner for compact UIs (bond cards, inline messages).
 DISCLAIMER_SHORT = (
-    "⚠️ Не является индивидуальной инвестиционной рекомендацией. "
-    "Решения принимайте самостоятельно."
+    "⚠️ Не является индивидуальной инвестиционной рекомендацией. Решения принимайте самостоятельно."
 )
 
 # Full text for detailed screens / API payloads.

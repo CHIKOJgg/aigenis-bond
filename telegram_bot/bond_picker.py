@@ -3,6 +3,7 @@
 Handles the `bonds:`, `bond:` and `bondact:` callback families and the pro-gated
 predict/duration/repo actions. Tier enforcement reuses the subscription helpers.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal
@@ -84,7 +85,9 @@ async def cb_bonds_list(callback_query) -> None:
     else:
         bonds = await fetch_bonds_by_currency(key.upper())
     if not bonds:
-        await callback_query.answer("Данные ещё загружаются. Откройте /start → «Обновить данные».", show_alert=True)
+        await callback_query.answer(
+            "Данные ещё загружаются. Откройте /start → «Обновить данные».", show_alert=True
+        )
         return
     total_pages = max(1, (len(bonds) + BOND_PAGE - 1) // BOND_PAGE)
     page_slice = bonds[page * BOND_PAGE : (page + 1) * BOND_PAGE]
@@ -102,12 +105,16 @@ async def cb_bonds_list(callback_query) -> None:
     rows.append([InlineKeyboardButton(text="⬅️ Назад к валютам", callback_data="bonds:menu")])
     rows.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="menu:main")])
     kb = InlineKeyboardMarkup(inline_keyboard=rows)
-    text = f"🔍 <b>Облигации ({key.upper()})</b> — стр. {page + 1}/{total_pages}\nВыберите облигацию:"
+    text = (
+        f"🔍 <b>Облигации ({key.upper()})</b> — стр. {page + 1}/{total_pages}\nВыберите облигацию:"
+    )
     await callback_query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     await callback_query.answer()
 
 
-@router.callback_query(lambda c: c.data and (c.data.startswith("bond:") or c.data.startswith("bondact:")))
+@router.callback_query(
+    lambda c: c.data and (c.data.startswith("bond:") or c.data.startswith("bondact:"))
+)
 async def cb_bond(callback_query) -> None:
     data = callback_query.data
     if data.startswith("bondact:"):
@@ -120,11 +127,15 @@ async def cb_bond(callback_query) -> None:
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💡 Стоит купить?", callback_data=f"bondact:{iid}:analysis"),
+                InlineKeyboardButton(
+                    text="💡 Стоит купить?", callback_data=f"bondact:{iid}:analysis"
+                ),
                 InlineKeyboardButton(text="💰 Доход", callback_data=f"bondact:{iid}:income"),
             ],
             [
-                InlineKeyboardButton(text="🔔 Следить за ценой", callback_data=f"bondact:{iid}:watchprice"),
+                InlineKeyboardButton(
+                    text="🔔 Следить за ценой", callback_data=f"bondact:{iid}:watchprice"
+                ),
                 InlineKeyboardButton(text="➕ В портфель", callback_data=f"pos:add:{iid}"),
             ],
             [
@@ -133,7 +144,9 @@ async def cb_bond(callback_query) -> None:
             ],
             [
                 InlineKeyboardButton(text="⭐ В избранное", callback_data=f"bondact:{iid}:watch"),
-                InlineKeyboardButton(text="🗑 Из избранного", callback_data=f"bondact:{iid}:unwatch"),
+                InlineKeyboardButton(
+                    text="🗑 Из избранного", callback_data=f"bondact:{iid}:unwatch"
+                ),
             ],
             [
                 InlineKeyboardButton(text="⬅️ К списку", callback_data="bonds:menu"),
@@ -231,7 +244,9 @@ async def _run_bond_action(callback_query, iid: str, action: str) -> None:
         tools_kb = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
-                    InlineKeyboardButton(text="⏱ Duration", callback_data=f"bondact:{iid}:duration"),
+                    InlineKeyboardButton(
+                        text="⏱ Duration", callback_data=f"bondact:{iid}:duration"
+                    ),
                     InlineKeyboardButton(text="🏦 РЕПО", callback_data=f"bondact:{iid}:repo"),
                 ],
                 [InlineKeyboardButton(text="⬅️ Назад к облигации", callback_data=f"bond:{iid}")],
@@ -369,7 +384,11 @@ async def _run_bond_action(callback_query, iid: str, action: str) -> None:
         else:
             haircut = desk_repo.haircut_by_issuer(bond.issuer)
             deal = desk_repo.repo_deal(
-                bond, notional=Decimal("1000"), haircut_pct=haircut, repo_rate_pct=5.0, tenor_days=30
+                bond,
+                notional=Decimal("1000"),
+                haircut_pct=haircut,
+                repo_rate_pct=5.0,
+                tenor_days=30,
             )
             text = (
                 f"<b>🏦 РЕПО {iid}</b> ({bond.name})\n"
@@ -419,7 +438,9 @@ async def _show_alert_presets(callback_query, iid: str) -> None:
         await callback_query.answer()
         return
 
-    def _preset(emoji: str, metric: str, direction: str, value: Decimal, note: str) -> list[InlineKeyboardButton]:
+    def _preset(
+        emoji: str, metric: str, direction: str, value: Decimal, note: str
+    ) -> list[InlineKeyboardButton]:
         thr = value.quantize(_Q)
         label = alert_metric_label(metric)
         sign = alert_direction_sign(direction)
@@ -466,7 +487,9 @@ async def _apply_alert_rule(
         user = await get_or_create_user_by_telegram(session, telegram_id)
         existing = await list_rules(session, user.id)
         already = any(
-            r.internal_id == iid and r.metric == metric and r.direction == direction
+            r.internal_id == iid
+            and r.metric == metric
+            and r.direction == direction
             and r.threshold == threshold
             for r in existing
         )
@@ -496,7 +519,7 @@ async def cb_alert_set(callback_query) -> None:
     try:
         _, iid, metric, direction, thr = callback_query.data.split(":")
         threshold = Decimal(thr)
-    except (ValueError, ArithmeticError):
+    except ValueError, ArithmeticError:
         await callback_query.answer("Некорректный порог", show_alert=True)
         return
     text = await _apply_alert_rule(uid, iid, metric, direction, threshold)

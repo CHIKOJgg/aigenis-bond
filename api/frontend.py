@@ -4,6 +4,7 @@ The FastAPI backend serves both the API and the production frontend build.
 Both ``api/main.py`` (static assets + SPA fallback) and ``api/seo.py``
 (bot/human split on SEO-covered paths) need the same lookup, so it lives here.
 """
+
 from __future__ import annotations
 
 import os

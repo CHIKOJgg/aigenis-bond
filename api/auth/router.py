@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
 import threading
@@ -77,7 +77,9 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
-def _check_login_rate_limit(email: str, request: Request | None = None, client_ip: str | None = None) -> None:
+def _check_login_rate_limit(
+    email: str, request: Request | None = None, client_ip: str | None = None
+) -> None:
     """Rate limit by (IP + email) to prevent DoS against a specific victim's email."""
     ip = client_ip or (_client_ip(request) if request is not None else None)
     _check_rate_limit(
@@ -94,16 +96,31 @@ async def _get_session() -> AsyncIterator[AsyncSession]:
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: RegisterRequest, request: Request, session: AsyncSession = Depends(_get_session)):
+async def register(
+    req: RegisterRequest, request: Request, session: AsyncSession = Depends(_get_session)
+):
     if len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if not any(c.isupper() for c in req.password):
-        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+        raise HTTPException(
+            status_code=400, detail="Password must contain at least one uppercase letter"
+        )
     if not any(c.isdigit() for c in req.password):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit")
     ip = _client_ip(request)
-    _check_rate_limit(f"register:{ip}", limit=10, window=3600, detail="Too many registration attempts. Please try again later.")
-    user, error = await register_user(session, req.email.lower().strip(), req.password, req.name.strip(), getattr(req, "referral_code", None))
+    _check_rate_limit(
+        f"register:{ip}",
+        limit=10,
+        window=3600,
+        detail="Too many registration attempts. Please try again later.",
+    )
+    user, error = await register_user(
+        session,
+        req.email.lower().strip(),
+        req.password,
+        req.name.strip(),
+        getattr(req, "referral_code", None),
+    )
     if error:
         raise HTTPException(status_code=409, detail=error)
     return TokenResponse(
@@ -131,7 +148,7 @@ async def refresh(req: RefreshRequest, session: AsyncSession = Depends(_get_sess
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     try:
         user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         raise HTTPException(status_code=401, detail="Invalid refresh token") from None
     user = await get_user_by_id(session, user_id)
     if not user or not user.is_active:
@@ -146,8 +163,11 @@ async def refresh(req: RefreshRequest, session: AsyncSession = Depends(_get_sess
 async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_get_session)):
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post("https://oauth2.googleapis.com/tokeninfo", params={"id_token": req.id_token})
+            resp = await client.post(
+                "https://oauth2.googleapis.com/tokeninfo", params={"id_token": req.id_token}
+            )
         if resp.status_code != 200:
             raise HTTPException(status_code=401, detail="Invalid Google token")
         data = resp.json()
@@ -167,7 +187,9 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
         raise
     except Exception as e:
         logger.warning("google_auth_failed", error=str(e))
-        raise HTTPException(status_code=401, detail="Google authentication failed. Please try again.") from e
+        raise HTTPException(
+            status_code=401, detail="Google authentication failed. Please try again."
+        ) from e
     user, _ = await find_or_create_google_user(session, google_id, email, name)
     return TokenResponse(
         access_token=create_access_token(user.id),
@@ -176,11 +198,14 @@ async def google_auth(req: GoogleAuthRequest, session: AsyncSession = Depends(_g
 
 
 @router.post("/forgot-password")
-async def forgot_password(req: ForgotPasswordRequest, request: Request, session: AsyncSession = Depends(_get_session)):
+async def forgot_password(
+    req: ForgotPasswordRequest, request: Request, session: AsyncSession = Depends(_get_session)
+):
     _check_login_rate_limit(req.email.lower().strip(), request)
     token = await create_password_reset_token(session, req.email.lower().strip())
     if token:
         from api.notifications.email import send_password_reset_email
+
         try:
             send_password_reset_email(req.email, token)
         except Exception as exc:
@@ -190,11 +215,15 @@ async def forgot_password(req: ForgotPasswordRequest, request: Request, session:
 
 
 @router.post("/reset-password")
-async def reset_password_endpoint(req: ResetPasswordRequest, request: Request, session: AsyncSession = Depends(_get_session)):
+async def reset_password_endpoint(
+    req: ResetPasswordRequest, request: Request, session: AsyncSession = Depends(_get_session)
+):
     if len(req.new_password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     if not any(c.isupper() for c in req.new_password):
-        raise HTTPException(status_code=400, detail="Password must contain at least one uppercase letter")
+        raise HTTPException(
+            status_code=400, detail="Password must contain at least one uppercase letter"
+        )
     if not any(c.isdigit() for c in req.new_password):
         raise HTTPException(status_code=400, detail="Password must contain at least one digit")
     _check_login_rate_limit(f"reset:{req.token[:16]}", request)
@@ -211,7 +240,7 @@ async def verify_email(token: str, session: AsyncSession = Depends(_get_session)
         raise HTTPException(status_code=400, detail="Invalid verification token")
     try:
         user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError):
+    except KeyError, TypeError, ValueError:
         raise HTTPException(status_code=400, detail="Invalid verification token") from None
     user = await get_user_by_id(session, user_id)
     if not user:
@@ -222,19 +251,23 @@ async def verify_email(token: str, session: AsyncSession = Depends(_get_session)
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user_id: int = Depends(_get_current_user), session: AsyncSession = Depends(_get_session)):
+async def get_me(
+    user_id: int = Depends(_get_current_user), session: AsyncSession = Depends(_get_session)
+):
     user = await get_user_by_id(session, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     from telegram_bot.subscriptions import effective_tier
+
     return UserResponse(
         id=user.id,
         email=user.email,
         name=user.name,
         role=user.role,
-        subscription_tier=effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end),
+        subscription_tier=effective_tier(
+            user.subscription_tier, user.subscription_expires_at, user.trial_end
+        ),
         trial_end=user.trial_end.isoformat() if user.trial_end else None,
         is_active=user.is_active,
         is_verified=user.is_verified,
     )
-

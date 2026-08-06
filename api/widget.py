@@ -5,6 +5,7 @@ partner blogs can embed via an <iframe> (see ``WidgetPage``). All endpoints are
 public and intentionally limited to non-sensitive fields so the product acts as
 a free acquisition magnet with a clear upgrade path.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
@@ -68,7 +69,9 @@ async def widget_top(limit: int = 10, currency: str | None = None) -> list[Widge
                     name=bond.name,
                     currency=bond.currency,
                     yield_to_maturity=(
-                        float(bond.yield_to_maturity) if bond.yield_to_maturity is not None else None
+                        float(bond.yield_to_maturity)
+                        if bond.yield_to_maturity is not None
+                        else None
                     ),
                     maturity_date=bond.maturity_date.isoformat() if bond.maturity_date else None,
                     issuer=bond.issuer,

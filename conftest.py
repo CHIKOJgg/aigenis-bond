@@ -7,6 +7,7 @@ that is not reachable from CI or a dev checkout). Environment variables take
 precedence over the ``.env`` file in pydantic-settings, so setting them here —
 before any ``scraper.config`` settings are instantiated — is sufficient.
 """
+
 from __future__ import annotations
 
 import os
@@ -42,4 +43,3 @@ def _compile_bool_functions_sqlite(element, compiler, **kw):
     if name == "false":
         return "0"
     return compiler.visit_function(element, **kw)
-

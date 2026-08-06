@@ -20,6 +20,10 @@ async def scheduled_stocks_job() -> None:
     """Scheduled job for MOEX stock scraping (independent of bond pipeline)."""
     from scraper.pipeline import run_once_moex_stocks
 
+    cfg = getattr(get_settings(), "stock", None)
+    if cfg is not None and not cfg.enabled:
+        logger.info("scheduled_stocks_job_disabled")
+        return
     cid = correlation_id()
     logger.info("scheduled_stocks_job_start", correlation_id=cid)
     try:
@@ -64,13 +68,17 @@ async def scheduled_history_job() -> None:
                     for cur in cur_list:
                         async with session_scope() as session:
                             ids = (
-                                await session.execute(
-                                    select(BondORM.internal_id)
-                                    .where(BondORM.currency == cur)
-                                    .order_by(BondORM.yield_to_maturity.desc())
-                                    .limit(cap)
+                                (
+                                    await session.execute(
+                                        select(BondORM.internal_id)
+                                        .where(BondORM.currency == cur)
+                                        .order_by(BondORM.yield_to_maturity.desc())
+                                        .limit(cap)
+                                    )
                                 )
-                            ).scalars().all()
+                                .scalars()
+                                .all()
+                            )
                         for iid in ids:
                             try:
                                 hist = await client.fetch_history(iid, _days=days)
@@ -85,9 +93,7 @@ async def scheduled_history_job() -> None:
                                     async with session_scope() as session:
                                         orm = (
                                             await session.execute(
-                                                select(BondORM).where(
-                                                    BondORM.internal_id == iid
-                                                )
+                                                select(BondORM).where(BondORM.internal_id == iid)
                                             )
                                         ).scalar_one_or_none()
                                         if orm is not None:
@@ -106,12 +112,14 @@ async def scheduled_history_job() -> None:
                 async with AigenisClient(settings.aigenis) as client:
                     async with session_scope() as session:
                         ids = (
-                            await session.execute(
-                                select(BondORM.internal_id).where(
-                                    BondORM.status == "active"
+                            (
+                                await session.execute(
+                                    select(BondORM.internal_id).where(BondORM.status == "active")
                                 )
                             )
-                        ).scalars().all()
+                            .scalars()
+                            .all()
+                        )
                     ok, err = await backfill_history(
                         client,
                         list(ids),
@@ -210,8 +218,15 @@ def build_scheduler() -> AsyncIOScheduler:
     except ImportError:
         logger.warning("reminders_module_not_available")
 
-    # Stock scraping runs every 30 minutes during market hours.
-    jobs.append(("moex_stocks_30m", "*/30 10-18 * * 1-5", scheduled_stocks_job, 600))
+    # Stock scraping runs every `stock.refresh_cadence_min` minutes during
+    # market hours (only when the stock data source is enabled).
+    stock_cfg = getattr(get_settings(), "stock", None)
+    if stock_cfg is None or stock_cfg.enabled:
+        cadence = stock_cfg.refresh_cadence_min if stock_cfg is not None else 30
+        cron = f"*/{max(cadence, 1)} 10-18 * * 1-5"
+        jobs.append(("moex_stocks_30m", cron, scheduled_stocks_job, 600))
+    else:
+        logger.info("moex_stocks_job_disabled_by_config")
 
     try:
         from scraper.scheduler_v4 import (
@@ -264,7 +279,7 @@ async def run_forever() -> None:
     try:
         try:
             await stop_event.wait()
-        except (KeyboardInterrupt, SystemExit):
+        except KeyboardInterrupt, SystemExit:
             logger.info("scheduler_interrupted")
     finally:
         logger.info("scheduler_shutting_down")

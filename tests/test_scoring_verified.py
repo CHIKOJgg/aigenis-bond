@@ -9,26 +9,23 @@ VERIFIED SCORING AUDIT — каждая цифра выверена на 50+ п�
 
 Запуск: python -m pytest tests/test_scoring_verified.py -v
 """
+
 from __future__ import annotations
 
-import math
-from datetime import date, datetime, timedelta, timezone
+from datetime import date
 
 import pytest
 
 from scoring.engine import (
     _coupon_component,
     _credit_risk_component,
-    _currency_component,
     _duration_component,
     _inflation_component,
     _liquidity_component,
-    _metal_component,
     _volatility_component,
     _yield_component,
     score_bond,
 )
-from scoring.models import BondScore, ScoreBreakdown
 
 
 def _approx(v: float, ref: float, tol: float = 0.5) -> None:
@@ -88,7 +85,9 @@ class TestVerifiedInflation:
 
 class TestVerifiedLiquidity:
     def test_full_liquidity(self):
-        s = _liquidity_component(has_price=True, status="active", days_to_maturity=100, price=100.0, nominal=100.0)
+        s = _liquidity_component(
+            has_price=True, status="active", days_to_maturity=100, price=100.0, nominal=100.0
+        )
         assert s == 16.0  # 5(has_price)+4(active)+3(<365)+2(<180)+2(price/nominal 85-115%)
 
     def test_minimal(self):
@@ -105,13 +104,24 @@ class TestVerifiedCoupon:
 
 class TestVerifiedVolatility:
     def test_normal_zero(self):
-        assert _volatility_component(ytm_pct=10, price=100, nominal=100, status="active", coupon_pct=5) == 0.0
+        assert (
+            _volatility_component(ytm_pct=10, price=100, nominal=100, status="active", coupon_pct=5)
+            == 0.0
+        )
 
     def test_extreme_ytm(self):
-        assert _volatility_component(ytm_pct=70, price=100, nominal=100, status="active", coupon_pct=5) == -7.0
+        assert (
+            _volatility_component(ytm_pct=70, price=100, nominal=100, status="active", coupon_pct=5)
+            == -7.0
+        )
 
     def test_risky_status(self):
-        assert _volatility_component(ytm_pct=10, price=100, nominal=100, status="defaulted", coupon_pct=5) <= -5.0
+        assert (
+            _volatility_component(
+                ytm_pct=10, price=100, nominal=100, status="defaulted", coupon_pct=5
+            )
+            <= -5.0
+        )
 
 
 class TestVerifiedScoreBreakdown:
@@ -127,14 +137,30 @@ class TestVerifiedScoreBreakdown:
             (16.0, "RUB", 2033, "Министерство финансов РФ", "active", 10.0, 100.0, 100.0),
         ]
         for ytm, cur, mat, iss, st, cp, pr, nom in profiles:
-            s = score_bond(internal_id="CHK", yield_to_maturity=ytm, currency=cur,
-                          maturity_date=date(mat, 1, 1), status=st, issuer=iss,
-                          price=pr, nominal=nom, coupon_rate=cp)
+            s = score_bond(
+                internal_id="CHK",
+                yield_to_maturity=ytm,
+                currency=cur,
+                maturity_date=date(mat, 1, 1),
+                status=st,
+                issuer=iss,
+                price=pr,
+                nominal=nom,
+                coupon_rate=cp,
+            )
             bd = s.breakdown
-            total = (bd.yield_component + bd.currency_component + bd.duration_component +
-                    bd.liquidity_component + bd.metal_component + bd.credit_risk_component +
-                    bd.inflation_component + bd.coupon_component + bd.volatility_component)
-            assert round(total, 2) == s.score, f"Breakdown sum {round(total,2)} != score {s.score}"
+            total = (
+                bd.yield_component
+                + bd.currency_component
+                + bd.duration_component
+                + bd.liquidity_component
+                + bd.metal_component
+                + bd.credit_risk_component
+                + bd.inflation_component
+                + bd.coupon_component
+                + bd.volatility_component
+            )
+            assert round(total, 2) == s.score, f"Breakdown sum {round(total, 2)} != score {s.score}"
 
 
 # ---------------------------------------------------------------------------
@@ -144,19 +170,107 @@ class TestVerifiedScoreBreakdown:
 VERIFIED_PROFILES = [
     # (name, ytm, currency, maturity_year, issuer, status, coupon, price, nominal, expected_tier)
     # --- S-тир: исключительные ---
-    ("Perfect USD gov short", 40.0, "USD", 2027, "Министерство финансов", "active", 12.0, 100.0, 100.0, {"S"}),
-    ("Exceptional USD gov", 35.0, "USD", 2027, "Treasury", "active", 10.0, 100.0, 100.0, {"S", "A"}),
+    (
+        "Perfect USD gov short",
+        40.0,
+        "USD",
+        2027,
+        "Министерство финансов",
+        "active",
+        12.0,
+        100.0,
+        100.0,
+        {"S"},
+    ),
+    (
+        "Exceptional USD gov",
+        35.0,
+        "USD",
+        2027,
+        "Treasury",
+        "active",
+        10.0,
+        100.0,
+        100.0,
+        {"S", "A"},
+    ),
     # --- A-тир: отличные ---
-    ("Strong USD gov 3yr", 20.0, "USD", 2029, "Министерство финансов", "active", 10.0, 100.0, 100.0, {"A"}),
+    (
+        "Strong USD gov 3yr",
+        20.0,
+        "USD",
+        2029,
+        "Министерство финансов",
+        "active",
+        10.0,
+        100.0,
+        100.0,
+        {"A"},
+    ),
     ("XAU gold bond gov", 10.0, "XAU", 2029, "Government", "active", 6.0, 100.0, 100.0, {"A", "B"}),
     # --- B-тир: хорошие ---
-    ("OFZ Russia gov 9yr", 16.0, "RUB", 2035, "Министерство финансов РФ", "active", 9.6, 100.0, 100.0, {"B", "C"}),
-    ("USD eurobond gov 5yr", 10.0, "USD", 2031, "Republic of Belarus", "active", 6.0, 100.0, 100.0, {"B", "C"}),
-    ("USD state corp Gazprom 3yr", 15.0, "USD", 2029, "Газпром", "active", 9.0, 100.0, 100.0, {"B", "A"}),
+    (
+        "OFZ Russia gov 9yr",
+        16.0,
+        "RUB",
+        2035,
+        "Министерство финансов РФ",
+        "active",
+        9.6,
+        100.0,
+        100.0,
+        {"B", "C"},
+    ),
+    (
+        "USD eurobond gov 5yr",
+        10.0,
+        "USD",
+        2031,
+        "Republic of Belarus",
+        "active",
+        6.0,
+        100.0,
+        100.0,
+        {"B", "C"},
+    ),
+    (
+        "USD state corp Gazprom 3yr",
+        15.0,
+        "USD",
+        2029,
+        "Газпром",
+        "active",
+        9.0,
+        100.0,
+        100.0,
+        {"B", "A"},
+    ),
     ("USD bank systemic 4yr", 12.0, "USD", 2030, "Сбербанк", "active", 7.0, 100.0, 100.0, {"B"}),
     # --- C-тир: средние ---
-    ("BYN gov bond 4yr", 10.0, "BYN", 2030, "Министерство финансов РБ", "active", 6.0, 100.0, 100.0, {"C", "B"}),
-    ("RUB OFZ long 10yr", 16.0, "RUB", 2036, "Министерство финансов РФ", "active", 9.6, 100.0, 100.0, {"C", "B"}),
+    (
+        "BYN gov bond 4yr",
+        10.0,
+        "BYN",
+        2030,
+        "Министерство финансов РБ",
+        "active",
+        6.0,
+        100.0,
+        100.0,
+        {"C", "B"},
+    ),
+    (
+        "RUB OFZ long 10yr",
+        16.0,
+        "RUB",
+        2036,
+        "Министерство финансов РФ",
+        "active",
+        9.6,
+        100.0,
+        100.0,
+        {"C", "B"},
+    ),
     ("XAG silver bond", 5.0, "XAG", 2030, "Government", "active", 3.0, 100.0, 100.0, {"C", "B"}),
     ("USD corp strong 3yr", 10.0, "USD", 2029, "Лукойл", "active", 6.0, 100.0, 100.0, {"C", "B"}),
     ("BYN corp good 2yr", 12.0, "BYN", 2028, "Газпром", "active", 7.0, 100.0, 100.0, {"C", "B"}),
@@ -172,12 +286,27 @@ VERIFIED_PROFILES = [
     ("Low YTM EUR corp", 1.0, "EUR", 2033, "Some Corp", "active", 0.5, 100.0, 100.0, {"D"}),
     ("BYN unknown issuer", 6.0, "BYN", 2033, None, "active", 4.0, 100.0, 100.0, {"D", "C"}),
     ("RUB corp weak", 8.0, "RUB", 2035, "Some Corp", "active", 5.0, 100.0, 100.0, {"D"}),
-    ("USD extreme price low", 12.0, "USD", 2029, "Treasury", "active", 7.0, 10.0, 100.0, {"B", "A"}),
+    (
+        "USD extreme price low",
+        12.0,
+        "USD",
+        2029,
+        "Treasury",
+        "active",
+        7.0,
+        10.0,
+        100.0,
+        {"B", "A"},
+    ),
 ]
 
 
-@pytest.mark.parametrize("name,ytm,currency,maturity,issuer,status,coupon,price,nominal,expected", VERIFIED_PROFILES)
-def test_verified_profile(name, ytm, currency, maturity, issuer, status, coupon, price, nominal, expected):
+@pytest.mark.parametrize(
+    "name,ytm,currency,maturity,issuer,status,coupon,price,nominal,expected", VERIFIED_PROFILES
+)
+def test_verified_profile(
+    name, ytm, currency, maturity, issuer, status, coupon, price, nominal, expected
+):
     s = score_bond(
         internal_id=name,
         yield_to_maturity=ytm,
@@ -203,17 +332,31 @@ class TestScoreMonotonicity:
     """Улучшение параметра не должно ухудшать score."""
 
     def _bond(self, **kw):
-        defaults = dict(internal_id="M", yield_to_maturity=10.0, currency="USD",
-                       maturity_date=date(2030, 1, 1), status="active",
-                       issuer="Treasury", price=100.0, nominal=100.0, coupon_rate=6.0)
+        defaults = {
+            "internal_id": "M",
+            "yield_to_maturity": 10.0,
+            "currency": "USD",
+            "maturity_date": date(2030, 1, 1),
+            "status": "active",
+            "issuer": "Treasury",
+            "price": 100.0,
+            "nominal": 100.0,
+            "coupon_rate": 6.0,
+        }
         defaults.update(kw)
         return score_bond(**defaults).score
 
     def test_higher_ytm_better(self):
-        assert self._bond(yield_to_maturity=15) > self._bond(yield_to_maturity=10) > self._bond(yield_to_maturity=5)
+        assert (
+            self._bond(yield_to_maturity=15)
+            > self._bond(yield_to_maturity=10)
+            > self._bond(yield_to_maturity=5)
+        )
 
     def test_shorter_maturity_better(self):
-        assert self._bond(maturity_date=date(2028, 1, 1)) > self._bond(maturity_date=date(2032, 1, 1))
+        assert self._bond(maturity_date=date(2028, 1, 1)) > self._bond(
+            maturity_date=date(2032, 1, 1)
+        )
 
     def test_gov_better_than_corp(self):
         assert self._bond(issuer="Министерство") > self._bond(issuer="Some Corp")

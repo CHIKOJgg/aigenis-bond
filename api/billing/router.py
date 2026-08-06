@@ -3,6 +3,7 @@
 Payments are processed through YooKassa (ЮKassa) — the leading CIS payment
 aggregator. Telegram Stars remain available inside the bot.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -47,8 +48,10 @@ def _allowed_networks() -> list[ipaddress._BaseNetwork]:
     proxies. Set it to ``*`` to disable IP filtering (NOT recommended).
     """
     override = os.getenv("YOOKASSA_WEBHOOK_IPS", "").strip()
-    raw = [c.strip() for c in override.split(",") if c.strip()] if override else list(
-        _YOOKASSA_NETWORKS
+    raw = (
+        [c.strip() for c in override.split(",") if c.strip()]
+        if override
+        else list(_YOOKASSA_NETWORKS)
     )
     nets: list[ipaddress._BaseNetwork] = []
     for cidr in raw:
@@ -84,7 +87,6 @@ def _ip_allowed(ip: str | None) -> bool:
     except ValueError:
         return False
     return any(addr in n for n in nets)
-
 
 
 @router.get("/plans")
@@ -153,15 +155,19 @@ async def create_payment(
     # Security: validate success_url to prevent open redirect phishing.
     # Only allow absolute HTTPS URLs to known-safe domains or relative paths.
     from urllib.parse import urlparse
+
     parsed = urlparse(base)
     if not parsed.scheme and not parsed.netloc:
         # Relative path — make it absolute against the public base URL
         # (YooKassa requires an absolute return URL).
         from api.notifications.email import APP_BASE_URL
+
         base = f"{APP_BASE_URL.rstrip('/')}/{base.lstrip('/')}"
         parsed = urlparse(base)
     if parsed.scheme not in ("https",) or not parsed.netloc:
-        raise HTTPException(status_code=400, detail="success_url must be an HTTPS URL or relative path")
+        raise HTTPException(
+            status_code=400, detail="success_url must be an HTTPS URL or relative path"
+        )
     allowed_domains = {
         "aigenis.by",
         "www.aigenis.by",
@@ -169,6 +175,7 @@ async def create_payment(
         "localhost",
     }
     from scraper.config import get_settings
+
     web_url = get_settings().aigenis.web_url or ""
     if web_url:
         allowed_domains.add(web_url.rstrip("/").split("://")[-1].split("/")[0])
@@ -208,7 +215,9 @@ async def get_my_subscription(
     return SubscriptionResponse(
         plan=effective_tier(user.subscription_tier, user.subscription_expires_at, user.trial_end),
         status=sub.status,
-        current_period_start=sub.current_period_start.isoformat() if sub.current_period_start else None,
+        current_period_start=sub.current_period_start.isoformat()
+        if sub.current_period_start
+        else None,
         current_period_end=sub.current_period_end.isoformat() if sub.current_period_end else None,
         cancel_at_period_end=sub.cancel_at_period_end,
     )

@@ -4,7 +4,6 @@
 */
 (function(){
   var s = document.currentScript;
-  var api = s.getAttribute('data-api')||'/api/v1';
   var market = s.getAttribute('data-market')||'';
   var target = document.getElementById('bonds-engine-container')||document.querySelector('bonds-engine');
   if(!target){target=document.createElement('div');target.id='bonds-engine-container';document.body.appendChild(target);}
@@ -15,7 +14,7 @@
   }
   if(!market)market='bcse';
 
-  var base=s.src?s.src.replace(/\/[^\/]+$/,''):'.';
+  var base=s.src?s.src.replace(/\/[^/]+$/,''):'.';
   var widgetFile=market==='moex'?'moex-bond-analyzer.html':'bcse-bond-analyzer.html';
 
   var link=document.createElement('link');

@@ -68,9 +68,7 @@ async def get_bond_transactions(
     return list(result.scalars().all())
 
 
-async def total_bought_sold(
-    session: AsyncSession, user_id: int, internal_id: str
-) -> dict:
+async def total_bought_sold(session: AsyncSession, user_id: int, internal_id: str) -> dict:
     """Aggregate buys and sells for a single bond."""
     result = await session.execute(
         select(

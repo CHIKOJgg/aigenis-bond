@@ -9,6 +9,7 @@ Uses an in-memory SQLite database (the project default) and a fake aiogram
 * refund revoking the subscription;
 * the ``successful_payment`` handler end-to-end.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -65,7 +66,9 @@ def test_grant_and_idempotent_charge():
         assert await subs.get_tier_by_telegram(tg) == "pro"
 
         # Duplicate delivery of the same charge must be ignored.
-        applied_again = await subs.set_tier_by_telegram(tg, "pro", duration_days=30, charge_id="chg-1")
+        applied_again = await subs.set_tier_by_telegram(
+            tg, "pro", duration_days=30, charge_id="chg-1"
+        )
         assert applied_again is False
 
         async with session_scope() as s:
@@ -92,11 +95,7 @@ def test_expiry_downgrades_effective_tier():
         # An ACTIVE trial still grants Pro even after the paid window lapsed
         # (referral-extended trials must not be lost).
         async with session_scope() as s:
-            user = (
-                await s.execute(
-                    select(UserORM).where(UserORM.telegram_id == tg)
-                )
-            ).scalar_one()
+            user = (await s.execute(select(UserORM).where(UserORM.telegram_id == tg))).scalar_one()
             user.trial_end = datetime.now(UTC) + timedelta(days=2)
         assert await subs.get_tier_by_telegram(tg) == "pro"
 
@@ -172,10 +171,10 @@ def test_successful_payment_rejects_unknown_tier_payload():
         # No paid tier stored, no charge recorded, no confirmation sent.
         async with session_scope() as s:
             user = (
-                await s.execute(
-                    UserORM.__table__.select().where(UserORM.telegram_id == 100_005)
-                )
-            ).mappings().first()
+                (await s.execute(UserORM.__table__.select().where(UserORM.telegram_id == 100_005)))
+                .mappings()
+                .first()
+            )
         assert user["subscription_tier"] == "free"
         assert user["last_charge_id"] is None
         assert len(msg.answers) == 0
@@ -192,10 +191,10 @@ def test_successful_payment_ignores_non_subscription_payload():
         await stars_payments.on_successful_payment(msg)
         async with session_scope() as s:
             user = (
-                await s.execute(
-                    UserORM.__table__.select().where(UserORM.telegram_id == 100_006)
-                )
-            ).mappings().first()
+                (await s.execute(UserORM.__table__.select().where(UserORM.telegram_id == 100_006)))
+                .mappings()
+                .first()
+            )
         assert user["subscription_tier"] == "free"
         assert user["last_charge_id"] is None
         assert len(msg.answers) == 0

@@ -116,6 +116,7 @@ def test_portal_partner_key_keeps_full_analysis():
 # K8: P&L money/face unit conversion on mark-to-market
 # --------------------------------------------------------------------------- #
 
+
 def test_pnl_marks_remaining_lots_at_face():
     from portfolio.pnl import compute_pnl
 
@@ -168,7 +169,15 @@ def test_pnl_no_txs_keeps_par_entry_assumption():
             opened_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
     ]
-    bonds = {"B2": Bond(internal_id="B2", name="B2", currency="USD", price=Decimal("110"), fetched_at=datetime.now(UTC))}
+    bonds = {
+        "B2": Bond(
+            internal_id="B2",
+            name="B2",
+            currency="USD",
+            price=Decimal("110"),
+            fetched_at=datetime.now(UTC),
+        )
+    }
 
     result = compute_pnl(transactions=[], positions=positions, bonds_by_id=bonds)
 

@@ -35,10 +35,15 @@ MOEX_ISS_BASE = "https://iss.moex.com/iss"
 _STOCK_BOARDS = ["TQBR", "TQOD", "TQDE"]
 
 
-def _stock_boards() -> list[str]:
+def _stock_boards(settings: Any | None = None) -> list[str]:
     raw = os.getenv("MOEX_STOCK_BOARDS", "").strip()
     if raw:
         return [b.strip().upper() for b in raw.split(",") if b.strip()]
+    if settings is None:
+        settings = get_settings()
+    cfg = getattr(settings, "stock", None)
+    if cfg is not None and cfg.boards:
+        return list(cfg.boards)
     return list(_STOCK_BOARDS)
 
 
@@ -47,7 +52,7 @@ def _to_dec(value: Any) -> Decimal | None:
         return None
     try:
         return Decimal(str(value))
-    except (ValueError, ArithmeticError):
+    except ValueError, ArithmeticError:
         return None
 
 
@@ -56,7 +61,7 @@ def _to_int(value: Any) -> int | None:
         return None
     try:
         return int(float(str(value)))
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -67,7 +72,7 @@ def _to_date(value: Any) -> date | None:
         return value.date()
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
 
 
@@ -99,7 +104,7 @@ class MoexStockClient:
 
     def __init__(self, settings: Any | None = None) -> None:
         self.settings = settings or get_settings()
-        self._boards = _stock_boards()
+        self._boards = _stock_boards(self.settings)
         self._cap = int(os.getenv("MOEX_STOCK_CAP", "500"))
         self._timeout = float(os.getenv("MOEX_TIMEOUT", "30"))
         self._id_by_secid: dict[str, str] = {}
@@ -168,9 +173,10 @@ class MoexStockClient:
                     close_price=_to_dec(md.get("CLOSE")),
                     volume=_to_int(md.get("VOLUME")),
                     value_traded=_to_dec(md.get("VALTODAY")),
-                    market_capitalization=_to_dec(sec.get("ISSUESIZE")) and _to_dec(md.get("LAST")) and (
-                        _to_dec(sec.get("ISSUESIZE")) or Decimal(0)
-                    ) * (_to_dec(md.get("LAST")) or Decimal(0)),
+                    market_capitalization=_to_dec(sec.get("ISSUESIZE"))
+                    and _to_dec(md.get("LAST"))
+                    and (_to_dec(sec.get("ISSUESIZE")) or Decimal(0))
+                    * (_to_dec(md.get("LAST")) or Decimal(0)),
                     pe_ratio=_to_dec(sec.get("P-E")),
                     pbr_ratio=_to_dec(sec.get("P/B")),
                     dividend_yield=_to_dec(sec.get("DIVYIELD")),
@@ -189,7 +195,7 @@ class MoexStockClient:
         """Return a single stock by its MOEX-derived internal id."""
         secid = self._id_by_secid.get(internal_id)
         if secid is None and internal_id.startswith("MOEX_"):
-            secid = internal_id[len("MOEX_"):]
+            secid = internal_id[len("MOEX_") :]
         if secid is None:
             from scraper.errors import NotFoundError
 
@@ -241,16 +247,14 @@ class MoexStockClient:
                 fetched_at=datetime.now(UTC),
             )
 
-    async def fetch_stock_history(
-        self, internal_id: str, _days: int = 30
-    ) -> list[StockHistory]:
+    async def fetch_stock_history(self, internal_id: str, _days: int = 30) -> list[StockHistory]:
         """Fetch daily OHLCV history for a stock (charts / analytics).
 
         Uses MOEX ``/history/.../candles`` (one row per trading day).
         """
         secid = self._id_by_secid.get(internal_id)
         if secid is None and internal_id.startswith("MOEX_"):
-            secid = internal_id[len("MOEX_"):]
+            secid = internal_id[len("MOEX_") :]
         if secid is None:
             return []
         board = self._board_by_internal.get(internal_id, "TQBR")
@@ -286,9 +290,7 @@ class MoexStockClient:
                         )
                     except Exception:
                         continue
-                logger.info(
-                    "moex_stock_history_fetched", secid=secid, count=len(history)
-                )
+                logger.info("moex_stock_history_fetched", secid=secid, count=len(history))
                 return history
         except Exception as exc:
             logger.warning("moex_stock_history_failed", secid=secid, error=str(exc))

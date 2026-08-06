@@ -4,6 +4,7 @@ The bot is created inside ``telegram_bot.bot.main``; background jobs (scheduler,
 reminders) need to reach it to push messages. We keep a single module-level
 reference set at startup and cleared on shutdown.
 """
+
 from __future__ import annotations
 
 _bot = None

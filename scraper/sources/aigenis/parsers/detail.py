@@ -181,7 +181,15 @@ def _parse_dom(html: str, internal_id: str) -> dict[str, Any]:
         block_reg = (block.get("data-reg") or "").strip()
         block_code = (block.get("data-code") or "").strip()
         block_currency_val = (block.get("data-curency") or "").strip().upper()
-        if block_currency_val and block_currency_val in ("USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT"):
+        if block_currency_val and block_currency_val in (
+            "USD",
+            "BYN",
+            "EUR",
+            "RUB",
+            "XAU",
+            "XAG",
+            "XPT",
+        ):
             payload.setdefault("currency", block_currency_val)
         # Извлекаем числовую часть internal_id (напр. "OP-51" → "51")
         id_num = re.sub(r"[^0-9]", "", internal_id)

@@ -1,4 +1,5 @@
 """Unit tests for the Reward/Risk scoring engine v2 (scoring/engine.py)."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -62,7 +63,12 @@ def test_duration_component_smooth():
 
 
 def test_duration_component_monotonic():
-    assert _duration_component(1.0) > _duration_component(3.0) > _duration_component(6.0) > _duration_component(10.0)
+    assert (
+        _duration_component(1.0)
+        > _duration_component(3.0)
+        > _duration_component(6.0)
+        > _duration_component(10.0)
+    )
 
 
 def test_metal_component():
@@ -82,8 +88,12 @@ def test_liquidity_component_combinations():
 
 
 def test_liquidity_component_price_nominal():
-    good = _liquidity_component(has_price=True, status="active", days_to_maturity=200, price=100.0, nominal=100.0)
-    bad = _liquidity_component(has_price=True, status="active", days_to_maturity=200, price=20.0, nominal=100.0)
+    good = _liquidity_component(
+        has_price=True, status="active", days_to_maturity=200, price=100.0, nominal=100.0
+    )
+    bad = _liquidity_component(
+        has_price=True, status="active", days_to_maturity=200, price=20.0, nominal=100.0
+    )
     assert good > bad
 
 
@@ -133,11 +143,17 @@ def test_inflation_component():
 
 
 def test_volatility_component_penalties():
-    extreme = _volatility_component(ytm_pct=80, price=None, nominal=None, status="active", coupon_pct=5.0)
+    extreme = _volatility_component(
+        ytm_pct=80, price=None, nominal=None, status="active", coupon_pct=5.0
+    )
     assert extreme < 0
-    normal = _volatility_component(ytm_pct=10, price=100.0, nominal=100.0, status="active", coupon_pct=5.0)
+    normal = _volatility_component(
+        ytm_pct=10, price=100.0, nominal=100.0, status="active", coupon_pct=5.0
+    )
     assert normal == 0.0
-    extreme_price = _volatility_component(ytm_pct=10, price=10.0, nominal=100.0, status="active", coupon_pct=5.0)
+    extreme_price = _volatility_component(
+        ytm_pct=10, price=10.0, nominal=100.0, status="active", coupon_pct=5.0
+    )
     assert extreme_price < 0
 
 
@@ -319,26 +335,29 @@ def test_zero_coupon_bond_penalty():
     assert s.breakdown.coupon_component < 0
 
 
-@pytest.mark.parametrize("issuer,expected_tier", [
-    ("Министерство финансов Республики Беларусь", "sovereign"),
-    ("Государственное казначейство", "sovereign"),
-    ("Счётная палата", "sovereign"),
-    ("Сбербанк России", "bank_systemic"),
-    ("ВТБ Капитал", "bank_systemic"),
-    ("ВЭБ.РФ", "bank_systemic"),
-    ("Газпром нефть", "state_corp"),
-    ("Транснефть", "state_corp"),
-    ("Роснефть", "state_corp"),
-    ("Лукойл", "state_corp"),
-    ("Татнефть", "state_corp"),
-    ("Русгидро", "state_corp"),
-    ("РЖД-Инвест", "state_corp"),
-    ("Аэрофлот", "state_corp"),
-    ("Почта России", "state_corp"),
-    ("Beta Bank International", "bank"),
-    ("ООО Ромашка", "corp"),
-    ("", "unknown"),
-    (None, "unknown"),
-])
+@pytest.mark.parametrize(
+    "issuer,expected_tier",
+    [
+        ("Министерство финансов Республики Беларусь", "sovereign"),
+        ("Государственное казначейство", "sovereign"),
+        ("Счётная палата", "sovereign"),
+        ("Сбербанк России", "bank_systemic"),
+        ("ВТБ Капитал", "bank_systemic"),
+        ("ВЭБ.РФ", "bank_systemic"),
+        ("Газпром нефть", "state_corp"),
+        ("Транснефть", "state_corp"),
+        ("Роснефть", "state_corp"),
+        ("Лукойл", "state_corp"),
+        ("Татнефть", "state_corp"),
+        ("Русгидро", "state_corp"),
+        ("РЖД-Инвест", "state_corp"),
+        ("Аэрофлот", "state_corp"),
+        ("Почта России", "state_corp"),
+        ("Beta Bank International", "bank"),
+        ("ООО Ромашка", "corp"),
+        ("", "unknown"),
+        (None, "unknown"),
+    ],
+)
 def test_issuer_classification(issuer, expected_tier):
     assert _classify_issuer(issuer) == expected_tier

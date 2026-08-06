@@ -10,8 +10,8 @@ var bonds=[], scores={}, loading=!0, error=null, currency='', search='', sortKey
 var PS=25;
 var T=function(s,d){return s!=null&&s!==''?s:(d||'--');};
 var FP=function(v,d){return v!=null?Number(v).toFixed(2)+'%':(d||'--');};
-var FD=function(d){if(!d)return'--';try{return new Date(d).toLocaleDateString('ru-RU',{day:'2-digit',month:'short',year:'numeric'});}catch(e){return d;}};
-var DAYS=function(d){if(!d)return null;try{return Math.ceil((new Date(d)-Date.now())/864e5);}catch(e){return null;}};
+var FD=function(d){if(!d)return'--';try{return new Date(d).toLocaleDateString('ru-RU',{day:'2-digit',month:'short',year:'numeric'});}catch{return d;}};
+var DAYS=function(d){if(!d)return null;try{return Math.ceil((new Date(d)-Date.now())/864e5);}catch{return null;}};
 var TIER_MAP={'S':'t-S','A':'t-A','B':'t-B','C':'t-C','D':'t-D'};
 var VERDICT={'S':'Исключительная возможность','A':'Хорошая возможность','B':'Умеренно интересна','C':'Средняя','D':'Слабая / избегать'};
 var VCLS={'S':'v-S','A':'v-A','B':'v-B','C':'v-C','D':'v-D'};

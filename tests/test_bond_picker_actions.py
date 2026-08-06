@@ -1,6 +1,7 @@
 """Tests for the new value actions in the Telegram bond picker:
 plain-language "should I buy?" verdict and coupon income.
 """
+
 from __future__ import annotations
 
 import asyncio

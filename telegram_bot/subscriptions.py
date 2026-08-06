@@ -5,6 +5,7 @@ and the future web app. The bot links a Telegram user to a `users` row via the
 `telegram_id` column (see alembic a1b2c3d4e5f0). Pro/Enterprise tiers are
 granted by Stars payments handled in `telegram_bot.stars_payments`.
 """
+
 from __future__ import annotations
 
 import math
@@ -86,7 +87,9 @@ def _as_aware(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def effective_tier(tier: str | None, expires_at: datetime | None, trial_end: datetime | None = None) -> str:
+def effective_tier(
+    tier: str | None, expires_at: datetime | None, trial_end: datetime | None = None
+) -> str:
     """Return the tier the user is *actually* entitled to right now.
 
     Paid tiers lapse to ``free`` once ``expires_at`` is in the past. Because
@@ -164,8 +167,8 @@ def _days_left(dt: datetime | None) -> int | None:
 
 @dataclass(frozen=True)
 class AccountStatus:
-    tier: str            # effective tier right now (free / pro / enterprise)
-    is_trial: bool       # True if access comes from the free trial
+    tier: str  # effective tier right now (free / pro / enterprise)
+    is_trial: bool  # True if access comes from the free trial
     days_left: int | None  # days until trial/paid access ends
     expires_at: datetime | None
 
@@ -209,7 +212,9 @@ async def set_tier_by_telegram(
         if user is None:
             user = await get_or_create_user_by_telegram(session, telegram_id)
         if charge_id and user.last_charge_id == charge_id:
-            logger.info("stars_payment_duplicate_ignored", telegram_id=telegram_id, charge_id=charge_id)
+            logger.info(
+                "stars_payment_duplicate_ignored", telegram_id=telegram_id, charge_id=charge_id
+            )
             return False
         user.subscription_tier = tier
         if is_paid(tier) and duration_days:
@@ -223,8 +228,10 @@ async def set_tier_by_telegram(
             # still runs past the new one — otherwise a Stars refund would
             # revoke YooKassa-paid days. Keep both the channel AND the expiry
             # of the longer window intact.
-            if user.payment_channel and user.payment_channel != "stars" and (
-                base is None or base >= new_expiry
+            if (
+                user.payment_channel
+                and user.payment_channel != "stars"
+                and (base is None or base >= new_expiry)
             ):
                 pass  # keep the existing (longer) channel and its expiry
             else:

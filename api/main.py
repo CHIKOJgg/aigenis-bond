@@ -22,6 +22,7 @@ from api.analytics import router as analytics_router
 from api.auth.deps import _get_current_user
 from api.auth.router import router as auth_router
 from api.billing.router import router as billing_router
+from api.demo import router as demo_router
 from api.document_analysis import router as document_router
 from api.frontend import frontend_dir, frontend_index
 from api.news import router as news_router
@@ -111,6 +112,10 @@ logger.info("seo_pages_enabled")
 # MOEX Stock data (free public ISS source).
 app.include_router(stocks_router)
 logger.info("stocks_api_enabled")
+
+# Demo showcase (/demo/*). Deterministic, fixtures-only — no live API, no side effects.
+app.include_router(demo_router)
+logger.info("demo_api_enabled")
 
 # --- Security headers ---
 # Applied to every response (except the docs/OpenAPI endpoints) to harden the

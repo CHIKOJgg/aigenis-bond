@@ -3,6 +3,7 @@
 The ML model inference is mocked so the test stays hermetic (no trained
 artifacts required) and focuses on the gating/sorting/explanation logic.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
@@ -89,8 +90,22 @@ def test_recommend_sorts_by_decision_rank(stub_predict):
 
 def test_recommend_for_issuer_aggregates(stub_predict):
     bonds = [
-        {"internal_id": "B1", "name": "Облигация 1", "issuer": "ОАО Ромашка", "currency": "USD", "yield_to_maturity": 9.0, "status": "active"},
-        {"internal_id": "B2", "name": "Облигация 2", "issuer": "ОАО Ромашка", "currency": "USD", "yield_to_maturity": 9.0, "status": "active"},
+        {
+            "internal_id": "B1",
+            "name": "Облигация 1",
+            "issuer": "ОАО Ромашка",
+            "currency": "USD",
+            "yield_to_maturity": 9.0,
+            "status": "active",
+        },
+        {
+            "internal_id": "B2",
+            "name": "Облигация 2",
+            "issuer": "ОАО Ромашка",
+            "currency": "USD",
+            "yield_to_maturity": 9.0,
+            "status": "active",
+        },
     ]
     prefs = UserPreferences(user_id=1, watchlist=["B1", "B2"])
     rec = recommend_for_issuer(bonds, prefs, asof=date(2026, 1, 1))

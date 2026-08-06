@@ -7,6 +7,7 @@
    payment (after a newer purchase) must NOT extend the subscription again.
 3. Regular web users get a shareable referral_code (web referral program).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -117,7 +118,9 @@ def test_referral_extends_only_active_window():
                     __import__("sqlalchemy").select(UserORM).where(UserORM.id == invitee.id)
                 )
             ).scalar_one()
-            assert _aware(inv.trial_end) is not None and _aware(inv.trial_end) > now + timedelta(days=7) - timedelta(minutes=1)
+            assert _aware(inv.trial_end) is not None and _aware(inv.trial_end) > now + timedelta(
+                days=7
+            ) - timedelta(minutes=1)
 
     _run(scenario())
 

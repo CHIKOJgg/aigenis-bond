@@ -13,6 +13,7 @@ This module wires those sub-routers into a single ``router`` and re-exports the
 names the test-suite and ``telegram_bot.bot`` import, so external behavior is
 unchanged.
 """
+
 from __future__ import annotations
 
 from aiogram import Router

@@ -4,6 +4,7 @@ These guard against "dead buttons": every inline button's callback_data must
 resolve to a real handler (a defined cmd_* function, or one of the menu/bonds/
 bond prefix handlers). They also verify the settings FSM-lite wiring.
 """
+
 from __future__ import annotations
 
 import re

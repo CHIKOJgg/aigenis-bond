@@ -62,10 +62,14 @@ async def register_webhook(
 async def list_webhooks(partner_key_id: int) -> list[WebhookORM]:
     async with session_scope() as session:
         rows = (
-            await session.execute(
-                select(WebhookORM).where(WebhookORM.partner_key_id == partner_key_id)
+            (
+                await session.execute(
+                    select(WebhookORM).where(WebhookORM.partner_key_id == partner_key_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return list(rows)
 
 
@@ -117,7 +121,7 @@ def _is_private_host(url: str) -> bool:
     # Resolve the hostname and check every address in ALL families (IPv4 + IPv6).
     try:
         addr = socket.getaddrinfo(host, 80, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except (socket.gaierror, OSError):
+    except socket.gaierror, OSError:
         return False
     for _family, _type, _proto, _canonname, sockaddr in addr:
         try:
@@ -211,7 +215,7 @@ def _pin_public_ip(host: str) -> tuple[str, str] | None:
         pass
     try:
         addr = socket.getaddrinfo(host, 80, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except (socket.gaierror, OSError):
+    except socket.gaierror, OSError:
         return None
     for family, _type, _proto, _canonname, sockaddr in addr:
         try:
@@ -233,9 +237,7 @@ async def _safe_deliver(wh: WebhookORM, event_type: str, payload: dict) -> None:
         logger.exception("webhook_delivery_failed", webhook_id=wh.id)
 
 
-async def emit_webhook_event(
-    event_type: str, payload: dict, *, wait: bool = False
-) -> int:
+async def emit_webhook_event(event_type: str, payload: dict, *, wait: bool = False) -> int:
     """Deliver ``event_type`` to every active webhook subscribed to it.
 
     Returns the number of matching webhooks. With ``wait=True`` the deliveries
@@ -247,7 +249,11 @@ async def emit_webhook_event(
         return 0
 
     async with session_scope() as session:
-        rows = (await session.execute(select(WebhookORM).where(WebhookORM.active.is_(True)))).scalars().all()
+        rows = (
+            (await session.execute(select(WebhookORM).where(WebhookORM.active.is_(True))))
+            .scalars()
+            .all()
+        )
         targets = [wh for wh in rows if event_type in (wh.events or [])]
 
     tasks = [asyncio.create_task(_safe_deliver(wh, event_type, payload)) for wh in targets]

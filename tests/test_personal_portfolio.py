@@ -5,6 +5,7 @@ Run against the project's in-memory SQLite default. Uses an async HTTP client
 optimizer — is exercised in a single event loop against one shared SQLite
 connection.
 """
+
 from __future__ import annotations
 
 import asyncio

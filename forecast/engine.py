@@ -103,6 +103,7 @@ def forecast_capital(
             months,
             n_paths=max(int(n_paths), 100),
         )
+
         def _pctile(q: float) -> Decimal:
             idx = min(len(finals) - 1, max(0, round(q * (len(finals) - 1))))
             return Decimal(str(round(finals[idx], 2)))

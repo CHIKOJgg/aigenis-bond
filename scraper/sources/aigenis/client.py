@@ -266,9 +266,7 @@ class AigenisClient:
             data={"identifier": username, "password": password},
         )
         if resp.status_code != 200:
-            raise FatalError(
-                f"API login failed: {resp.status_code} {resp.text[:200]}"
-            )
+            raise FatalError(f"API login failed: {resp.status_code} {resp.text[:200]}")
         data = resp.json()
         token = data.get("access")
         if not token:
@@ -484,9 +482,7 @@ class AigenisClient:
                     continue
                 # Currency filter: settl_currency at top level, or definition.currency
                 item_currency = (
-                    item.get("settl_currency")
-                    or item.get("definition", {}).get("currency")
-                    or ""
+                    item.get("settl_currency") or item.get("definition", {}).get("currency") or ""
                 )
                 if item_currency.upper() != currency.upper():
                     continue
@@ -549,9 +545,9 @@ class AigenisClient:
             "income_method": defn.get("income_method"),
             "in_stock": defn.get("available_for_individuals"),
             "guarantor": None,
-            "maturity_term_text": str(
-                defn.get("time_to_maturity_years") or ""
-            ) if defn.get("time_to_maturity_years") else None,
+            "maturity_term_text": str(defn.get("time_to_maturity_years") or "")
+            if defn.get("time_to_maturity_years")
+            else None,
             "coupon_description": defn.get("coupon_description"),
             "coupon_schedule": defn.get("coupon_schedule"),
             "issuer": (defn.get("issuer") or {}).get("full_name"),
@@ -632,9 +628,9 @@ class AigenisClient:
             "income_method": defn.get("revenue_type"),
             "in_stock": defn.get("available_for_individuals"),
             "guarantor": None,
-            "maturity_term_text": str(
-                defn.get("time_to_maturity_years") or ""
-            ) if defn.get("time_to_maturity_years") else None,
+            "maturity_term_text": str(defn.get("time_to_maturity_years") or "")
+            if defn.get("time_to_maturity_years")
+            else None,
             "coupon_description": defn.get("coupon_description"),
             "coupon_schedule": defn.get("coupon_schedule"),
             "quantity": defn.get("quantity"),

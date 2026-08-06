@@ -1,4 +1,5 @@
 """Admin commands and the global error handler for the Telegram bot."""
+
 from __future__ import annotations
 
 import asyncio

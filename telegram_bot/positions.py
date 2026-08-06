@@ -5,6 +5,7 @@ add a position from a bond card (amount entered as a text reply) and remove it.
 Positions are keyed by ``users.id`` (shared with the web app), resolved from the
 Telegram id via :func:`get_or_create_user_by_telegram`.
 """
+
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -91,8 +92,7 @@ async def _positions_view(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
     for h in holdings:
         cur = f" {h['currency']}" if h["currency"] else ""
         lines.append(
-            f"• <code>{h['internal_id']}</code> {h['name']} — "
-            f"<b>{fmt_num(h['amount'])}{cur}</b>"
+            f"• <code>{h['internal_id']}</code> {h['name']} — <b>{fmt_num(h['amount'])}{cur}</b>"
         )
     lines.append("")
     lines.append(f"Вложено: <b>{fmt_num(inc['total_invested'])}</b>")
@@ -104,9 +104,7 @@ async def _positions_view(telegram_id: int) -> tuple[str, InlineKeyboardMarkup]:
     if nxt:
         lines.append(f"Ближайшая выплата: <b>{fmt_num(nxt['amount'])}</b> — {nxt['date']}")
     if len(currencies) > 1:
-        lines.append(
-            "\n⚠️ В портфеле разные валюты — итоговые суммы сложены без конвертации."
-        )
+        lines.append("\n⚠️ В портфеле разные валюты — итоговые суммы сложены без конвертации.")
 
     rows = [
         [
@@ -201,8 +199,10 @@ async def on_position_amount(message: Message) -> None:
         amount = Decimal(raw.replace(",", ".").replace(" ", ""))
         if amount <= 0:
             raise InvalidOperation
-    except (InvalidOperation, ValueError):
-        await message.answer("❌ Не понял сумму. Введите число, например 1000. Повторите: /positions")
+    except InvalidOperation, ValueError:
+        await message.answer(
+            "❌ Не понял сумму. Введите число, например 1000. Повторите: /positions"
+        )
         return
     async with session_scope() as session:
         user = await get_or_create_user_by_telegram(session, uid)

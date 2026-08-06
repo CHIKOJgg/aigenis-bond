@@ -31,4 +31,12 @@ export const ROUTES = {
   chat: '/chat',
   account: '/account',
   subscribe: '/subscribe',
+
+  demo: '/demo',
+  demoTrading: '/demo/trading',
+  demoAnalytics: '/demo/analytics',
+  demoBondDetail: (internalId: string) => `/demo/analytics/bonds/${encodeURIComponent(internalId)}`,
+  demoBondDetailPattern: '/demo/analytics/bonds/:internalId',
+  demoPortfolioImpact: (internalId: string) => `/demo/portfolio-impact/${encodeURIComponent(internalId)}`,
+  demoPortfolioImpactPattern: '/demo/portfolio-impact/:internalId',
 } as const;

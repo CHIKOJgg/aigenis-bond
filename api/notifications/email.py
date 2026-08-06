@@ -1,8 +1,9 @@
-﻿"""Email notification service via SMTP.
+"""Email notification service via SMTP.
 
 All email settings are configured via environment variables (SMTP_HOST, etc.).
 If SMTP is not configured, all send operations log a warning and return silently.
 """
+
 from __future__ import annotations
 
 import os
@@ -104,7 +105,7 @@ def send_password_reset_email(to: str, token: str) -> bool:
 def send_subscription_expiring_email(to: str, tier: str, days_left: int) -> bool:
     url = f"{APP_BASE_URL}/subscribe"
     html = _base_html(f"""
-        <p>Your <b>{tier}</b> subscription will expire in <b>{days_left} day{'s' if days_left != 1 else ''}</b>.</p>
+        <p>Your <b>{tier}</b> subscription will expire in <b>{days_left} day{"s" if days_left != 1 else ""}</b>.</p>
         <p>Renew now to keep access to all Pro/Enterprise features without interruption.</p>
         <p style="text-align:center"><a href="{url}" class="btn">Renew Subscription</a></p>
     """)
@@ -121,4 +122,3 @@ def send_welcome_email(to: str, name: str) -> bool:
         <p style="text-align:center"><a href="{url}" class="btn">Go to Dashboard</a></p>
     """)
     return _send_email(to, "Welcome to Aigenis Bonds!", html)
-

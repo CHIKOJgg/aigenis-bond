@@ -1,4 +1,3 @@
-
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -100,7 +99,7 @@ def _to_int(v: Any) -> int | None:
     if isinstance(v, str):
         try:
             return int(float(v.strip()))
-        except (ValueError, OverflowError):
+        except ValueError, OverflowError:
             import re
 
             m = re.search(r"\d+", v)
@@ -371,9 +370,7 @@ def download_xlsx_files(dest_dir: str | None = None) -> dict[str, str]:
         local_path = os.path.join(dest_dir, os.path.basename(url))
         if not os.path.exists(local_path):
             # Timeout so a hung network never blocks the whole pipeline.
-            with urllib.request.urlopen(url, timeout=30) as resp, open(
-                local_path, "wb"
-            ) as out:
+            with urllib.request.urlopen(url, timeout=30) as resp, open(local_path, "wb") as out:
                 out.write(resp.read())
         result[key] = local_path
     return result

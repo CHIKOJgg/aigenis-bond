@@ -4,6 +4,7 @@ SubscriptionMiddleware only sees messages, so callback bridges must gate
 PRO commands themselves. These tests assert that the gating contract holds:
 every Pro cmd_* button / page:* callback is wired to the gate.
 """
+
 from __future__ import annotations
 
 import telegram_bot.commands as c

@@ -124,7 +124,9 @@ async def fetch_and_save_metal_prices() -> dict[str, Decimal]:
         for metal, price in metals.items():
             await upsert_metal(session, metal, price)
 
-    logger.info("metal_prices_fetched", count=len(metals), prices={k: float(v) for k, v in metals.items()})
+    logger.info(
+        "metal_prices_fetched", count=len(metals), prices={k: float(v) for k, v in metals.items()}
+    )
     return metals
 
 

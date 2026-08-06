@@ -1,4 +1,5 @@
 """Tests for portfolio positions in the Telegram bot (view / add / remove)."""
+
 from __future__ import annotations
 
 import asyncio
