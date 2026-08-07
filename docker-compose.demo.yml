@@ -25,7 +25,9 @@ services:
     ports:
       - "${DEMO_PORT:-8080}:80"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      # Alpine wget resolves localhost to ::1 first; nginx listens on IPv4 in
+      # the demo image, so use the explicit loopback address for a real check.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -34,3 +36,10 @@ services:
       resources:
         limits:
           memory: 128M
+    networks:
+      - aigenis-net
+
+networks:
+  aigenis-net:
+    external: true
+    name: aigenis-net

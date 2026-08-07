@@ -137,7 +137,7 @@ async def _fetch_moex_bonds(currency: str | None = None) -> list[dict[str, Any]]
                                 if sec.get("MATDATE")
                                 else None
                             )
-                        except ValueError, TypeError:
+                        except (ValueError, TypeError):
                             maturity = None
                         all_rows.append(
                             {

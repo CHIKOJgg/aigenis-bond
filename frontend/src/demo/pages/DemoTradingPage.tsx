@@ -1,10 +1,20 @@
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import MarketTable from '../components/MarketTable';
+import { fetchLiveMarket } from '../live-demo-api';
+import type { DemoBond } from '../types';
 
 export default function DemoTradingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const market = searchParams.get('market') || 'BCSE';
+  const [bonds, setBonds] = useState<DemoBond[]>([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (market !== 'BCSE') return;
+    fetchLiveMarket('bcse').then((s) => setBonds(s.bonds)).catch(() => setError('Не удалось получить актуальные данные BCSE'));
+  }, [market]);
 
   const handleMarketChange = (m: string) => {
     setSearchParams({ market: m });
@@ -66,7 +76,8 @@ export default function DemoTradingPage() {
         </div>
       </div>
 
-      <MarketTable market={market} />
+      {error && <div style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
+      <MarketTable market={market} bonds={market === 'BCSE' ? bonds : undefined} />
     </div>
   );
 }

@@ -121,7 +121,7 @@ def _is_private_host(url: str) -> bool:
     # Resolve the hostname and check every address in ALL families (IPv4 + IPv6).
     try:
         addr = socket.getaddrinfo(host, 80, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror, OSError:
+    except (socket.gaierror, OSError):
         return False
     for _family, _type, _proto, _canonname, sockaddr in addr:
         try:
@@ -215,7 +215,7 @@ def _pin_public_ip(host: str) -> tuple[str, str] | None:
         pass
     try:
         addr = socket.getaddrinfo(host, 80, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror, OSError:
+    except (socket.gaierror, OSError):
         return None
     for family, _type, _proto, _canonname, sockaddr in addr:
         try:

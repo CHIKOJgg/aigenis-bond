@@ -322,7 +322,7 @@ async def run_forever() -> None:
     try:
         try:
             await stop_event.wait()
-        except KeyboardInterrupt, SystemExit:
+        except (KeyboardInterrupt, SystemExit):
             logger.info("scheduler_interrupted")
     finally:
         logger.info("scheduler_shutting_down")

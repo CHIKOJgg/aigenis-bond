@@ -15,10 +15,13 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
+from scraper.db import session_scope
 from scraper.logging import get_logger
+from scraper.orm import BondORM
 
 logger = get_logger("api.demo")
 
@@ -56,6 +59,75 @@ class PortfolioImpactResponse(BaseModel):
     before: PortfolioImpactBefore
     after: PortfolioImpactAfter
     fixtures_version: str
+
+
+@router.get("/market-data")
+async def live_market_data(
+    market: str = Query("bcse", pattern="^(bcse|moex)$"),
+    currency: str | None = Query(None, min_length=3, max_length=3),
+    limit: int = Query(50, ge=1, le=100),
+) -> dict[str, Any]:
+    """Read-only, sanitized market snapshot for the protected demo UI.
+
+    The old public demo shipped fabricated fixture securities.  This endpoint
+    reads the latest licensed ingestion snapshot, never accepts writes, and
+    exposes only instrument fields needed by the showcase.  Access to this
+    route must stay behind the demo network/Cloudflare Access policy.
+    """
+    async with session_scope() as session:
+        stmt = (
+            select(BondORM)
+            .where(BondORM.market == market)
+            .where(BondORM.status == "active")
+            .order_by(BondORM.fetched_at.desc(), BondORM.name.asc())
+            .limit(limit)
+        )
+        if currency:
+            stmt = stmt.where(BondORM.currency == currency.upper())
+        rows = (await session.execute(stmt)).scalars().all()
+
+    bonds: list[dict[str, Any]] = []
+    for bond in rows:
+        bonds.append(
+            {
+                "internal_id": bond.internal_id,
+                "isin": bond.isin,
+                "name": bond.name,
+                "issuer": bond.issuer,
+                "issuer_logo": bond.issuer_logo,
+                "currency": bond.currency,
+                "nominal": float(bond.nominal) if bond.nominal is not None else None,
+                "coupon_rate": float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+                "coupon_frequency": bond.coupon_frequency,
+                "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
+                "price": float(bond.price) if bond.price is not None else None,
+                # Zero in the source means "not calculated", not a 0% yield.
+                "yield_to_maturity": (
+                    float(bond.yield_to_maturity)
+                    if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0
+                    else None
+                ),
+                "market": bond.market,
+                "status": bond.status,
+                "is_government": bool(bond.is_government),
+                "in_stock": bond.in_stock,
+                "guarantor": bond.guarantor,
+                "maturity_term_text": bond.maturity_term_text,
+                "coupon_description": bond.coupon_description,
+                "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
+                "term_days": bond.term_days,
+            }
+        )
+    as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
+    return {
+        "source": "Aigenis official feed",
+        "market": market,
+        "currency": currency.upper() if currency else None,
+        "as_of": as_of,
+        "count": len(bonds),
+        "bonds": bonds,
+        "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
+    }
 
 
 def _load_manifest() -> dict[str, Any]:

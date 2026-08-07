@@ -58,8 +58,10 @@ load = [
     "locust>=2.32.0",
 ]
 dev = [
+    "mypy>=1.15",
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+    "ruff>=0.8,<0.17",
     "httpx>=0.27.0",
 ]
 
@@ -82,7 +84,10 @@ exclude = ["alembic*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+# Keep lint/format output stable across the supported Python 3.13+ runtimes.
+# The production image and CI target 3.13; py314 formatter output is not yet
+# stable in the Ruff versions used by the development environment.
+target-version = "py313"
 # Alembic migrations are (partly) auto-generated; don't gate CI on their style.
 extend-exclude = ["alembic/versions"]
 
@@ -137,7 +142,7 @@ fixable = ["I", "UP", "W"]
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.13"
 strict = false
 warn_unused_ignores = true
 warn_redundant_casts = true
@@ -177,4 +182,3 @@ markers = [
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-

@@ -62,10 +62,10 @@ def _metadata_user_id(metadata: dict) -> int:
     raw = metadata.get("user_id", 0)
     try:
         return int(raw)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         try:
             return int(float(str(raw).strip()))
-        except TypeError, ValueError, ArithmeticError:
+        except (TypeError, ValueError, ArithmeticError):
             return 0
 
 
@@ -292,7 +292,7 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
             paid = float(obj.get("amount", {}).get("value", 0))
             expected = float(plan_config["price"])
             paid_currency = obj.get("amount", {}).get("currency", CURRENCY)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             logger.warning("payment_amount_unparseable", payment_id=payment_id)
             return
         if paid + 1e-9 < expected or paid_currency != CURRENCY:
@@ -495,7 +495,7 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
     # adjustment) must not cut an active subscription.
     try:
         refund_amount = float(obj.get("amount", {}).get("value", 0))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         refund_amount = 0.0
 
     async with session_scope() as session:

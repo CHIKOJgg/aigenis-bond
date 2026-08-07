@@ -133,7 +133,7 @@ async def seo_calculator(request: Request):
     def _f(v, default=None):
         try:
             return float(v)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return default
 
     price_v = _f(price)

@@ -2,10 +2,11 @@ import { getBonds } from '../demo-api';
 
 interface Props {
   market: string;
+  bonds?: import('../types').DemoBond[];
 }
 
-export default function MarketTable({ market }: Props) {
-  const bonds = getBonds(market);
+export default function MarketTable({ market, bonds: liveBonds }: Props) {
+  const bonds = liveBonds ?? getBonds(market);
 
   if (bonds.length === 0) {
     return (

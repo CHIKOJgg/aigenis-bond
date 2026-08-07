@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { getBonds, getScore, getMarketSummary } from '../demo-api';
 import { filterAndSortBonds } from '../demo-filter';
@@ -9,6 +9,7 @@ import AnalyticsKpiStrip from '../components/AnalyticsKpiStrip';
 import AnalyticsFilters from '../components/AnalyticsFilters';
 import BondScoreBadge from '../components/BondScoreBadge';
 import BondDetailDrawer from '../components/BondDetailDrawer';
+import { fetchLiveMarket, type LiveMarketSnapshot } from '../live-demo-api';
 
 export default function DemoAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,9 +23,20 @@ export default function DemoAnalyticsPage() {
   const [sortKey, setSortKey] = useState<'score' | 'ytm'>('score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveMarketSnapshot | null>(null);
+  const [liveError, setLiveError] = useState('');
 
-  const summary = getMarketSummary();
-  const bonds = getBonds(market);
+  useEffect(() => {
+    if (market !== 'BCSE') return;
+    fetchLiveMarket('bcse').then(setLive).catch(() => setLiveError('Не удалось получить актуальные данные BCSE'));
+  }, [market]);
+
+  const fixtureSummary = getMarketSummary();
+  const summary = live ? {
+    ...fixtureSummary,
+    global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
+  } : fixtureSummary;
+  const bonds = (market === 'BCSE' && live ? live.bonds : getBonds(market));
 
   const filtered = useMemo(
     () => filterAndSortBonds(bonds, { currency, term, status, sortKey, sortDir }, getScore),
@@ -52,11 +64,14 @@ export default function DemoAnalyticsPage() {
       </div>
 
       <AnalyticsKpiStrip
-        attractive={marketStats?.attractive_ideas ?? 0}
+        attractive={market === 'BCSE' ? bonds.filter((b) => (b.yield_to_maturity ?? 0) >= 12).length : marketStats?.attractive_ideas ?? 0}
         review={marketStats?.needs_review ?? 0}
-        bestYield={marketStats?.best_yield_pct ?? 0}
+        bestYield={market === 'BCSE' ? Math.max(...bonds.map((b) => b.yield_to_maturity ?? 0), 0) : marketStats?.best_yield_pct ?? 0}
         asOf={summary.global.updated_at}
       />
+
+      {liveError && <div style={{ color: '#b42318', marginBottom: 12 }}>{liveError}</div>}
+      {live && <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>Источник: {live.source} · актуально на {new Date(live.as_of ?? '').toLocaleString('ru-RU')}</div>}
 
       <AnalyticsFilters
         market={market}
@@ -152,6 +167,7 @@ export default function DemoAnalyticsPage() {
       {selectedId && (
         <BondDetailDrawer
           bondId={selectedId}
+          bond={bonds.find((b) => b.internal_id === selectedId)}
           onClose={() => setSelectedId(null)}
           onPortfolioImpact={() => navigate(`/demo/portfolio-impact/${encodeURIComponent(selectedId)}?market=${market}`)}
           onAlert={() => {}}

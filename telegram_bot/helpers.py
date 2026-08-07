@@ -105,7 +105,7 @@ def fmt_num(value) -> str:
     """Human-friendly number: drop trailing zeros (95.00 -> 95, 95.50 -> 95.5)."""
     try:
         d = Decimal(str(value))
-    except InvalidOperation, ValueError, TypeError:
+    except (InvalidOperation, ValueError, TypeError):
         return str(value)
     s = format(d, "f")
     if "." in s:

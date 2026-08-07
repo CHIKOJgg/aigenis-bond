@@ -519,7 +519,7 @@ async def cb_alert_set(callback_query) -> None:
     try:
         _, iid, metric, direction, thr = callback_query.data.split(":")
         threshold = Decimal(thr)
-    except ValueError, ArithmeticError:
+    except (ValueError, ArithmeticError):
         await callback_query.answer("Некорректный порог", show_alert=True)
         return
     text = await _apply_alert_rule(uid, iid, metric, direction, threshold)

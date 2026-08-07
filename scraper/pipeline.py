@@ -41,7 +41,7 @@ def _d(value: object) -> Decimal | None:
         return None
     try:
         return Decimal(str(value))
-    except InvalidOperation, ValueError:
+    except (InvalidOperation, ValueError):
         return None
 
 
@@ -296,7 +296,7 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
             for acc in xlsx_data.daily_accruals:
                 try:
                     issue_num = int(acc.internal_id)
-                except ValueError, TypeError:
+                except (ValueError, TypeError):
                     continue
                 real_iid = issue_to_iid.get(issue_num)
                 if real_iid is None:
@@ -607,7 +607,7 @@ async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
                     if b.get("maturity_date"):
                         try:
                             maturity = datetime.fromisoformat(b["maturity_date"]).date()
-                        except ValueError, TypeError:
+                        except (ValueError, TypeError):
                             maturity = None
                     if existing is None:
                         session.add(

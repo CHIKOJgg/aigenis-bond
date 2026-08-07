@@ -4,6 +4,7 @@ import { getScore, getExplanation, getAllBonds } from '../demo-api';
 import { SCORE_STATUS_LABEL, SCORE_STATUS_DESC } from '../demo-config';
 import { formatYtm, formatDurationYears, formatPrice } from '../demo-format';
 import ScoreExplanation from './ScoreExplanation';
+import type { DemoBond } from '../types';
 
 interface Props {
   bondId: string;
@@ -11,10 +12,11 @@ interface Props {
   onPortfolioImpact: () => void;
   onAlert: () => void;
   onOrder: () => void;
+  bond?: DemoBond;
 }
 
-export default function BondDetailDrawer({ bondId, onClose, onPortfolioImpact, onAlert, onOrder }: Props) {
-  const bond = getAllBonds().find((b) => b.internal_id === bondId);
+export default function BondDetailDrawer({ bondId, bond: liveBond, onClose, onPortfolioImpact, onAlert, onOrder }: Props) {
+  const bond = liveBond ?? getAllBonds().find((b) => b.internal_id === bondId);
   const score = getScore(bondId);
   const explanation = getExplanation(bondId);
   const panelRef = useRef<HTMLElement>(null);

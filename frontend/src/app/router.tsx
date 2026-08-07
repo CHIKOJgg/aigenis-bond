@@ -73,7 +73,7 @@ export default function AppRoutes() {
     );
   }
 
-  if (showOnboarding) {
+  if (showOnboarding && window.location.pathname !== ROUTES.onboarding) {
     return <Navigate to={ROUTES.onboarding} replace />;
   }
 

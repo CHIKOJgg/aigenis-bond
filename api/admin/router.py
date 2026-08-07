@@ -64,7 +64,7 @@ def _verify_admin_token(token: str) -> int | None:
         return None
     try:
         return int(sub)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -216,7 +216,7 @@ async def admin_users(
     search = request.query_params.get("search", "")
     try:
         page = max(1, int(request.query_params.get("page", "1")))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         page = 1
     per_page = 20
     stmt = select(UserORM).order_by(UserORM.created_at.desc())

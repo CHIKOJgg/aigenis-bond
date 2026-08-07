@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { getAllBonds, getScore } from '../demo-api';
 import { DEMO_PERSONA, ALLOCATION_OPTIONS } from '../demo-config';
 import PortfolioImpactCard from '../components/PortfolioImpactCard';
+import { fetchLiveMarket } from '../live-demo-api';
+import type { DemoBond } from '../types';
 
 export default function DemoPortfolioImpactPage() {
   const [searchParams] = useSearchParams();
@@ -10,7 +12,10 @@ export default function DemoPortfolioImpactPage() {
   const navigate = useNavigate();
   const market = searchParams.get('market') || 'BCSE';
 
-  const bonds = getAllBonds();
+  const [bonds, setBonds] = useState<DemoBond[]>(getAllBonds());
+  useEffect(() => {
+    if (market === 'BCSE') fetchLiveMarket('bcse').then((s) => setBonds(s.bonds)).catch(() => {});
+  }, [market]);
   const [bondId, setBondId] = useState(internalId ?? searchParams.get('bond') ?? '');
   const [allocation, setAllocation] = useState(10);
 
@@ -82,7 +87,7 @@ export default function DemoPortfolioImpactPage() {
 
         <div style={{ flex: 1, minWidth: 300 }}>
           {bond && (
-            <PortfolioImpactCard bondId={bond.internal_id} allocationPct={allocation} />
+            <PortfolioImpactCard bondId={bond.internal_id} allocationPct={allocation} bond={bond} />
           )}
           {!bond && (
             <div style={{

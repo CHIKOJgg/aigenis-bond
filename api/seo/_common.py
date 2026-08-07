@@ -144,7 +144,7 @@ def _fmt_num(v: Any, digits: int = 2) -> str:
         return "—"
     try:
         return f"{float(v):.{digits}f}"
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return _esc(v)
 
 

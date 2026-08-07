@@ -282,7 +282,7 @@ class Stock(BaseModel):
             return None
         try:
             return int(float(str(v)))
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return None
 
     @field_validator("status", mode="before")
@@ -334,7 +334,7 @@ class StockHistory(BaseModel):
             return None
         try:
             return int(float(str(v)))
-        except ValueError, TypeError:
+        except (ValueError, TypeError):
             return None
 
     @field_validator("date", mode="before")

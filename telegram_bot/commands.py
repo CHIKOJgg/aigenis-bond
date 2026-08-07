@@ -489,7 +489,7 @@ async def _currency_view(message: Message, currency: str, title: str, page: int 
     for iid, _sc, ytm, _name in rows[:15]:
         try:
             val = float(ytm.rstrip("%"))
-        except ValueError, AttributeError:
+        except (ValueError, AttributeError):
             val = 0.0
         safe_ytm.append((iid, val))
     png = plot_yield_distribution(safe_ytm)
@@ -1191,7 +1191,7 @@ async def cmd_repo(message: Message) -> None:
     try:
         notional = float(args[2]) if len(args) > 2 else 1000.0
         tenor = int(args[3]) if len(args) > 3 else 30
-    except ValueError, IndexError:
+    except (ValueError, IndexError):
         await message.answer(
             "Откройте облигацию в 🔍 Облигации → «🔬 Для профи» → «🏦 РЕПО» — "
             "сделка рассчитается автоматически.",

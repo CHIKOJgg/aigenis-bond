@@ -52,7 +52,7 @@ def _freq_from_coupon_period(value: Any) -> CouponFrequency | None:
     """
     try:
         n = int(value)  # type: ignore[arg-type]
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if n in (1, 2, 4, 12):
         return n  # type: ignore[return-value]
@@ -85,7 +85,7 @@ def _to_dec(value: Any) -> Decimal | None:
         return None
     try:
         return Decimal(str(value))
-    except ValueError, ArithmeticError:
+    except (ValueError, ArithmeticError):
         return None
 
 
@@ -110,7 +110,7 @@ def _coupon_rate_pct(sec: dict) -> Decimal | None:
         return None
     try:
         period_days = int(period)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if period_days <= 0:
         return None
@@ -126,7 +126,7 @@ def _to_date(value: Any) -> date | None:
         return value.date()
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 

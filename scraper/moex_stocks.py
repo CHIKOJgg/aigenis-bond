@@ -52,7 +52,7 @@ def _to_dec(value: Any) -> Decimal | None:
         return None
     try:
         return Decimal(str(value))
-    except ValueError, ArithmeticError:
+    except (ValueError, ArithmeticError):
         return None
 
 
@@ -61,7 +61,7 @@ def _to_int(value: Any) -> int | None:
         return None
     try:
         return int(float(str(value)))
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 
@@ -72,7 +72,7 @@ def _to_date(value: Any) -> date | None:
         return value.date()
     try:
         return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
 
 

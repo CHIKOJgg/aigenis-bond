@@ -62,7 +62,7 @@ async def verify_api_key(session: AsyncSession, raw: str) -> PartnerKeyORM | Non
     try:
         if bcrypt.checkpw(raw.encode("utf-8"), row.key_hash.encode("utf-8")):
             return row
-    except ValueError, TypeError:
+    except (ValueError, TypeError):
         return None
     return None
 

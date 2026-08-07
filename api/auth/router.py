@@ -148,7 +148,7 @@ async def refresh(req: RefreshRequest, session: AsyncSession = Depends(_get_sess
         raise HTTPException(status_code=401, detail="Invalid refresh token")
     try:
         user_id = int(payload["sub"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid refresh token") from None
     user = await get_user_by_id(session, user_id)
     if not user or not user.is_active:
@@ -240,7 +240,7 @@ async def verify_email(token: str, session: AsyncSession = Depends(_get_session)
         raise HTTPException(status_code=400, detail="Invalid verification token")
     try:
         user_id = int(payload["sub"])
-    except KeyError, TypeError, ValueError:
+    except (KeyError, TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid verification token") from None
     user = await get_user_by_id(session, user_id)
     if not user:

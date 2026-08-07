@@ -199,7 +199,7 @@ async def on_position_amount(message: Message) -> None:
         amount = Decimal(raw.replace(",", ".").replace(" ", ""))
         if amount <= 0:
             raise InvalidOperation
-    except InvalidOperation, ValueError:
+    except (InvalidOperation, ValueError):
         await message.answer(
             "❌ Не понял сумму. Введите число, например 1000. Повторите: /positions"
         )

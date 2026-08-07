@@ -71,6 +71,7 @@ COPY scoring ./scoring
 COPY telegram_bot ./telegram_bot
 COPY visualization ./visualization
 COPY api ./api
+COPY demo-data ./demo-data
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY docker-entrypoint.sh /usr/local/bin/

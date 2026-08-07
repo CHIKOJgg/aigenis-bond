@@ -1,16 +1,32 @@
 import { getPortfolioImpact } from '../demo-api';
+import type { DemoBond } from '../types';
 
 interface Props {
   bondId: string;
   allocationPct: number;
+  bond?: DemoBond;
 }
 
-export default function PortfolioImpactCard({ bondId, allocationPct }: Props) {
-  const impact = getPortfolioImpact({
+export default function PortfolioImpactCard({ bondId, allocationPct, bond }: Props) {
+  const fallback = getPortfolioImpact({
     portfolio_template: 'moderate_byn',
     bond_id: bondId,
     allocation_pct: allocationPct,
   });
+  const allocation = allocationPct / 100;
+  const liveYield = bond?.yield_to_maturity ?? 0;
+  const liveDuration = bond?.term_days ? bond.term_days / 365.25 : 3;
+  const impact = bond ? {
+    ...fallback,
+    after: {
+      expected_yield_pct: +(fallback.before.expected_yield_pct * (1 - allocation) + liveYield * allocation).toFixed(1),
+      duration_years: +(fallback.before.duration_years * (1 - allocation) + liveDuration * allocation).toFixed(1),
+    },
+    deltas: {
+      expected_yield_pp: +((liveYield - fallback.before.expected_yield_pct) * allocation).toFixed(1),
+      duration_years: +((liveDuration - fallback.before.duration_years) * allocation).toFixed(1),
+    },
+  } : fallback;
 
   return (
     <div style={{
