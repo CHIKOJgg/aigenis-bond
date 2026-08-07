@@ -106,7 +106,7 @@ app.include_router(widget_router)
 logger.info("widget_enabled")
 
 # Public, server-rendered SEO pages (bond leaderboard + per-bond pages,
-# sitemap, robots). Free organic acquisition surface — see docs/sales/cmo_audit.md.
+# sitemap, robots). Free organic acquisition surface — see docs/aigenis/.
 app.include_router(seo_router)
 logger.info("seo_pages_enabled")
 

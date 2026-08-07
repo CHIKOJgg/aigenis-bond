@@ -594,7 +594,7 @@ demo-data/
 
 ### 12.4. BCSE / Aigenis data caveat
 
-В проекте есть сборщик источников Aigenis. До сделки не следует строить коммерческое публичное демо на данных, полученных из интерфейса Aigenis через собственную учётную запись. Это описано в [docs/sales/data_licensing_position.md](docs/sales/data_licensing_position.md).
+В проекте есть сборщик источников Aigenis. До сделки не следует строить коммерческое публичное демо на данных, полученных из интерфейса Aigenis через собственную учётную запись. Это описано в [docs/aigenis/technical-due-diligence.md](docs/aigenis/technical-due-diligence.md).
 
 Правильный путь:
 

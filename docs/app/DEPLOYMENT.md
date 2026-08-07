@@ -32,6 +32,43 @@ curl http://localhost:8000/health
 
 The API is available at `http://localhost:8000`. The frontend is served by nginx on port 80 (HTTP) and 443 (HTTPS with self-signed cert).
 
+## Demo Instance (public, $0, read-only)
+
+Quick start of a public demo with real MOEX data — no paid source, no bot, no payments needed:
+
+```bash
+# 1. Clone and configure env for demo mode
+git clone https://github.com/CHIKOJgg/bonds-engine.git
+cd bonds-engine
+cp .env.example .env
+```
+
+In `.env` make sure:
+```ini
+DATA_SOURCE=moex
+DEMO_MODE=1
+AIGENIS_ENVIRONMENT=demo        # REQUIRED: production + DEMO_MODE=1 refuses to start (fail-closed paywall guard)
+SEO_PUBLIC_BASE_URL=https://demo.yourdomain.com
+```
+
+```bash
+# 2. Run demo stack (no paid source needed)
+docker compose up -d postgres redis parser api frontend
+
+# 3. Health check
+curl -f http://localhost:8000/health
+```
+
+Public access via Cloudflare Tunnel (see below): quick tunnel
+(`docker compose --profile quick-tunnel up -d cloudflared-quick`, URL in logs)
+or a named tunnel with your domain.
+
+**What works in demo mode (no auth, read-only, watermark):** `/bonds` leaderboard,
+`/bonds/{id}` detail, `/partners` self-serve API key form, `/widget/top` embed,
+`/calculator` YTM calculator, `/guides/*`. All data is real (MOEX ISS).
+Trial partner keys are self-served; premium analysis (RV/ML) requires a paid key.
+Bot commands and YooKassa are not needed (paywall returns 402 upgrade hint).
+
 ## Production Deployment
 
 ### Using Docker Compose

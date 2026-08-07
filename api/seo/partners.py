@@ -28,7 +28,7 @@ logger = get_logger("api.seo")
 
 @router.get("/partners", response_class=HTMLResponse)
 async def seo_partners(request: Request):
-    """Public B2B / white-label acquisition page (see docs/sales/cmo_audit.md §8).
+    """Public B2B / white-label acquisition page (see docs/aigenis/negotiation-guide.md).
 
     The product already ships the B2B plumbing (Partner API keys, webhooks,
     read-only analytics, affiliate referrals, embeddable widget, demo mode) but
@@ -106,8 +106,8 @@ async def seo_partners(request: Request):
     · <a href="/bonds">Посмотреть публичные данные →</a></span>
   </form>
 </div>
-<p class="note">Готовые материалы для buyer/партнёра — <code>docs/sales/one_pager.md</code>
-и <code>docs/sales/teaser.md</code>.</p>"""
+<p class="note">Готовые материалы для buyer/партнёра — <code>docs/aigenis/one-pager.md</code>
+и <code>docs/aigenis/negotiation-guide.md</code>.</p>"""
 
     json_ld = [
         json.dumps(

@@ -163,8 +163,8 @@ read-only полный доступ (тир `demo`), фронтенд показ
 2. Запустите публичный Cloudflare Tunnel (вариант A выше) на отдельный
    поддомен, например `demo.aigenis.by`.
 3. Фронтенд показывает баннер DEMO при `?demo=1` или если хост начинается с
-   `demo`. Готовые материалы для рассылки buyer/партнёрам — в `docs/sales/`
-   (`one_pager.md`, `teaser.md`).
+   `demo`. Готовые материалы для рассылки buyer/партнёрам — в `docs/aigenis/`
+   (`one-pager.md`, `negotiation-guide.md`).
 
 > DEMO-режим не требует платного логина на сайт-источник: если
 > `AIGENIS_WEB_USERNAME/PASSWORD` не заданы, парсер переходит в stale-режим
@@ -239,7 +239,7 @@ HSTS в `frontend/nginx.conf` выключен по умолчанию — ра�
 
 Продукт отдаёт бесплатные server-rendered страницы (`/bonds`, `/bonds/{id}`,
 `/partners`, `/sitemap.xml`, `/robots.txt`) — органический канал без бюджета
-(см. `docs/sales/cmo_audit.md`, §2/§6).
+(см. `docs/aigenis/negotiation-guide.md`).
 
 Чтобы поисковики их нашли:
 

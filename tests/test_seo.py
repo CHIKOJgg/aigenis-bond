@@ -1,7 +1,7 @@
 """Tests for the public, server-rendered SEO pages (api.seo).
 
 Covers the bond leaderboard, per-bond page, sitemap and robots.txt. These are
-the free organic acquisition surface described in docs/sales/cmo_audit.md (§2/§6).
+the free organic acquisition surface described in docs/aigenis/.
 """
 
 from __future__ import annotations
