@@ -24,6 +24,7 @@ from typing import Any
 
 import httpx
 
+from desk.ytm import sane_yield, ytm_from_price
 from scraper.config import get_settings
 from scraper.logging import get_logger
 from scraper.models import Bond, BondHistory, CouponFrequency
@@ -154,6 +155,43 @@ def _parse_iss_rows(payload: dict[str, Any], block: str) -> list[dict[str, Any]]
     return [dict(zip(columns, row, strict=False)) for row in rows]
 
 
+def _quote_and_yield(
+    sec: dict[str, Any], md: dict[str, Any]
+) -> tuple[Decimal | None, Decimal | None]:
+    """Return a (price, YTM) pair that survives the sanity check.
+
+    MOEX ISS reports YIELD for untraded paper as garbage (negative or absurd
+    values like 1374%), so the yield is only trusted when a price exists and
+    it is within ``MOEX_YTM_SANITY_TOL_PP`` percentage points of the yield the
+    coupon schedule implies; otherwise we fall back to our own Newton-Raphson
+    estimate, or None so downstream can honestly show "no data".
+    """
+    price = (
+        _to_dec(md.get("LAST"))
+        or _to_dec(md.get("LCLOSEPRICE"))
+        or _to_dec(md.get("MARKETPRICE"))
+    )
+    if price is None or price <= 0:
+        return None, None
+    coupon = _coupon_rate_pct(sec)
+    freq = _freq_from_coupon_period(sec.get("COUPONPERIOD"))
+    maturity = _to_date(sec.get("MATDATE"))
+    computed: float | None = None
+    if coupon is not None and coupon > 0 and freq and maturity:
+        computed = ytm_from_price(
+            price_pct=float(price),
+            coupon_rate_pct=float(coupon),
+            coupon_frequency=int(freq),
+            maturity=maturity,
+        )
+    ytm = _to_dec(md.get("YIELD"))
+    if ytm is not None and sane_yield(float(ytm), computed):
+        return price, ytm
+    if computed is not None and computed > 0:
+        return price, Decimal(str(round(computed, 4)))
+    return price, None
+
+
 class MoexClient:
     """Public MOEX ISS client. Implements the pipeline-facing surface.
 
@@ -225,6 +263,7 @@ class MoexClient:
             cur = _norm_currency(sec.get("FACEUNIT") or "RUB")
             internal_id = f"MOEX_{secid}"
             self._id_by_internal[internal_id] = secid
+            price, ytm = _quote_and_yield(sec, md)
             try:
                 bond = Bond(
                     internal_id=internal_id,
@@ -235,8 +274,8 @@ class MoexClient:
                     coupon_rate=_coupon_rate_pct(sec),
                     coupon_frequency=_freq_from_coupon_period(sec.get("COUPONPERIOD")),
                     maturity_date=_to_date(sec.get("MATDATE")),
-                    price=_to_dec(md.get("LAST")),
-                    yield_to_maturity=_to_dec(md.get("YIELD")),
+                    price=price,
+                    yield_to_maturity=ytm,
                     isin=sec.get("ISIN"),
                     market="moex",
                     status=_moex_status(sec, md),
@@ -285,6 +324,7 @@ class MoexClient:
             sec = securities[0]
             md_row = marketdata.get(secid, {})
             cur = _norm_currency(sec.get("FACEUNIT") or "RUB")
+            price, ytm = _quote_and_yield(sec, md_row)
             return Bond(
                 internal_id=internal_id,
                 name=str(sec.get("SECNAME") or secid),
@@ -294,8 +334,8 @@ class MoexClient:
                 coupon_rate=_coupon_rate_pct(sec),
                 coupon_frequency=_freq_from_coupon_period(sec.get("COUPONPERIOD")),
                 maturity_date=_to_date(sec.get("MATDATE")),
-                price=_to_dec(md_row.get("LAST")),
-                yield_to_maturity=_to_dec(md_row.get("YIELD")),
+                price=price,
+                yield_to_maturity=ytm,
                 isin=sec.get("ISIN"),
                 market="moex",
                 status=_moex_status(sec, md_row),

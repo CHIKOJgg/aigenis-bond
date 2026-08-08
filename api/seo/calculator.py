@@ -6,13 +6,14 @@ Server-rendered, no DB dependency.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
 from api.seo import router
 from api.seo._common import _abs, _esc, _fmt_num, _is_bot, _skeleton, _spa_page
+from desk.ytm import ytm_from_price
 
 # ---------------------------------------------------------------------------
 # Public bond calculator (YTM / duration / price) — high-intent long-tail SEO.
@@ -23,36 +24,14 @@ from api.seo._common import _abs, _esc, _fmt_num, _is_bot, _skeleton, _spa_page
 
 def _calc_ytm(price: float, face: float, coupon: float, freq: int, years: float) -> float | None:
     """Approximate YTM via Newton-Raphson. Returns None if fails."""
-    if price <= 0 or face <= 0 or years <= 0 or freq <= 0:
+    if face <= 0 or years <= 0 or freq <= 0:
         return None
-    # Coupon payment per period
-    c = face * coupon / 100.0 / freq
-    n = int(years * freq)
-    if n <= 0:
-        return None
-    # Initial guess: current yield
-    y = (coupon / 100.0) * (face / price)
-    for _ in range(50):
-        # Price as function of y
-        pv_coupons = 0.0
-        for i in range(1, n + 1):
-            pv_coupons += c / (1 + y / freq) ** i
-        pv_face = face / (1 + y / freq) ** n
-        px = pv_coupons + pv_face
-        # Derivative dP/dy
-        dpx = 0.0
-        for i in range(1, n + 1):
-            dpx -= i * c / (freq * (1 + y / freq) ** (i + 1))
-        dpx -= n * face / (freq * (1 + y / freq) ** (n + 1))
-        if dpx == 0:
-            break
-        diff = px - price
-        if abs(diff) < 1e-6:
-            return y * 100.0
-        y -= diff / dpx
-        if y <= -0.99:
-            return None
-    return y * 100.0 if y > -0.99 else None
+    return ytm_from_price(
+        price_pct=price / face * 100.0,
+        coupon_rate_pct=coupon,
+        coupon_frequency=freq,
+        maturity=date.today() + timedelta(days=round(years * 365.25)),
+    )
 
 
 def _calc_price(face: float, coupon: float, freq: int, years: float, ytm: float) -> float | None:

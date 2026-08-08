@@ -1,12 +1,69 @@
-import { Bell, Settings } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, Search, Settings, X } from 'lucide-react';
 import { DEMO_PERSONA } from '../demo-config';
+import { fetchLiveSearch } from '../live-demo-api';
+import { searchAllBonds, scoreFromLiveBond } from '../demo-api';
+import { bondDrawerStore } from '../drawer-store';
+import { formatYtm } from '../demo-format';
+import { scoreStatusColor } from './BondDetailDrawer';
+import { SCORE_STATUS_LABEL } from '../demo-config';
+import type { DemoBond } from '../types';
 
 interface Props {
   market?: string;
   onMarketChange?: (market: string) => void;
 }
 
+const SUGGESTION_DEBOUNCE = 220;
+const SUGGESTION_LIMIT = 8;
+
 export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
+  const navigate = useNavigate();
+  const [q, setQ] = useState('');
+  const [suggestions, setSuggestions] = useState<DemoBond[]>([]);
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const t = window.setTimeout(async () => {
+      try {
+        const data = await fetchLiveSearch(term);
+        setSuggestions(data.bonds.slice(0, SUGGESTION_LIMIT));
+      } catch {
+        setSuggestions(searchAllBonds(term).slice(0, SUGGESTION_LIMIT));
+      }
+    }, SUGGESTION_DEBOUNCE);
+    return () => window.clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const submit = () => {
+    const term = q.trim();
+    if (!term) return;
+    setOpen(false);
+    navigate(`/demo/search?q=${encodeURIComponent(term)}&market=ALL`);
+  };
+
+  const pick = (bond: DemoBond) => {
+    setOpen(false);
+    setQ('');
+    inputRef.current?.blur();
+    bondDrawerStore.open(bond.internal_id);
+  };
 
   return (
     <header
@@ -18,6 +75,7 @@ export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
         borderBottom: '1px solid var(--demo-border, #d6e2e6)',
         backgroundColor: 'var(--demo-card, #ffffff)',
         minHeight: 56,
+        gap: 16,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -44,8 +102,153 @@ export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
         </div>
       </div>
 
+      <div ref={wrapRef} style={{ flex: 1, maxWidth: 480, position: 'relative' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          background: '#f5f9fb',
+          border: '1px solid #d6e2e6',
+          borderRadius: 8,
+        }}>
+          <Search size={16} style={{ color: '#516c79', flexShrink: 0 }} />
+          <input
+            ref={inputRef}
+            type="search"
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setOpen(false);
+                inputRef.current?.blur();
+              } else if (e.key === 'Enter') {
+                submit();
+              }
+            }}
+            placeholder="Поиск по облигациям…"
+            aria-label="Поиск облигаций"
+            style={{
+              flex: 1,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontSize: 14,
+              color: '#01121a',
+            }}
+          />
+          {q && (
+            <button
+              onClick={() => { setQ(''); setSuggestions([]); inputRef.current?.focus(); }}
+              aria-label="Очистить"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: 2, color: '#516c79', display: 'flex',
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+        {open && suggestions.length > 0 && (
+          <div
+            role="listbox"
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              right: 0,
+              maxHeight: 380,
+              overflowY: 'auto',
+              background: '#ffffff',
+              border: '1px solid #d6e2e6',
+              borderRadius: 10,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+              zIndex: 50,
+            }}
+          >
+            {suggestions.map((bond) => {
+              const score = scoreFromLiveBond(bond);
+              const status = score?.status ?? 'no_data';
+              return (
+                <button
+                  key={bond.internal_id}
+                  role="option"
+                  onClick={() => pick(bond)}
+                  style={{
+                    display: 'flex',
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '10px 12px',
+                    borderBottom: '1px solid #f0f4f6',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f5f9fb'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <span style={{
+                    display: 'inline-block',
+                    padding: '2px 6px',
+                    background: bond.market.toUpperCase() === 'BCSE' ? '#eef3f5' : '#fff3e0',
+                    color: bond.market.toUpperCase() === 'BCSE' ? '#0B526B' : '#a85a00',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    flexShrink: 0,
+                  }}>
+                    {bond.market.toUpperCase()}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#01121a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {bond.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#717680', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {bond.issuer} · {bond.isin ?? bond.internal_id}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#0B526B' }}>
+                      {formatYtm(bond.yield_to_maturity)}
+                    </div>
+                    <div style={{ fontSize: 11, color: scoreStatusColor(status) }}>
+                      {SCORE_STATUS_LABEL[status]}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+            <button
+              onClick={submit}
+              style={{
+                width: '100%',
+                textAlign: 'center',
+                background: '#f5f9fb',
+                border: 'none',
+                borderTop: '1px solid #d6e2e6',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                color: '#0B526B',
+                fontSize: 13,
+                fontWeight: 500,
+              }}
+            >
+              Показать все результаты →
+            </button>
+          </div>
+        )}
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <button
+          aria-label="Уведомления"
           style={{
             background: 'none',
             border: 'none',
@@ -70,6 +273,7 @@ export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
           {DEMO_PERSONA.name} · {DEMO_PERSONA.portfolio_byn.toLocaleString('ru-RU')} BYN
         </div>
         <button
+          aria-label="Настройки"
           style={{
             background: 'none',
             border: 'none',

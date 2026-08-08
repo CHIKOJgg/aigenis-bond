@@ -288,31 +288,31 @@ def portfolio_duration(
         w = 1.0 / len(bonds)
         weights = {b.internal_id: w for b in bonds}
 
-    total_w = sum(weights.get(b.internal_id, 0.0) for b in bonds) or 1.0
+    total_w = sum(float(weights.get(b.internal_id, 0.0)) for b in bonds) or 1.0
     reports = {b.internal_id: duration_report(b, asof=asof) for b in bonds}
     mod = (
         sum(
-            weights.get(b.internal_id, 0.0) * reports[b.internal_id].modified_duration
+            float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].modified_duration
             for b in bonds
         )
         / total_w
     )
     mac = (
         sum(
-            weights.get(b.internal_id, 0.0) * reports[b.internal_id].macaulay_duration
+            float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].macaulay_duration
             for b in bonds
         )
         / total_w
     )
     cvx = (
-        sum(weights.get(b.internal_id, 0.0) * reports[b.internal_id].convexity for b in bonds)
+        sum(float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].convexity for b in bonds)
         / total_w
     )
-    dv = sum(weights.get(b.internal_id, 0.0) * reports[b.internal_id].dv01 for b in bonds) / total_w
+    dv = sum(float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].dv01 for b in bonds) / total_w
     krds: dict[str, float] = {}
     for b in bonds:
         rep = reports[b.internal_id]
-        w = weights.get(b.internal_id, 0.0) / total_w
+        w = float(weights.get(b.internal_id, 0.0)) / total_w
         for tenor, krd in rep.key_rate_durations.items():
             krds[tenor] = krds.get(tenor, 0.0) + w * krd
 

@@ -1,4 +1,4 @@
-import type { DemoBond } from './types';
+import type { DemoBond, LiveBondDetail, LiveSearchResult } from './types';
 
 export interface LiveMarketSnapshot {
   source: string;
@@ -21,4 +21,29 @@ export async function fetchLiveMarket(
   });
   if (!response.ok) throw new Error(`live market request failed: ${response.status}`);
   return response.json() as Promise<LiveMarketSnapshot>;
+}
+
+export async function fetchLiveSearch(
+  q: string,
+  market?: string,
+): Promise<LiveSearchResult> {
+  const params = new URLSearchParams({ q, limit: '30' });
+  if (market && market !== 'ALL') params.set('market', market.toLowerCase());
+  const response = await fetch(`/api/v1/demo/search?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`live search request failed: ${response.status}`);
+  return response.json() as Promise<LiveSearchResult>;
+}
+
+export async function fetchLiveBond(
+  internalId: string,
+  signal?: AbortSignal,
+): Promise<LiveBondDetail> {
+  const response = await fetch(`/api/v1/demo/bond/${encodeURIComponent(internalId)}`, {
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  if (!response.ok) throw new Error(`live bond request failed: ${response.status}`);
+  return response.json() as Promise<LiveBondDetail>;
 }

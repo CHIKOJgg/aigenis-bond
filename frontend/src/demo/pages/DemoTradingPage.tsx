@@ -2,6 +2,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import MarketTable from '../components/MarketTable';
 import { fetchLiveMarket } from '../live-demo-api';
+import { bondDrawerStore } from '../drawer-store';
 import type { DemoBond } from '../types';
 
 export default function DemoTradingPage() {
@@ -18,6 +19,10 @@ export default function DemoTradingPage() {
 
   const handleMarketChange = (m: string) => {
     setSearchParams({ market: m });
+  };
+
+  const handleSelect = (internalId: string) => {
+    bondDrawerStore.open(internalId);
   };
 
   return (
@@ -70,14 +75,30 @@ export default function DemoTradingPage() {
           >
             Аналитика · Новое
           </span>
-          <span style={{ fontSize: 13, color: '#516c79', padding: '4px 12px', background: '#f5f5f5', borderRadius: 6 }}>
-            Результаты завершённых торгов
+          <span
+            onClick={() => navigate(`/demo/search?market=${market}`)}
+            style={{
+              fontSize: 13,
+              color: '#0B526B',
+              padding: '4px 12px',
+              background: '#eef3f5',
+              borderRadius: 6,
+              fontWeight: 600,
+              cursor: 'pointer',
+              textDecoration: 'underline',
+            }}
+          >
+            Поиск
           </span>
         </div>
       </div>
 
       {error && <div style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
-      <MarketTable market={market} bonds={market === 'BCSE' ? bonds : undefined} />
+      <MarketTable
+        market={market}
+        bonds={market === 'BCSE' ? bonds : undefined}
+        onSelect={handleSelect}
+      />
     </div>
   );
 }

@@ -21,6 +21,48 @@ export interface DemoBond {
   coupon_description: string | null;
   fetched_at: string | null;
   term_days: number | null;
+  duration_years?: number | null;
+  computed_ytm?: boolean;
+  score?: number | null;
+  tier?: string | null;
+  score_status?: ScoreStatus | null;
+  breakdown?: ScoreBreakdown | null;
+  explanation?: LiveExplanation | null;
+}
+
+export interface BondHistoryPoint {
+  date: string;
+  price: number | null;
+  yield: number | null;
+}
+
+export interface LiveBondDetail extends DemoBond {
+  history: BondHistoryPoint[];
+  coupon_schedule: Record<string, unknown> | null;
+}
+
+export interface LiveExplanationFactor {
+  component: string;
+  label: string;
+  points: number;
+  impact: 'positive' | 'negative' | 'neutral';
+  detail: string;
+}
+
+export interface LiveExplanation {
+  verdict: string;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  factors: LiveExplanationFactor[];
+}
+
+export interface LiveSearchResult {
+  query: string;
+  market: string | null;
+  count: number;
+  bonds: DemoBond[];
+  disclaimer: string;
 }
 
 export interface DemoScore {
@@ -66,7 +108,27 @@ export interface ExplanationFactor {
 export interface BondExplanation {
   internal_id: string;
   status: ScoreStatus;
+  verdict?: string;
+  summary?: string;
   factors: ExplanationFactor[];
+  strengths?: string[];
+  weaknesses?: string[];
+}
+
+export interface LiveExplanationFactor {
+  component: string;
+  label: string;
+  points: number;
+  impact: 'positive' | 'negative' | 'neutral';
+  detail: string;
+}
+
+export interface LiveExplanation {
+  verdict: string;
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  factors: LiveExplanationFactor[];
 }
 
 export interface DemoPortfolioTemplate {

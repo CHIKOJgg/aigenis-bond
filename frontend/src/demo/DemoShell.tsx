@@ -4,6 +4,7 @@ import DemoTopBar from './components/DemoTopBar';
 import DemoWatermark from './components/DemoWatermark';
 import DemoDisclaimer from './components/DemoDisclaimer';
 import DemoStatusBanner from './components/DemoStatusBanner';
+import GlobalBondDrawer from './components/GlobalBondDrawer';
 
 export default function DemoShell() {
   return (
@@ -26,6 +27,7 @@ export default function DemoShell() {
         <DemoDisclaimer />
       </div>
       <DemoWatermark />
+      <GlobalBondDrawer />
     </div>
   );
 }

@@ -21,6 +21,7 @@ from datetime import date
 from desk.cashflow import accrued_interest, pricing_cashflows
 from desk.models import NelsonSiegelParams, SpreadReport
 from desk.yield_curve import _ns_rate
+from desk.ytm import to_price_pct
 
 _PV_LO_RATE = 0.001
 _PV_HI_RATE = 0.60
@@ -84,7 +85,9 @@ def compute_spreads(
 
         curve_rate = _ns_rate(tenor, params.beta0, params.beta1, params.beta2, params.tau)
         ytm_pct = float(b.yield_to_maturity)
-        clean_price = float(b.price)
+        clean_price = to_price_pct(b.price, getattr(b, "nominal", None))
+        if clean_price is None:
+            continue
 
         accrued = accrued_interest(
             coupon_rate_pct=float(b.coupon_rate) if b.coupon_rate is not None else 0.0,

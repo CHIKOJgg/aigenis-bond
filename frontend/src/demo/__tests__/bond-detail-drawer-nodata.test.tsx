@@ -14,8 +14,6 @@ describe('BondDetailDrawer без Score', () => {
         bondId="demo-bond-001"
         onClose={() => {}}
         onPortfolioImpact={() => {}}
-        onAlert={() => {}}
-        onOrder={() => {}}
       />,
     );
     expect(screen.getByText('Недостаточно данных для расчёта Score')).toBeInTheDocument();

@@ -66,6 +66,40 @@ async def _seed_pro_user_and_bond():
         )
 
 
+async def _seed_pro_user_and_rv_group():
+    async with session_scope() as s:
+        s.add(
+            UserORM(
+                id=1,
+                email="pro@example.com",
+                name="Pro",
+                password_hash="x",
+                role="user",
+                is_active=True,
+                is_verified=False,
+                subscription_tier="pro",
+                subscription_expires_at=datetime.now(UTC) + timedelta(days=30),
+            )
+        )
+        # Three same-currency bonds => RV peer group exists, signal must be built.
+        for i, (bid, ytm) in enumerate(
+            [("OP-1", 12.0), ("OP-2", 9.0), ("OP-3", 7.0)], start=1
+        ):
+            s.add(
+                BondORM(
+                    internal_id=bid,
+                    name=f"USD Bond {i}",
+                    currency="USD",
+                    yield_to_maturity=ytm,
+                    price=100.0,
+                    status="active",
+                    issuer="Министерство финансов",
+                    maturity_date=date(2031, 1, 1),
+                    fetched_at=datetime.now(UTC),
+                )
+            )
+
+
 def test_explain_score_is_human_readable():
     score = score_bond(
         internal_id="OP-1",
@@ -144,5 +178,20 @@ def test_bond_analysis_endpoint_gated_and_full():
             assert body["disclaimer"]
             assert "рекомендацией" in body["disclaimer"]
             assert body["analysis"]["disclaimer"]
+
+    _run(run)
+
+
+def test_bond_analysis_rv_signal_carries_internal_id():
+    async def run():
+        await _seed_pro_user_and_rv_group()
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            for bid in ("OP-1", "OP-2", "OP-3"):
+                resp = await client.get(f"/api/v1/bond/{bid}/analysis", headers=_auth(1))
+                assert resp.status_code == 200, (bid, resp.status_code, resp.text)
+                rv = resp.json()["relative_value"]
+                assert rv is not None
+                assert rv["internal_id"] == bid
 
     _run(run)

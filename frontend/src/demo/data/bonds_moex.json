@@ -10,7 +10,7 @@
     "coupon_rate": 7.5,
     "coupon_frequency": 2,
     "maturity_date": "2030-05-15",
-    "price": 920.0,
+    "price": 92.0,
     "yield_to_maturity": 10.5,
     "amortization": "none",
     "offer_date": null,
@@ -25,7 +25,14 @@
     "guarantor": null,
     "maturity_term_text": "10 лет",
     "coupon_description": "Постоянный купонный доход 7.5% годовых",
-    "coupon_schedule": {"2026-11-15": ["37.50 RUB"], "2027-05-15": ["37.50 RUB"]},
+    "coupon_schedule": {
+      "2026-11-15": [
+        "37.50 RUB"
+      ],
+      "2027-05-15": [
+        "37.50 RUB"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 1379,
@@ -45,7 +52,7 @@
     "coupon_rate": 9.5,
     "coupon_frequency": 2,
     "maturity_date": "2028-02-10",
-    "price": 975.0,
+    "price": 97.5,
     "yield_to_maturity": 11.8,
     "amortization": "none",
     "offer_date": null,
@@ -60,7 +67,20 @@
     "guarantor": null,
     "maturity_term_text": "5 лет",
     "coupon_description": "Фиксированный купон 9.5% годовых",
-    "coupon_schedule": {"2026-08-10": ["47.50 RUB"], "2027-02-10": ["47.50 RUB"], "2027-08-10": ["47.50 RUB"], "2028-02-10": ["1047.50 RUB"]},
+    "coupon_schedule": {
+      "2026-08-10": [
+        "47.50 RUB"
+      ],
+      "2027-02-10": [
+        "47.50 RUB"
+      ],
+      "2027-08-10": [
+        "47.50 RUB"
+      ],
+      "2028-02-10": [
+        "1047.50 RUB"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 553,
@@ -80,7 +100,7 @@
     "coupon_rate": 10.0,
     "coupon_frequency": 4,
     "maturity_date": "2027-09-20",
-    "price": 995.0,
+    "price": 99.5,
     "yield_to_maturity": 11.2,
     "amortization": "none",
     "offer_date": null,
@@ -95,7 +115,20 @@
     "guarantor": null,
     "maturity_term_text": "2 года",
     "coupon_description": "Фиксированный купон 10.0% годовых, ежеквартально",
-    "coupon_schedule": {"2026-12-20": ["25.00 RUB"], "2027-03-20": ["25.00 RUB"], "2027-06-20": ["25.00 RUB"], "2027-09-20": ["1025.00 RUB"]},
+    "coupon_schedule": {
+      "2026-12-20": [
+        "25.00 RUB"
+      ],
+      "2027-03-20": [
+        "25.00 RUB"
+      ],
+      "2027-06-20": [
+        "25.00 RUB"
+      ],
+      "2027-09-20": [
+        "1025.00 RUB"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 410,
@@ -115,7 +148,7 @@
     "coupon_rate": 8.0,
     "coupon_frequency": 2,
     "maturity_date": "2032-04-15",
-    "price": 860.0,
+    "price": 86.0,
     "yield_to_maturity": 10.8,
     "amortization": "none",
     "offer_date": null,
@@ -130,7 +163,14 @@
     "guarantor": null,
     "maturity_term_text": "10 лет",
     "coupon_description": "Фиксированный купон 8.0% годовых",
-    "coupon_schedule": {"2026-10-15": ["40.00 RUB"], "2027-04-15": ["40.00 RUB"]},
+    "coupon_schedule": {
+      "2026-10-15": [
+        "40.00 RUB"
+      ],
+      "2027-04-15": [
+        "40.00 RUB"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 2072,

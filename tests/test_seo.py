@@ -7,6 +7,7 @@ the free organic acquisition surface described in docs/aigenis/.
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, date, datetime
 
 import httpx
@@ -312,7 +313,9 @@ def test_seo_calculator():
                 },
             )
             assert resp.status_code == 200
-            assert "7.51" in resp.text or "7.50" in resp.text  # YTM ~7.51%
+            _m = re.search(r"7\.\d{2}", resp.text)
+            assert _m is not None, "YTM value missing"
+            assert 7.4 <= float(_m.group(0)) <= 7.6  # YTM ~7.5% (desk.ytm Newton)
             assert "дюрация" in resp.text.lower()
 
             # Price from YTM mode

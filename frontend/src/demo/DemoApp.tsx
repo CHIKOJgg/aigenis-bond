@@ -6,6 +6,7 @@ import { PageFallback } from '../app/PageFallback';
 const DemoTradingPage = lazy(() => import('./pages/DemoTradingPage'));
 const DemoAnalyticsPage = lazy(() => import('./pages/DemoAnalyticsPage'));
 const DemoPortfolioImpactPage = lazy(() => import('./pages/DemoPortfolioImpactPage'));
+const DemoSearchPage = lazy(() => import('./pages/DemoSearchPage'));
 
 function Page({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageFallback />}>{children}</Suspense>;
@@ -19,6 +20,7 @@ export default function DemoApp() {
         <Route path="trading" element={<Page><DemoTradingPage /></Page>} />
         <Route path="analytics" element={<Page><DemoAnalyticsPage /></Page>} />
         <Route path="analytics/bonds/:internalId" element={<Page><DemoAnalyticsPage /></Page>} />
+        <Route path="search" element={<Page><DemoSearchPage /></Page>} />
         <Route path="portfolio-impact/:internalId" element={<Page><DemoPortfolioImpactPage /></Page>} />
       </Route>
     </Routes>

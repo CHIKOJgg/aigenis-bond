@@ -8,8 +8,6 @@ function renderDrawer(onClose = vi.fn()) {
       bondId="demo-bond-001"
       onClose={onClose}
       onPortfolioImpact={() => {}}
-      onAlert={() => {}}
-      onOrder={() => {}}
     />,
   );
 }
@@ -64,18 +62,41 @@ describe('BondDetailDrawer', () => {
     expect(buttons[buttons.length - 1]).toHaveFocus();
   });
 
-  it('показывает недоступность действия — кнопка алерта без сайд-эффекта', () => {
-    const onAlert = vi.fn();
+  it('показывает Score, вердикт и плюсы/минусы из фикстурного объяснения', () => {
+    renderDrawer();
+    expect(screen.getByText('84')).toBeInTheDocument();
+    expect(screen.getByText('Аттрактивна — изучить в первую очередь')).toBeInTheDocument();
+    expect(screen.getByText('Плюсы и минусы')).toBeInTheDocument();
+    expect(screen.getByText(/Доходность к погашению 14.2%/)).toBeInTheDocument();
+    expect(screen.getByText(/Доходность может быть снижена/)).toBeInTheDocument();
+  });
+
+  it('показывает состав оценки с компонентами breakdown', () => {
+    renderDrawer();
+    expect(screen.getByText('Состав оценки')).toBeInTheDocument();
+    expect(screen.getAllByText('Доходность').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Кредитный риск').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Ликвидность').length).toBeGreaterThan(0);
+    expect(screen.getByText('Эффективность доходность/риск')).toBeInTheDocument();
+  });
+
+  it('показывает ключевые показатели', () => {
+    renderDrawer();
+    expect(screen.getByText('Ключевые показатели')).toBeInTheDocument();
+    expect(screen.getByText('14.2%')).toBeInTheDocument();
+    expect(screen.getByText('12.5%')).toBeInTheDocument();
+  });
+
+  it('кнопка "Влияние на портфель" вызывается при клике', () => {
+    const onPI = vi.fn();
     render(
       <BondDetailDrawer
         bondId="demo-bond-001"
         onClose={() => {}}
-        onPortfolioImpact={() => {}}
-        onAlert={onAlert}
-        onOrder={() => {}}
+        onPortfolioImpact={onPI}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Создать алерт/ }));
-    expect(onAlert).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /Влияние на портфель/ }));
+    expect(onPI).toHaveBeenCalledTimes(1);
   });
 });

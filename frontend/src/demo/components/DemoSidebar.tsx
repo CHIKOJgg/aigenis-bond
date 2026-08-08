@@ -1,10 +1,11 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { BarChart3, TrendingUp } from 'lucide-react';
+import { BarChart3, TrendingUp, Search } from 'lucide-react';
 import { DEMO_PERSONA } from '../demo-config';
 
 const NAV_ITEMS = [
   { path: '/demo/trading', label: 'Торги', icon: <TrendingUp size={18} /> },
   { path: '/demo/analytics', label: 'Аналитика', icon: <BarChart3 size={18} /> },
+  { path: '/demo/search', label: 'Поиск', icon: <Search size={18} /> },
 ];
 
 export default function DemoSidebar() {

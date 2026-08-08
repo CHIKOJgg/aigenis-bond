@@ -151,6 +151,7 @@ class BondService:
         for s in desk_rv.relative_value_signals(all_bonds):
             if s.internal_id == internal_id:
                 rv_signal = dto.RvSignal(
+                    internal_id=s.internal_id,
                     side=s.side,
                     z_score=round(float(s.z_score), 3) if s.z_score is not None else None,
                     spread_pct=round(float(s.spread_pct), 3) if s.spread_pct is not None else None,

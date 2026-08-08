@@ -65,7 +65,7 @@ describe('ScoreExplanation', () => {
 
   it('отображает заголовок', () => {
     render(<ScoreExplanation factors={factors} />);
-    expect(screen.getByText('Почему бумага в фокусе')).toBeInTheDocument();
+    expect(screen.getByText('Почему такой рейтинг')).toBeInTheDocument();
   });
 
   it('отображает метку для высокозначимых факторов', () => {

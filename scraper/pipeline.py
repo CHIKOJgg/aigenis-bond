@@ -382,11 +382,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                     existing.coupon_frequency = b.coupon_frequency or existing.coupon_frequency
                     existing.maturity_date = b.maturity_date or existing.maturity_date
                     existing.price = b.price if b.price is not None else existing.price
-                    existing.yield_to_maturity = (
-                        b.yield_to_maturity
-                        if b.yield_to_maturity is not None
-                        else existing.yield_to_maturity
-                    )
+                    existing.yield_to_maturity = b.yield_to_maturity
                     existing.isin = b.isin or existing.isin
                     existing.status = b.status or existing.status
                     existing.is_government = (

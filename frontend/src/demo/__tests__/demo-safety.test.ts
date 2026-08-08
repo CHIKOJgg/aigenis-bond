@@ -41,9 +41,15 @@ describe('demo side-effect guard', () => {
     .filter((f) => !f.includes('__tests__'))
     .filter((f) => !f.endsWith('.test.ts') && !f.endsWith('.test.tsx'));
 
+  // The only sanctioned network call in the demo is the read-only BCSE
+  // snapshot from /api/v1/demo/market-data (the nginx demo gate proxies
+  // exactly this route and fails closed for every other /api family).
+  const SANCTIONED = 'live-demo-api.ts';
+
   it('демо-модуль не содержит сетевых вызовов и платежей', () => {
     const offenders: string[] = [];
     for (const file of files) {
+      if (file === SANCTIONED) continue;
       const source = readFileSync(join(demoDir, file), 'utf8');
       if (/\b(fetch|axios|XMLHttpRequest|WebSocket)\s*\(/.test(source)) {
         offenders.push(`${file}: fetch/axios/XHR/WS`);
@@ -61,11 +67,23 @@ describe('demo side-effect guard', () => {
   it('демо-модуль не обращается к реальному API', () => {
     const offenders: string[] = [];
     for (const file of files) {
+      if (file === SANCTIONED) continue;
       const source = readFileSync(join(demoDir, file), 'utf8');
       if (/\/api\//.test(source) || /\bfetch\b/.test(source)) {
         offenders.push(file);
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('live-demo-api обращается только к read-only demo-endpoint', () => {
+    const source = readFileSync(join(demoDir, SANCTIONED), 'utf8');
+    const fetchUrls = Array.from(source.matchAll(/fetch\([^)]*\)/g)).map((m) => m[0]);
+    expect(fetchUrls.length).toBeGreaterThan(0);
+    for (const url of fetchUrls) {
+      expect(url).toMatch(/\/api\/v1\/demo\/(market-data|search|bond\/)/);
+    }
+    expect(source).not.toMatch(/localStorage|sessionStorage/);
+    expect(source).not.toMatch(/payment|checkout|yookassa|stripe/i);
   });
 });

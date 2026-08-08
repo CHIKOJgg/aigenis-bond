@@ -20,7 +20,7 @@ export default function ScoreExplanation({ factors }: Props) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-        Почему бумага в фокусе
+        Почему такой рейтинг
       </div>
       {factors.map((f, i) => (
         <div

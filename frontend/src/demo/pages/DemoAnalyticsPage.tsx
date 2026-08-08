@@ -1,19 +1,20 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { getBonds, getScore, getMarketSummary } from '../demo-api';
+import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
+import { getBonds, getScore, getMarketSummary, scoreFromLiveBond } from '../demo-api';
 import { filterAndSortBonds } from '../demo-filter';
-import { formatYtm, formatDurationYears } from '../demo-format';
-import type { ScoreStatus, TermFilter } from '../types';
+import { formatYtm, formatYears, formatDurationYears } from '../demo-format';
+import type { DemoScore, ScoreStatus, TermFilter } from '../types';
 import { SCORE_STATUS_LABEL } from '../demo-config';
 import AnalyticsKpiStrip from '../components/AnalyticsKpiStrip';
 import AnalyticsFilters from '../components/AnalyticsFilters';
 import BondScoreBadge from '../components/BondScoreBadge';
-import BondDetailDrawer from '../components/BondDetailDrawer';
+import { bondDrawerStore } from '../drawer-store';
 import { fetchLiveMarket, type LiveMarketSnapshot } from '../live-demo-api';
 
 export default function DemoAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const params = useParams<{ internalId?: string }>();
 
   const market = (searchParams.get('market') || 'BCSE') as 'BCSE' | 'MOEX';
   const [currency, setCurrency] = useState('ALL');
@@ -22,7 +23,6 @@ export default function DemoAnalyticsPage() {
   const [liquidity, setLiquidity] = useState('all');
   const [sortKey, setSortKey] = useState<'score' | 'ytm'>('score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [live, setLive] = useState<LiveMarketSnapshot | null>(null);
   const [liveError, setLiveError] = useState('');
 
@@ -31,6 +31,10 @@ export default function DemoAnalyticsPage() {
     fetchLiveMarket('bcse').then(setLive).catch(() => setLiveError('Не удалось получить актуальные данные BCSE'));
   }, [market]);
 
+  useEffect(() => {
+    if (params.internalId) bondDrawerStore.open(decodeURIComponent(params.internalId));
+  }, [params.internalId]);
+
   const fixtureSummary = getMarketSummary();
   const summary = live ? {
     ...fixtureSummary,
@@ -38,9 +42,20 @@ export default function DemoAnalyticsPage() {
   } : fixtureSummary;
   const bonds = (market === 'BCSE' && live ? live.bonds : getBonds(market));
 
+  const scoreLookup = useMemo(() => {
+    if (market !== 'BCSE' || !live) return getScore;
+    const liveById = new Map(live.bonds.map((b) => [b.internal_id, b]));
+    return (id: string): DemoScore | undefined =>
+      (() => {
+        const bond = liveById.get(id);
+        const liveScore = bond ? scoreFromLiveBond(bond) : undefined;
+        return liveScore ?? getScore(id);
+      })();
+  }, [market, live]);
+
   const filtered = useMemo(
-    () => filterAndSortBonds(bonds, { currency, term, status, sortKey, sortDir }, getScore),
-    [bonds, currency, term, status, sortKey, sortDir],
+    () => filterAndSortBonds(bonds, { currency, term, status, sortKey, sortDir }, scoreLookup),
+    [bonds, currency, term, status, sortKey, sortDir, scoreLookup],
   );
 
   const uniqueCurrencies = useMemo(() => {
@@ -49,9 +64,15 @@ export default function DemoAnalyticsPage() {
   }, [bonds]);
 
   const marketStats = summary.markets[market.toLowerCase()];
+  const liveScores = market === 'BCSE' && live;
 
   const handleMarketChange = (m: string) => {
     setSearchParams({ market: m });
+  };
+
+  const openBond = (id: string) => {
+    bondDrawerStore.open(id);
+    navigate(`/demo/analytics/bonds/${encodeURIComponent(id)}?market=${market}`, { replace: true });
   };
 
   return (
@@ -64,8 +85,8 @@ export default function DemoAnalyticsPage() {
       </div>
 
       <AnalyticsKpiStrip
-        attractive={market === 'BCSE' ? bonds.filter((b) => (b.yield_to_maturity ?? 0) >= 12).length : marketStats?.attractive_ideas ?? 0}
-        review={marketStats?.needs_review ?? 0}
+        attractive={liveScores ? bonds.filter((b) => scoreLookup(b.internal_id)?.status === 'attractive').length : market === 'BCSE' ? bonds.filter((b) => (b.yield_to_maturity ?? 0) >= 12).length : marketStats?.attractive_ideas ?? 0}
+        review={liveScores ? bonds.filter((b) => scoreLookup(b.internal_id)?.status === 'review').length : marketStats?.needs_review ?? 0}
         bestYield={market === 'BCSE' ? Math.max(...bonds.map((b) => b.yield_to_maturity ?? 0), 0) : marketStats?.best_yield_pct ?? 0}
         asOf={summary.global.updated_at}
       />
@@ -114,7 +135,7 @@ export default function DemoAnalyticsPage() {
               filtered.map((bond) => (
                 <tr
                   key={bond.internal_id}
-                  onClick={() => setSelectedId(bond.internal_id)}
+                  onClick={() => openBond(bond.internal_id)}
                   style={{
                     borderBottom: '1px solid #eef3f5',
                     cursor: 'pointer',
@@ -128,21 +149,21 @@ export default function DemoAnalyticsPage() {
                     <div style={{ fontSize: 12, color: '#717680' }}>{bond.issuer}</div>
                   </td>
                   <td style={tdStyle}>
-                    <BondScoreBadge score={getScore(bond.internal_id)} />
+                    <BondScoreBadge score={scoreLookup(bond.internal_id)} />
                   </td>
                   <td style={tdStyle}>
-                    <StatusCell status={getScore(bond.internal_id)?.status ?? 'no_data'} />
+                    <StatusCell status={scoreLookup(bond.internal_id)?.status ?? 'no_data'} />
                   </td>
                   <td style={tdStyle}>
                     {formatYtm(bond.yield_to_maturity)}
                   </td>
                   <td style={tdStyle}>{bond.maturity_date ?? '—'}</td>
                   <td style={tdStyle}>
-                    {formatDurationYears(bond.term_days)}
+                    {bond.duration_years != null ? formatYears(bond.duration_years) : formatDurationYears(bond.term_days)}
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'center' }}>
                     <button
-                      onClick={(e) => { e.stopPropagation(); setSelectedId(bond.internal_id); }}
+                      onClick={(e) => { e.stopPropagation(); openBond(bond.internal_id); }}
                       style={{
                         padding: '6px 14px',
                         borderRadius: 6,
@@ -163,17 +184,6 @@ export default function DemoAnalyticsPage() {
           </tbody>
         </table>
       </div>
-
-      {selectedId && (
-        <BondDetailDrawer
-          bondId={selectedId}
-          bond={bonds.find((b) => b.internal_id === selectedId)}
-          onClose={() => setSelectedId(null)}
-          onPortfolioImpact={() => navigate(`/demo/portfolio-impact/${encodeURIComponent(selectedId)}?market=${market}`)}
-          onAlert={() => {}}
-          onOrder={() => {}}
-        />
-      )}
     </div>
   );
 }

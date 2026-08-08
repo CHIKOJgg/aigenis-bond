@@ -111,7 +111,7 @@ def _currency_detail(currency: str) -> str:
     if cur in {"XAU", "XAG", "XPT"}:
         return f"Металл ({cur}) — защитный актив против инфляции."
     if cur == "BYN":
-        return "Валюта BYN — есть валютный риск при девальвации."
+        return "Валюта BYN — локальный рублёвый рынок с предсказуемой динамикой ставок."
     if cur == "EUR":
         return "Валюта EUR — нейтральный валютный профиль."
     return f"Валюта {cur}."

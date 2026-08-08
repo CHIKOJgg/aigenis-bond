@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatYtm, formatDurationYears, formatPrice } from '../demo-format';
+import { formatYtm, formatDurationYears, formatPrice, formatPoints } from '../demo-format';
 
 describe('formatYtm', () => {
   it('форматирует число с процентом', () => {
@@ -30,16 +30,26 @@ describe('formatDurationYears', () => {
 });
 
 describe('formatPrice', () => {
-  it('форматирует цену с валютой', () => {
-    expect(formatPrice(100.5, 'BYN')).toBe('100.5 BYN');
+  it('форматирует цену как % от номинала', () => {
+    expect(formatPrice(98.5, 'BYN')).toBe('98.5%');
   });
 
-  it('форматирует цену без валюты', () => {
-    expect(formatPrice(100.5)).toBe('100.5');
+  it('округляет до двух знаков и отбрасывает пустые нули', () => {
+    expect(formatPrice(100.187, 'BYN')).toBe('100.19%');
+    expect(formatPrice(92, 'USD')).toBe('92%');
   });
 
   it('возвращает прочерк для null/undefined', () => {
     expect(formatPrice(null)).toBe('—');
     expect(formatPrice(undefined, 'USD')).toBe('—');
+  });
+});
+
+describe('formatPoints', () => {
+  it('показывает знак для не нуля', () => {
+    expect(formatPoints(18.5)).toBe('+18.5');
+    expect(formatPoints(-3)).toBe('-3');
+    expect(formatPoints(0)).toBe('0');
+    expect(formatPoints(null)).toBe('—');
   });
 });

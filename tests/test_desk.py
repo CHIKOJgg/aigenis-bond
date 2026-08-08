@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from desk.carry import carry_for_bond, rank_carry
-from desk.duration import duration_report
+from desk.duration import duration_report, portfolio_duration
 from desk.models import CurvePoint, NelsonSiegelParams, RepoDeal, StressResult, YieldCurve
 from desk.relative_value import relative_value_signals, signals_from_curve
 from desk.repo import haircut_by_issuer, repo_deal
@@ -70,6 +70,20 @@ def test_duration_zero_coupon_is_less_than_par_coupon():
     par = duration_report(_bond(coupon=10.0))
     # Higher coupon → lower duration (all else equal).
     assert zero.macaulay_duration > par.macaulay_duration
+
+
+def test_portfolio_duration_accepts_decimal_weights():
+    # Decimal weights (e.g. read from the DB) must not crash the sum.
+    a = _bond(coupon=6.0)
+    a.internal_id = "A"
+    b = _bond(coupon=10.0)
+    b.internal_id = "B"
+    weights = {"A": Decimal("0.4"), "B": Decimal("0.6")}
+    rep = portfolio_duration([a, b], weights=weights)
+    assert rep.modified_duration > 0
+    assert rep.macaulay_duration > 0
+    assert rep.convexity >= 0
+    assert rep.dv01 >= 0
 
 
 def test_nelson_siegel_fit_reproduces_curve():

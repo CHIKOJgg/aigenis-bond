@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import DemoAnalyticsPage from '../pages/DemoAnalyticsPage';
+import GlobalBondDrawer from '../components/GlobalBondDrawer';
 import { getBonds } from '../demo-api';
 
 function UrlProbe() {
@@ -13,6 +14,7 @@ function renderPage(initialEntries: string[] = ['/demo/analytics?market=BCSE']) 
   return render(
     <MemoryRouter initialEntries={initialEntries}>
       <DemoAnalyticsPage />
+      <GlobalBondDrawer />
       <UrlProbe />
     </MemoryRouter>,
   );
@@ -69,11 +71,13 @@ describe('DemoAnalyticsPage', () => {
     expect(screen.getByText('Нет бумаг, соответствующих фильтрам')).toBeInTheDocument();
   });
 
-  it('открывает drawer по клику на строку', () => {
+  it('открывает drawer по клику на строку', async () => {
     renderPage();
     const bcse = getBonds('BCSE');
     fireEvent.click(screen.getByText(bcse[0].name));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog', { name: bcse[0].name });
+    expect(dialog).toBeInTheDocument();
+    expect((await screen.findAllByText('Score', { exact: false })).length).toBeGreaterThan(0);
   });
 
   it('KPI-лента отображает данные рынка', () => {

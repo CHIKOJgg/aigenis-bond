@@ -6,6 +6,7 @@ import sys
 import time
 from contextlib import asynccontextmanager, suppress
 from datetime import date
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -60,6 +61,89 @@ def _abs_url(url: str | None) -> str | None:
     if url.startswith("/"):
         return SITE_BASE + url
     return SITE_BASE + "/" + url
+
+
+_FX_CACHE: dict[str, float] = {"BYN": 1.0}
+
+
+async def _byn_per_ccy(currency: str) -> float | None:
+    """BYN per unit of ``currency`` (1.0 for BYN), cached per process.
+
+    Rates come from ``fx_rates`` (populated daily from the NBRB by the
+    scheduler); on a miss we fetch-and-store live from the NBRB so the first
+    pipeline run after a restart still converts prices correctly.
+    """
+    key = str(currency or "").upper()
+    if key in _FX_CACHE:
+        return _FX_CACHE[key]
+    try:
+        from notifications.fx_repository import latest_fx
+        from scraper.db import session_scope
+
+        async with session_scope() as session:
+            row = await latest_fx(session, f"{key}/BYN")
+        if row is not None and row.rate > 0:
+            _FX_CACHE[key] = float(row.rate)
+            return _FX_CACHE[key]
+    except Exception:
+        pass
+    try:
+        from scraper.fx import fetch_and_save_rates
+
+        rates = await fetch_and_save_rates()
+        pair = f"{key}/BYN"
+        if pair in rates and rates[pair] > 0:
+            _FX_CACHE[key] = float(rates[pair])
+            return _FX_CACHE[key]
+    except Exception as exc:
+        logger.warning("fx_rate_unavailable", currency=key, error=str(exc))
+    return None
+
+
+async def _to_price_pct(value: Any, nominal: Any, currency: Any) -> Any:
+    """Normalize a raw source price to percent-of-face.
+
+    The Aigenis feed quotes bonds in settlement units (BYN): a BYN bond's
+    price is its absolute face amount (10018.7 for a 10 000-nominal bond),
+    while USD/EUR/CNY bonds are quoted as the BYN-equivalent amount (2938.6
+    BYN for a 1000-USD bond at ~2.94 BYN/USD, i.e. ~100% of face).  Convert to
+    % of face via ``price / (nominal * BYN-per-unit) * 100``; keep the raw
+    value when the nominal or the FX rate is unknown, so consumers have no
+    usable anchor and honestly report "insufficient data".
+    """
+    if value is None or value == "":
+        return None
+    try:
+        price = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return value
+    if price <= 0:
+        return None
+    if nominal is None:
+        return value
+    try:
+        nom = Decimal(str(nominal))
+    except (ValueError, ArithmeticError):
+        return value
+    if nom <= 0:
+        return value
+    fx = await _byn_per_ccy(str(currency or "").upper())
+    if fx is None or fx <= 0:
+        return value
+    # Return a JSON-safe float: the raw payload lands in the JSONB `raw`
+    # column, and a Decimal would break json.dumps during the upsert.
+    return float(price / (nom * Decimal(str(fx))) * Decimal("100"))
+
+
+def _sane_yield(value: Any) -> Any:
+    """Keep only positive yields; the feed ships 0.0/negative for untraded."""
+    if value is None or value == "":
+        return None
+    try:
+        v = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return value
+    return value if v > 0 else None
 
 
 class _CircuitBreaker:
@@ -495,7 +579,7 @@ class AigenisClient:
                 if not iid:
                     continue
                 self._id_by_internal[str(iid)] = item.get("id")
-                normalized = self._normalize_listing_item(item, currency)
+                normalized = await self._normalize_listing_item(item, currency)
                 if normalized:
                     all_normalized.append(normalized)
             # API does not return count; stop when page has fewer items than page_size
@@ -509,7 +593,7 @@ class AigenisClient:
         )
         return all_normalized
 
-    def _normalize_listing_item(
+    async def _normalize_listing_item(
         self,
         item: dict[str, Any],
         currency: str,
@@ -554,8 +638,10 @@ class AigenisClient:
             "issuer_logo": issuer_logo,
             "end_date": defn.get("maturity_date"),
             "maturity_date": defn.get("maturity_date"),
-            "price": defn.get("price"),
-            "yield_to_maturity": defn.get("instr_yield"),
+            "price": await _to_price_pct(
+                defn.get("price"), defn.get("nominal"), defn.get("currency") or currency
+            ),
+            "yield_to_maturity": _sane_yield(defn.get("instr_yield")),
             "market_price": defn.get("market_price") or item.get("market_price"),
             "best_bid": item.get("best_bid") or defn.get("best_bid"),
             "best_offer": item.get("best_offer") or defn.get("best_offer"),
@@ -615,8 +701,12 @@ class AigenisClient:
             "coupon_rate": defn.get("coupon_rate"),
             "coupon_frequency": defn.get("coupon_frequency"),
             "maturity_date": defn.get("maturity_date"),
-            "price": defn.get("price"),
-            "yield_to_maturity": defn.get("instr_yield"),
+            "price": await _to_price_pct(
+                defn.get("price"),
+                defn.get("nominal"),
+                defn.get("currency") or data.get("settl_currency"),
+            ),
+            "yield_to_maturity": _sane_yield(defn.get("instr_yield")),
             "offer_date": None,
             "start_date": defn.get("issue_date"),
             "end_date": defn.get("maturity_date"),
@@ -757,6 +847,7 @@ class AigenisClient:
             if it.get("instr_yield") is not None
             else it.get("yield_to_maturity")
         )
+        yield_val = _sane_yield(yield_val)
         return {
             "date": d,
             "price": price,

@@ -1,0 +1,14 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Bonds Engine · MOEX Аналитика облигаций</title>
+<link rel="stylesheet" href="aigenis-widget.css">
+</head>
+<body>
+<div class="be-widget" id="be-app"><div class="be-load"><div class="be-spin"></div>Загрузка...</div></div>
+<div class="be-modal-bg" id="be-modal" style="display:none" onclick="BE.closeModal()"></div>
+<script src="be-widget-core.js"></script>
+<script>BE.init('/api/v1','moex');</script>
+</body>
+</html>

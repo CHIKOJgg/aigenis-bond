@@ -42,10 +42,38 @@ export function getScore(internalId: string): DemoScore | undefined {
   return scoreMap.get(internalId);
 }
 
+export function scoreFromLiveBond(bond: DemoBond): DemoScore | undefined {
+  if (bond.score == null || !bond.score_status || !bond.breakdown) return undefined;
+  return {
+    internal_id: bond.internal_id,
+    score: bond.score,
+    tier: bond.tier ?? '',
+    status: bond.score_status,
+    computed_at: bond.fetched_at ?? new Date().toISOString(),
+    breakdown: bond.breakdown,
+  };
+}
+
 export function getExplanation(
   internalId: string,
 ): BondExplanation | undefined {
   return explanationMap.get(internalId);
+}
+
+export function searchAllBonds(
+  q: string,
+  market?: string,
+): DemoBond[] {
+  const term = q.trim().toLowerCase();
+  if (!term) return [];
+  return getAllBonds()
+    .filter((b) => (market && market !== 'ALL' ? b.market.toUpperCase() === market.toUpperCase() : true))
+    .filter((b) =>
+      [b.name, b.issuer, b.isin, b.internal_id]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(term)),
+    )
+    .slice(0, 30);
 }
 
 export function getMarketSummary(): MarketSummary {

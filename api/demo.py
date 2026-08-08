@@ -12,20 +12,153 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
+from desk.ytm import to_price_pct, ytm_from_price
 from scraper.db import session_scope
 from scraper.logging import get_logger
-from scraper.orm import BondORM
+from scraper.orm import BondHistoryORM, BondORM
 
 logger = get_logger("api.demo")
 
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
+
+_TIER_STATUS = {
+    "S": "attractive",
+    "A": "attractive",
+    "B": "neutral",
+    "C": "review",
+    "D": "high_risk",
+}
+
+
+def _bond_analytics(bond: BondORM) -> dict[str, Any]:
+    """Derive YTM, duration and Reward/Risk Score v4 for one BCSE bond.
+
+    The BCSE feed only ships reference fields (price, coupon, maturity), so the
+    missing analytics are computed here: YTM from price/nominal/coupon/maturity,
+    Macaulay duration from real future cash flows, and the score from the
+    production scoring engine. If there is no market anchor (price or YTM),
+    the score stays None so the UI can honestly show "недостаточно данных".
+    """
+    ref = date.today()
+    ytm: float | None = None
+    computed_ytm = False
+    if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0:
+        ytm = float(bond.yield_to_maturity)
+    price_pct = to_price_pct(bond.price, bond.nominal)
+    if (
+        ytm is None
+        and price_pct is not None
+        and bond.coupon_rate is not None
+        and bond.maturity_date is not None
+    ):
+        solved = ytm_from_price(
+            price_pct=price_pct,
+            coupon_rate_pct=float(bond.coupon_rate),
+            coupon_frequency=int(bond.coupon_frequency or 2),
+            maturity=bond.maturity_date,
+            asof=ref,
+        )
+        if solved is not None and solved > 0:
+            ytm = round(solved, 4)
+            computed_ytm = True
+
+    duration_years: float | None = None
+    if bond.maturity_date is not None:
+        raw_dur: float | None = None
+        if ytm is not None:
+            try:
+                from desk.duration import macaulay_duration
+
+                raw_dur = macaulay_duration(
+                    nominal=bond.nominal or Decimal("1000"),
+                    coupon_rate_pct=(
+                        float(bond.coupon_rate) if bond.coupon_rate is not None else ytm
+                    ),
+                    coupon_frequency=int(bond.coupon_frequency or 2),
+                    ytm_pct=ytm,
+                    maturity=bond.maturity_date,
+                    ref=ref,
+                    issue_date=bond.start_date,
+                )
+            except Exception:
+                logger.warning(
+                    "demo_duration_failed",
+                    internal_id=bond.internal_id,
+                    error="duration calc failed",
+                )
+                raw_dur = None
+        if raw_dur is None:
+            raw_dur = max((bond.maturity_date - ref).days / 365.25, 0.0)
+        duration_years = round(raw_dur, 2)
+
+    score_payload: dict[str, Any] | None = None
+    has_price = price_pct is not None
+    if has_price or ytm is not None:
+        from scoring.engine import score_bond
+
+        bs = score_bond(
+            internal_id=bond.internal_id,
+            yield_to_maturity=ytm,
+            currency=bond.currency,
+            maturity_date=bond.maturity_date,
+            status=str(bond.status or "active"),
+            issuer=bond.issuer,
+            price=price_pct,
+            nominal=Decimal("100"),
+            coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+            market=str(bond.market or "bcse"),
+        )
+        tier = bs.tier
+        explanation: dict[str, Any] | None = None
+        try:
+            from scoring.explain import explain_score
+
+            expl = explain_score(
+                bs,
+                currency=bond.currency,
+                ytm_pct=ytm,
+                coupon_pct=(
+                    float(bond.coupon_rate) if bond.coupon_rate is not None else None
+                ),
+            )
+            explanation = {
+                "verdict": expl.verdict,
+                "summary": expl.summary,
+                "strengths": expl.strengths,
+                "weaknesses": expl.weaknesses,
+                "factors": [f.as_dict() for f in expl.factors],
+            }
+        except Exception:
+            logger.warning(
+                "demo_explain_failed",
+                internal_id=bond.internal_id,
+                error="explain failed",
+            )
+        score_payload = {
+            "score": round(bs.score, 2),
+            "tier": tier,
+            "score_status": _TIER_STATUS.get(tier, "no_data"),
+            "computed_at": bs.computed_at.isoformat(),
+            "breakdown": bs.breakdown.model_dump(),
+            "explanation": explanation,
+        }
+
+    return {
+        "yield_to_maturity": ytm,
+        "computed_ytm": computed_ytm,
+        "duration_years": duration_years,
+        "score": score_payload,
+    }
+
 
 DATA_ROOT = Path(__file__).resolve().parents[1] / "demo-data" / "v1"
 
@@ -61,6 +194,42 @@ class PortfolioImpactResponse(BaseModel):
     fixtures_version: str
 
 
+def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
+    """Sanitized public payload for one bond row (never exposes raw fields)."""
+    score = analytics["score"]
+    return {
+        "internal_id": bond.internal_id,
+        "isin": bond.isin,
+        "name": bond.name,
+        "issuer": bond.issuer,
+        "issuer_logo": bond.issuer_logo,
+        "currency": bond.currency,
+        "nominal": float(bond.nominal) if bond.nominal is not None else None,
+        "coupon_rate": float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+        "coupon_frequency": bond.coupon_frequency,
+        "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
+        "price": float(bond.price) if bond.price is not None else None,
+        # Source YTM if present, otherwise computed from price/coupon/maturity.
+        "yield_to_maturity": analytics["yield_to_maturity"],
+        "computed_ytm": analytics["computed_ytm"],
+        "duration_years": analytics["duration_years"],
+        "score": score["score"] if score else None,
+        "tier": score["tier"] if score else None,
+        "score_status": score["score_status"] if score else None,
+        "breakdown": score["breakdown"] if score else None,
+        "explanation": score["explanation"] if score else None,
+        "market": bond.market,
+        "status": bond.status,
+        "is_government": bool(bond.is_government),
+        "in_stock": bond.in_stock,
+        "guarantor": bond.guarantor,
+        "maturity_term_text": bond.maturity_term_text,
+        "coupon_description": bond.coupon_description,
+        "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
+        "term_days": bond.term_days,
+    }
+
+
 @router.get("/market-data")
 async def live_market_data(
     market: str = Query("bcse", pattern="^(bcse|moex)$"),
@@ -86,38 +255,7 @@ async def live_market_data(
             stmt = stmt.where(BondORM.currency == currency.upper())
         rows = (await session.execute(stmt)).scalars().all()
 
-    bonds: list[dict[str, Any]] = []
-    for bond in rows:
-        bonds.append(
-            {
-                "internal_id": bond.internal_id,
-                "isin": bond.isin,
-                "name": bond.name,
-                "issuer": bond.issuer,
-                "issuer_logo": bond.issuer_logo,
-                "currency": bond.currency,
-                "nominal": float(bond.nominal) if bond.nominal is not None else None,
-                "coupon_rate": float(bond.coupon_rate) if bond.coupon_rate is not None else None,
-                "coupon_frequency": bond.coupon_frequency,
-                "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
-                "price": float(bond.price) if bond.price is not None else None,
-                # Zero in the source means "not calculated", not a 0% yield.
-                "yield_to_maturity": (
-                    float(bond.yield_to_maturity)
-                    if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0
-                    else None
-                ),
-                "market": bond.market,
-                "status": bond.status,
-                "is_government": bool(bond.is_government),
-                "in_stock": bond.in_stock,
-                "guarantor": bond.guarantor,
-                "maturity_term_text": bond.maturity_term_text,
-                "coupon_description": bond.coupon_description,
-                "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
-                "term_days": bond.term_days,
-            }
-        )
+    bonds = [_bond_payload(bond, _bond_analytics(bond)) for bond in rows]
     as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
     return {
         "source": "Aigenis official feed",
@@ -128,6 +266,102 @@ async def live_market_data(
         "bonds": bonds,
         "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
     }
+
+
+@router.get("/search")
+async def demo_search(
+    q: str = Query(..., min_length=1, max_length=120),
+    market: str | None = Query(None, pattern="^(bcse|moex)$"),
+    currency: str | None = Query(None, min_length=3, max_length=3),
+    limit: int = Query(20, ge=1, le=50),
+) -> dict[str, Any]:
+    """Search the whole bond universe (name/ISIN/issuer/id) for the demo UI.
+
+    Returns the same sanitized payload shape as ``/market-data`` so the drawer
+    can be opened straight from search results. Read-only, no live calls.
+    """
+    term = q.strip()
+    if not term:
+        return {
+            "query": q,
+            "market": market,
+            "count": 0,
+            "bonds": [],
+            "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
+        }
+    async with session_scope() as session:
+        stmt = (
+            select(BondORM)
+            .where(BondORM.status == "active")
+            .where(
+                or_(
+                    BondORM.name.ilike(f"%{term}%"),
+                    BondORM.issuer.ilike(f"%{term}%"),
+                    BondORM.isin.ilike(f"%{term}%"),
+                    BondORM.internal_id.ilike(f"%{term}%"),
+                )
+            )
+        )
+        if market:
+            stmt = stmt.where(BondORM.market == market)
+        if currency:
+            stmt = stmt.where(BondORM.currency == currency.upper())
+        rows = (
+            (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit)))
+            .scalars()
+            .all()
+        )
+
+    bonds = [_bond_payload(bond, _bond_analytics(bond)) for bond in rows]
+    return {
+        "query": term,
+        "market": market,
+        "count": len(bonds),
+        "bonds": bonds,
+        "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
+    }
+
+
+@router.get("/bond/{internal_id}")
+async def demo_bond_detail(internal_id: str) -> dict[str, Any]:
+    """Full read-only detail for one bond: analytics + coupon calendar + history.
+
+    History (up to 180 daily rows) is served only when the source has it
+    (MOEX backfill); BCSE bonds return an empty list and the UI hides the
+    chart instead of showing gaps.
+    """
+    async with session_scope() as session:
+        bond = (
+            await session.execute(
+                select(BondORM).where(BondORM.internal_id == internal_id)
+            )
+        ).scalar_one_or_none()
+        if bond is None:
+            raise HTTPException(status_code=404, detail=f"Bond {internal_id} not found")
+        payload = _bond_payload(bond, _bond_analytics(bond))
+        history_rows = (
+            (
+                await session.execute(
+                    select(BondHistoryORM)
+                    .where(BondHistoryORM.internal_id == internal_id)
+                    .order_by(BondHistoryORM.date.desc())
+                    .limit(180)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    payload["history"] = [
+        {
+            "date": h.date.isoformat(),
+            "price": float(h.price) if h.price is not None else None,
+            "yield": float(h.yield_) if h.yield_ is not None else None,
+        }
+        for h in reversed(history_rows)
+    ]
+    payload["coupon_schedule"] = bond.coupon_schedule or None
+    return payload
 
 
 def _load_manifest() -> dict[str, Any]:
