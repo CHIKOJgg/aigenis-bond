@@ -113,6 +113,7 @@ async def scheduled_history_job() -> str:
             if source in ("aigenis", "both"):
                 from scraper.client import AigenisClient
                 from scraper.db import session_scope
+                from scraper.orm import BondORM
                 from scraper.pipeline import backfill_history
 
                 async with AigenisClient(settings.aigenis) as client:

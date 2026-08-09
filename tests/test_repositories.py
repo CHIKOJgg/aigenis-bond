@@ -283,3 +283,23 @@ async def test_instrument_summary_and_search():
         assert {h.internal_id for h in by_id} == {"IS-2"}
         empty = await search_instruments(session, "zzzz")
         assert empty == []
+
+
+@pytest.mark.asyncio
+async def test_search_instruments_bond_limit():
+    from scraper.repositories.instruments import search_instruments
+
+    async with session_scope() as session:
+        await upsert_bonds_batch(
+            session,
+            [
+                _bond("SB-1", name="SearchBond 1", issuer="Газпром"),
+                _bond("SB-2", name="SearchBond 2", issuer="Газпром"),
+                _bond("SB-3", name="SearchBond 3", issuer="Газпром"),
+            ],
+        )
+        await upsert_stock(session, _stock("SB-4", name="SearchBond 4"))
+        hits = await search_instruments(session, "SearchBond", limit=3)
+        assert {h.internal_id for h in hits} == {"SB-1", "SB-2", "SB-3"}
+        more = await search_instruments(session, "SearchBond", limit=10)
+        assert len(more) == 4
