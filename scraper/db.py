@@ -140,7 +140,10 @@ async def upsert_row(
         for col, val in values.items():
             setattr(existing, col, val)
     else:
-        session.add(model(**values))
+        instance = model()
+        for col, val in values.items():
+            setattr(instance, col, val)
+        session.add(instance)
 
 
 async def check_db_health() -> dict[str, Any]:

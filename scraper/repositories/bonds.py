@@ -4,9 +4,9 @@ import re
 from collections.abc import Iterable, Sequence
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from scraper.db import upsert_row
 from scraper.models import Bond
 from scraper.orm import BondORM
 
@@ -107,35 +107,37 @@ def _bond_to_orm(bond: Bond) -> dict:
 
 
 async def upsert_bond(session: AsyncSession, bond: Bond) -> None:
-    values = _bond_to_orm(bond)
-    stmt = pg_insert(BondORM).values(**values)
-    update_cols = {c: stmt.excluded[c] for c in values if c not in {"internal_id"}}
-    stmt = stmt.on_conflict_do_update(index_elements=[BondORM.internal_id], set_=update_cols)
-    await session.execute(stmt)
+    await upsert_row(
+        session,
+        BondORM,
+        index_elements=["internal_id"],
+        values=_bond_to_orm(bond),
+    )
 
 
 async def upsert_bonds_batch(session: AsyncSession, bonds: Iterable[Bond]) -> int:
     rows = [_bond_to_orm(b) for b in bonds]
     if not rows:
         return 0
-    stmt = pg_insert(BondORM).values(rows)
-    update_cols = {c: stmt.excluded[c] for c in rows[0] if c not in {"internal_id"}}
-    stmt = stmt.on_conflict_do_update(index_elements=[BondORM.internal_id], set_=update_cols)
-    await session.execute(stmt)
+    for values in rows:
+        await upsert_row(
+            session,
+            BondORM,
+            index_elements=["internal_id"],
+            values=values,
+        )
     return len(rows)
 
 
 async def update_bond_name(session: AsyncSession, internal_id: str, name: str) -> None:
     """Обновить поле name для облигации (используется при обогащении из XLSX)."""
-    stmt = (
-        pg_insert(BondORM)
-        .values(internal_id=internal_id, name=name)
-        .on_conflict_do_update(
-            index_elements=[BondORM.internal_id],
-            set_={"name": name},
-        )
+    await upsert_row(
+        session,
+        BondORM,
+        index_elements=["internal_id"],
+        values={"internal_id": internal_id, "name": name},
+        set_columns=["name"],
     )
-    await session.execute(stmt)
 
 
 def register_xlsx_names(xlsx_names: dict[str, str]) -> None:

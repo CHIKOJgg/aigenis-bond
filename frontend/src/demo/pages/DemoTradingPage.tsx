@@ -5,16 +5,38 @@ import { fetchLiveMarket } from '../live-demo-api';
 import { bondDrawerStore } from '../drawer-store';
 import type { DemoBond } from '../types';
 
+const API_MARKET: Record<string, 'bcse' | 'moex'> = { BCSE: 'bcse', MOEX: 'moex' };
+
 export default function DemoTradingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const market = searchParams.get('market') || 'BCSE';
   const [bonds, setBonds] = useState<DemoBond[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [source, setSource] = useState<{ name: string; asOf: string | null } | null>(null);
 
   useEffect(() => {
-    if (market !== 'BCSE') return;
-    fetchLiveMarket('bcse').then((s) => setBonds(s.bonds)).catch(() => setError('Не удалось получить актуальные данные BCSE'));
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    setSource(null);
+    setBonds([]);
+    fetchLiveMarket(API_MARKET[market] ?? 'bcse')
+      .then((snap) => {
+        if (cancelled) return;
+        setBonds(snap.bonds);
+        setSource({ name: snap.source, asOf: snap.as_of });
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError('Не удалось получить актуальные данные — показаны демо-данные');
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [market]);
 
   const handleMarketChange = (m: string) => {
@@ -94,9 +116,16 @@ export default function DemoTradingPage() {
       </div>
 
       {error && <div style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
+      {source && (
+        <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>
+          Источник: {source.name}
+          {source.asOf ? ` · актуально на ${new Date(source.asOf).toLocaleString('ru-RU')}` : ''}
+        </div>
+      )}
       <MarketTable
         market={market}
-        bonds={market === 'BCSE' ? bonds : undefined}
+        bonds={loading ? undefined : bonds}
+        loading={loading}
         onSelect={handleSelect}
       />
     </div>

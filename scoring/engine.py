@@ -445,6 +445,23 @@ def score_bond(
         peer_relative_component=_peer_relative_component(ytm_pct, currency, peer_ytms),
     )
 
+    # Market-distress override: a bond trading well below par (price < 80) at
+    # a very high yield (YTM > 30%) is distressed debt — the market is pricing
+    # near-default, and the coupon-schedule yield is a phantom that assumes
+    # payments the price already discounts. Rewarding such yields pushes
+    # defaulted/frozen issuers (e.g. Belarus eurobonds at 92% YTM) to the top
+    # of the opportunity lists, so the reward is capped and the risk penalty
+    # is deepened instead. Profiled against real MOEX/BCSE quotes 2026-08.
+    distressed = (
+        price_f is not None
+        and ytm_pct is not None
+        and price_f < 80.0
+        and ytm_pct > 30.0
+    )
+    if distressed:
+        breakdown.yield_component = min(breakdown.yield_component, 20.0)
+        breakdown.volatility_component -= 18.0
+
     reward_sum = sum(
         max(v, 0.0)
         for v in [

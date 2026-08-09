@@ -110,7 +110,7 @@ def _parse_coupon_frequency_from_description(text: str) -> int | None:
         return 4
     if "2 раз" in text_lower and "год" in text_lower:
         return 2
-    m = re.search(r"(\d+)\s+раз\s+в\s+год", text_lower)
+    m = re.search(r"(\d+)\s+раз[а-я]*\s+в\s+год", text_lower)
     if m:
         return int(m.group(1))
     return None

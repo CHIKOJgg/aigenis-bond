@@ -1,11 +1,12 @@
 interface Props {
   attractive: number;
   review: number;
+  distressed: number;
   bestYield: number;
   asOf: string;
 }
 
-export default function AnalyticsKpiStrip({ attractive, review, bestYield, asOf }: Props) {
+export default function AnalyticsKpiStrip({ attractive, review, distressed, bestYield, asOf }: Props) {
   const time = asOf ? new Date(asOf).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '';
   return (
     <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
@@ -20,8 +21,13 @@ export default function AnalyticsKpiStrip({ attractive, review, bestYield, asOf 
         color="#dc6803"
       />
       <KpiCard
+        value={distressed}
+        label="дистрибуция / риск"
+        color="#e03400"
+      />
+      <KpiCard
         value={`${bestYield}%`}
-        label="лучшая риск-скорректированная доходность"
+        label="макс. доходность (без дистрибуций)"
         color="#0B526B"
       />
       <KpiCard

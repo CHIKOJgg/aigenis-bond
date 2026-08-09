@@ -152,9 +152,20 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
             "explanation": explanation,
         }
 
+    # Distressed-debt marker: price < 80% of face with YTM > 30% means the
+    # market prices near-default, so the quoted yield is not an opportunity —
+    # it is a risk signal (the scoring engine also caps/penalizes it).
+    distressed = (
+        price_pct is not None
+        and ytm is not None
+        and price_pct < 80.0
+        and ytm > 30.0
+    )
+
     return {
         "yield_to_maturity": ytm,
         "computed_ytm": computed_ytm,
+        "distressed": distressed,
         "duration_years": duration_years,
         "score": score_payload,
     }
@@ -212,6 +223,7 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         # Source YTM if present, otherwise computed from price/coupon/maturity.
         "yield_to_maturity": analytics["yield_to_maturity"],
         "computed_ytm": analytics["computed_ytm"],
+        "distressed": analytics["distressed"],
         "duration_years": analytics["duration_years"],
         "score": score["score"] if score else None,
         "tier": score["tier"] if score else None,

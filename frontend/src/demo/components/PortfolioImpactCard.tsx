@@ -1,29 +1,39 @@
+import { AlertTriangle } from 'lucide-react';
 import { getPortfolioImpact } from '../demo-api';
 import type { DemoBond } from '../types';
 
 interface Props {
   bondId: string;
   allocationPct: number;
+  allocationLabel?: string;
   bond?: DemoBond;
 }
 
-export default function PortfolioImpactCard({ bondId, allocationPct, bond }: Props) {
+// A distressed bond prices near-default (price < 80%, YTM > 30%): its
+// coupon-schedule yield is not an achievable return, so the portfolio effect
+// is computed on a conservative capped yield instead of the headline YTM.
+const DISTRESSED_YIELD_CAP = 20;
+
+export default function PortfolioImpactCard({ bondId, allocationPct, allocationLabel, bond }: Props) {
   const fallback = getPortfolioImpact({
     portfolio_template: 'moderate_byn',
     bond_id: bondId,
     allocation_pct: allocationPct,
   });
   const allocation = allocationPct / 100;
-  const liveYield = bond?.yield_to_maturity ?? 0;
+  const headlineYield = bond?.yield_to_maturity ?? 0;
+  const effectiveYield = bond?.distressed
+    ? Math.min(headlineYield, DISTRESSED_YIELD_CAP)
+    : headlineYield;
   const liveDuration = bond?.term_days ? bond.term_days / 365.25 : 3;
   const impact = bond ? {
     ...fallback,
     after: {
-      expected_yield_pct: +(fallback.before.expected_yield_pct * (1 - allocation) + liveYield * allocation).toFixed(1),
+      expected_yield_pct: +(fallback.before.expected_yield_pct * (1 - allocation) + effectiveYield * allocation).toFixed(1),
       duration_years: +(fallback.before.duration_years * (1 - allocation) + liveDuration * allocation).toFixed(1),
     },
     deltas: {
-      expected_yield_pp: +((liveYield - fallback.before.expected_yield_pct) * allocation).toFixed(1),
+      expected_yield_pp: +((effectiveYield - fallback.before.expected_yield_pct) * allocation).toFixed(1),
       duration_years: +((liveDuration - fallback.before.duration_years) * allocation).toFixed(1),
     },
   } : fallback;
@@ -36,7 +46,7 @@ export default function PortfolioImpactCard({ bondId, allocationPct, bond }: Pro
       borderRadius: 12,
     }}>
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>
-        После добавления {allocationPct}% позиции
+        После добавления {allocationLabel ?? `${allocationPct}%`} позиции
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
@@ -47,6 +57,29 @@ export default function PortfolioImpactCard({ bondId, allocationPct, bond }: Pro
           <div style={{ fontSize: 14, fontWeight: 600, color: '#0B526B' }}>Умеренный</div>
         </div>
       </div>
+
+      {bond?.distressed && (
+        <div style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'flex-start',
+          padding: '12px 16px',
+          background: '#e0340012',
+          border: '1px solid #e0340026',
+          borderRadius: 8,
+          marginBottom: 16,
+          fontSize: 12,
+          color: '#7a2e16',
+          lineHeight: 1.45,
+        }}>
+          <AlertTriangle size={15} style={{ color: '#e03400', flexShrink: 0, marginTop: 1 }} />
+          <span>
+            Дистрибуция: цена ниже 80% при доходности выше 30%. Эффект оценён на
+            консервативной доходности {DISTRESSED_YIELD_CAP}% вместо заявленных{' '}
+            {headlineYield}% — полный YTM достижим только при исполнении всех выплат.
+          </span>
+        </div>
+      )}
 
       <div style={{ marginBottom: 16 }}>
         {impact.constraints.map((c) => (

@@ -71,6 +71,104 @@ def test_explained_score_structure_and_disclaimer():
     assert impacts == sorted(impacts, reverse=True)
 
 
+def test_explain_detail_helpers():
+    from scoring.explain import (
+        _coupon_detail,
+        _credit_detail,
+        _currency_detail,
+        _duration_detail,
+        _efficiency_detail,
+        _historical_volatility_detail,
+        _inflation_detail,
+        _liquidity_detail,
+        _peer_relative_detail,
+        _volatility_detail,
+        _yield_detail,
+    )
+
+    assert "не указана" in _yield_detail(None)
+    assert _yield_detail(0) == _yield_detail(None)
+    assert "Высокая" in _yield_detail(15)
+    assert "Умеренная" in _yield_detail(8)
+    assert "Невысокая" in _yield_detail(5)
+
+    assert "Металл (XAU)" in _currency_detail("xau")
+    assert "XAG" in _currency_detail("XAG")
+    assert "Валюта RUR." == _currency_detail("RUR")
+
+    assert "Короткий" in _duration_detail(20)
+    assert "Средний" in _duration_detail(12)
+    assert "Длинный" in _duration_detail(-15)
+    assert "сбалансированный" in _duration_detail(5)
+
+    assert "Ограниченная" in _liquidity_detail(0)
+    assert "Приемлемая" in _liquidity_detail(4)
+    assert "Хорошая" in _liquidity_detail(9)
+
+    assert "Повышенный" in _credit_detail(-15)
+    assert "умеренный" in _credit_detail(-5)
+    assert "норме" in _credit_detail(5)
+
+    assert "нейтральный" in _inflation_detail(0)
+    assert "покрывает" in _inflation_detail(2)
+    assert "не покрывать" in _inflation_detail(-2)
+
+    assert "не указана" in _coupon_detail(5, None)
+    assert "стабильный" in _coupon_detail(5, 8.0)
+    assert "дисконтная" in _coupon_detail(-1, 5.0)
+    assert "уровне рынка" in _coupon_detail(0, 8.0)
+
+    assert "Экстремальные" in _volatility_detail(-5)
+    assert "Повышенная" in _volatility_detail(-1)
+    assert "норме" in _volatility_detail(1)
+
+    assert "стабилен" in _historical_volatility_detail(1)
+    assert "нестабильный" in _historical_volatility_detail(-1)
+    assert "недостаточно" in _historical_volatility_detail(0)
+
+    assert "значительно выше" in _peer_relative_detail(5, "USD")
+    assert "выше среднего" in _peer_relative_detail(1, "USD")
+    assert "значительно ниже" in _peer_relative_detail(-5, "USD")
+    assert "ниже среднего" in _peer_relative_detail(-1, "USD")
+    assert "Нет данных" in _peer_relative_detail(0, "USD")
+
+    assert "Отличное" in _efficiency_detail(15)
+    assert "Хорошее" in _efficiency_detail(7)
+    assert "Приемлемое" in _efficiency_detail(3)
+    assert "Низкая" in _efficiency_detail(1)
+
+
+def test_score_factor_impacts():
+    from scoring.explain import ScoreFactor
+
+    assert ScoreFactor("a", "A", 1, "d").impact == "positive"
+    assert ScoreFactor("b", "B", -1, "d").impact == "negative"
+    assert ScoreFactor("c", "C", 0, "d").impact == "neutral"
+    assert ScoreFactor("d", "D", 1.23456, "d").points == 1.23
+
+
+def test_explained_score_weaknesses_lead():
+    from datetime import date
+
+    from scoring.engine import score_bond
+    from scoring.explain import explain_score
+
+    s = score_bond(
+        internal_id="W-1",
+        yield_to_maturity=0.5,
+        currency="RUR",
+        maturity_date=date(2027, 1, 1),
+        status="active",
+        issuer="Corp",
+        price=100.0,
+        nominal=100.0,
+        coupon_rate=1.0,
+    )
+    explained = explain_score(s, currency="RUR", ytm_pct=0.5)
+    assert explained.summary
+    assert any(f.impact == "negative" for f in explained.factors)
+
+
 def test_explained_score_strengths_weaknesses():
     from datetime import date
 

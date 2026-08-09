@@ -21,11 +21,16 @@ _DEFAULT_TOLERANCE_PP = 15.0
 def to_price_pct(price: Any, nominal: Any) -> float | None:
     """Normalize a raw source price to percent-of-face (100.0 = par).
 
-    The Aigenis feed quotes most instruments in absolute units (e.g. 10039.58
-    for a 10 000-nominal bond) while MOEX quotes everything as % of face.
-    Consumers downstream (desk, scoring, demo) expect the percent scale, so a
-    value that sits within 0.5x-500x of the nominal is treated as absolute and
-    converted; anything else passes through as already-percent.  Returns None
+    The DB contract is percent-of-face for every market: MOEX and BCSE quote
+    percentages natively and the Aigenis client converts absolute settlement
+    units at ingestion (``_to_price_pct``). So a value in the realistic bond
+    range (0.5%-500%) passes through untouched — converting it would corrupt
+    percent quotes on small-nominal issues (e.g. price 100.0 on a 200-nominal
+    bond must stay 100.0, not become 50.0).
+
+    Only values that cannot be bond quotes in percent are treated as absolute
+    settlement units and converted: prices above 500 (e.g. 10 039.58 for a
+    10 000-nominal issue) or below 0.5 (penny absolute quotes).  Returns None
     for missing/non-positive prices.
     """
     if price is None:
@@ -36,12 +41,14 @@ def to_price_pct(price: Any, nominal: Any) -> float | None:
         return None
     if not isfinite(p) or p <= 0:
         return None
+    if 0.5 <= p <= 500:
+        return p
     if nominal is not None:
         try:
             nom = float(nominal)
         except (TypeError, ValueError):
             nom = 0.0
-        if nom > 0 and 0.5 <= p / nom <= 500:
+        if nom > 0:
             return p / nom * 100.0
     return p
 
@@ -74,7 +81,11 @@ def ytm_from_price(
     # The equation is homogeneous in face, so fix face=100 to match price_pct.
     face = 100.0
     c = face * coupon_rate_pct / 100.0 / coupon_frequency
-    n = int(years * coupon_frequency)
+    # Round the period count instead of truncating: ``(maturity - ref).days /
+    # 365.25`` lands just below exact integer years (e.g. 4.9993 for 5y), and
+    # ``int()`` would silently drop the final coupon+redemption period and
+    # overstate the yield of below-par bonds by tens of bps.
+    n = max(1, round(years * coupon_frequency))
     if n <= 0:
         return None
     y = (coupon_rate_pct / 100.0) * (face / price_pct)

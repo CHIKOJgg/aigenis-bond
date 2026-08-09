@@ -76,10 +76,10 @@ def _to_decimal(v: Any) -> Decimal | None:
 def _to_date(v: Any) -> date | None:
     if v is None or v == "":
         return None
-    if isinstance(v, date):
-        return v
     if isinstance(v, datetime):
         return v.date()
+    if isinstance(v, date):
+        return v
     if isinstance(v, str):
         for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
             try:

@@ -7,9 +7,9 @@ from datetime import date
 
 from sqlalchemy import func as sa_func
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from scraper.db import upsert_row
 from scraper.models import Stock, StockHistory
 from scraper.orm import StockHistoryORM, StockORM
 
@@ -45,21 +45,25 @@ def _stock_to_orm(stock: Stock) -> dict:
 
 
 async def upsert_stock(session: AsyncSession, stock: Stock) -> None:
-    values = _stock_to_orm(stock)
-    stmt = pg_insert(StockORM).values(**values)
-    update_cols = {c: stmt.excluded[c] for c in values if c not in {"internal_id"}}
-    stmt = stmt.on_conflict_do_update(index_elements=[StockORM.internal_id], set_=update_cols)
-    await session.execute(stmt)
+    await upsert_row(
+        session,
+        StockORM,
+        index_elements=["internal_id"],
+        values=_stock_to_orm(stock),
+    )
 
 
 async def upsert_stocks_batch(session: AsyncSession, stocks: Iterable[Stock]) -> int:
     rows = [_stock_to_orm(s) for s in stocks]
     if not rows:
         return 0
-    stmt = pg_insert(StockORM).values(rows)
-    update_cols = {c: stmt.excluded[c] for c in rows[0] if c not in {"internal_id"}}
-    stmt = stmt.on_conflict_do_update(index_elements=[StockORM.internal_id], set_=update_cols)
-    await session.execute(stmt)
+    for values in rows:
+        await upsert_row(
+            session,
+            StockORM,
+            index_elements=["internal_id"],
+            values=values,
+        )
     return len(rows)
 
 
@@ -109,13 +113,13 @@ async def upsert_stock_history_batch(session: AsyncSession, rows: Iterable[Stock
     payload = [_history_to_orm(r) for r in rows]
     if not payload:
         return 0
-    stmt = pg_insert(StockHistoryORM).values(payload)
-    update_cols = {c: stmt.excluded[c] for c in payload[0] if c not in {"internal_id", "date"}}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[StockHistoryORM.internal_id, StockHistoryORM.date],
-        set_=update_cols,
-    )
-    await session.execute(stmt)
+    for values in payload:
+        await upsert_row(
+            session,
+            StockHistoryORM,
+            index_elements=["internal_id", "date"],
+            values=values,
+        )
     return len(payload)
 
 

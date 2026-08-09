@@ -25,10 +25,23 @@
     "guarantor": null,
     "maturity_term_text": "5 лет",
     "coupon_description": "Фиксированный купон 12.5% годовых, выплата 2 раза в год",
-    "coupon_schedule": {"2026-12-15": ["12.50 BYN"], "2027-06-15": ["12.50 BYN"], "2027-12-15": ["12.50 BYN"], "2028-06-15": ["112.50 BYN"]},
+    "coupon_schedule": {
+      "2026-12-15": [
+        "6.25 BYN"
+      ],
+      "2027-06-15": [
+        "6.25 BYN"
+      ],
+      "2027-12-15": [
+        "6.25 BYN"
+      ],
+      "2028-06-15": [
+        "106.25 BYN"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
-    "term_days": 1679,
+    "term_days": 679,
     "market": "bcse",
     "status": "active",
     "is_government": true,
@@ -60,10 +73,29 @@
     "guarantor": null,
     "maturity_term_text": "5 лет",
     "coupon_description": "Фиксированный купон 10.0% годовых",
-    "coupon_schedule": {"2026-09-20": ["10.00 BYN"], "2027-03-20": ["10.00 BYN"], "2027-09-20": ["10.00 BYN"]},
+    "coupon_schedule": {
+      "2026-09-20": [
+        "5.00 BYN"
+      ],
+      "2027-03-20": [
+        "5.00 BYN"
+      ],
+      "2027-09-20": [
+        "5.00 BYN"
+      ],
+      "2028-03-20": [
+        "5.00 BYN"
+      ],
+      "2028-09-20": [
+        "5.00 BYN"
+      ],
+      "2029-03-20": [
+        "105.00 BYN"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
-    "term_days": 1948,
+    "term_days": 957,
     "market": "bcse",
     "status": "active",
     "is_government": false,
@@ -95,7 +127,23 @@
     "guarantor": null,
     "maturity_term_text": "2 года",
     "coupon_description": "Фиксированный купон 11.0% годовых, ежеквартально",
-    "coupon_schedule": {"2026-11-10": ["2.75 BYN"], "2027-02-10": ["2.75 BYN"], "2027-05-10": ["2.75 BYN"], "2027-08-10": ["2.75 BYN"], "2027-11-10": ["102.75 BYN"]},
+    "coupon_schedule": {
+      "2026-11-10": [
+        "2.75 BYN"
+      ],
+      "2027-02-10": [
+        "2.75 BYN"
+      ],
+      "2027-05-10": [
+        "2.75 BYN"
+      ],
+      "2027-08-10": [
+        "2.75 BYN"
+      ],
+      "2027-11-10": [
+        "102.75 BYN"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 462,
@@ -130,7 +178,14 @@
     "guarantor": null,
     "maturity_term_text": "2 года",
     "coupon_description": "Фиксированный купон 13.0% годовых",
-    "coupon_schedule": {"2027-01-01": ["6.50 BYN"], "2027-07-01": ["106.50 BYN"]},
+    "coupon_schedule": {
+      "2027-01-01": [
+        "6.50 BYN"
+      ],
+      "2027-07-01": [
+        "106.50 BYN"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 329,
@@ -151,7 +206,7 @@
     "coupon_frequency": 2,
     "maturity_date": "2030-12-01",
     "price": 82.0,
-    "yield_to_maturity": 9.8,
+    "yield_to_maturity": 14.0,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2023-12-01",
@@ -165,7 +220,35 @@
     "guarantor": null,
     "maturity_term_text": "7 лет",
     "coupon_description": "Фиксированный купон 8.5% годовых",
-    "coupon_schedule": {"2026-12-01": ["4.25 BYN"], "2027-06-01": ["4.25 BYN"]},
+    "coupon_schedule": {
+      "2026-12-01": [
+        "4.25 BYN"
+      ],
+      "2027-06-01": [
+        "4.25 BYN"
+      ],
+      "2027-12-01": [
+        "4.25 BYN"
+      ],
+      "2028-06-01": [
+        "4.25 BYN"
+      ],
+      "2028-12-01": [
+        "4.25 BYN"
+      ],
+      "2029-06-01": [
+        "4.25 BYN"
+      ],
+      "2029-12-01": [
+        "4.25 BYN"
+      ],
+      "2030-06-01": [
+        "4.25 BYN"
+      ],
+      "2030-12-01": [
+        "104.25 BYN"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 1578,
@@ -200,7 +283,11 @@
     "guarantor": "Правительство РБ",
     "maturity_term_text": "2 года",
     "coupon_description": "Фиксированный купон 14.0% годовых",
-    "coupon_schedule": {"2026-12-20": ["114.00 BYN"]},
+    "coupon_schedule": {
+      "2026-12-20": [
+        "107.00 BYN"
+      ]
+    },
     "indexation_currency": null,
     "exchange_rate_on_start": null,
     "term_days": 136,

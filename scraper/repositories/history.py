@@ -4,9 +4,9 @@ from collections.abc import Iterable
 from datetime import date
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from scraper.db import upsert_row
 from scraper.models import BondDailyAccrual, BondHistory
 from scraper.orm import BondDailyAccrualORM, BondHistoryORM
 
@@ -26,12 +26,13 @@ async def upsert_history_batch(session: AsyncSession, rows: Iterable[BondHistory
     payload = [_to_orm(r) for r in rows]
     if not payload:
         return 0
-    stmt = pg_insert(BondHistoryORM).values(payload)
-    update_cols = {c: stmt.excluded[c] for c in payload[0] if c not in {"internal_id", "date"}}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[BondHistoryORM.internal_id, BondHistoryORM.date], set_=update_cols
-    )
-    await session.execute(stmt)
+    for values in payload:
+        await upsert_row(
+            session,
+            BondHistoryORM,
+            index_elements=["internal_id", "date"],
+            values=values,
+        )
     return len(payload)
 
 
@@ -78,12 +79,13 @@ async def upsert_accruals_batch(session: AsyncSession, rows: Iterable[BondDailyA
     payload = [_accrual_to_orm(r) for r in rows]
     if not payload:
         return 0
-    stmt = pg_insert(BondDailyAccrualORM).values(payload)
-    update_cols = {c: stmt.excluded[c] for c in payload[0] if c not in {"internal_id", "date"}}
-    stmt = stmt.on_conflict_do_update(
-        index_elements=[BondDailyAccrualORM.internal_id, BondDailyAccrualORM.date], set_=update_cols
-    )
-    await session.execute(stmt)
+    for values in payload:
+        await upsert_row(
+            session,
+            BondDailyAccrualORM,
+            index_elements=["internal_id", "date"],
+            values=values,
+        )
     return len(payload)
 
 

@@ -73,13 +73,13 @@ async def _wrap_with_history(
             await fn()
             logger.info(f"{job_name}_done", correlation_id=cid)
             await finish_job_run(run_id, "ok", started_at=started)
-        except Exception:
+        except Exception as exc:
             logger.exception(f"{job_name}_failed", correlation_id=cid)
             await finish_job_run(
                 run_id,
                 "failed",
                 started_at=started,
-                error=str_exc_last_line(),
+                error=str_exc_last_line(exc),
             )
 
     return wrapper

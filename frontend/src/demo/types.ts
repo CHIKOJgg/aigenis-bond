@@ -23,6 +23,7 @@ export interface DemoBond {
   term_days: number | null;
   duration_years?: number | null;
   computed_ytm?: boolean;
+  distressed?: boolean;
   score?: number | null;
   tier?: string | null;
   score_status?: ScoreStatus | null;

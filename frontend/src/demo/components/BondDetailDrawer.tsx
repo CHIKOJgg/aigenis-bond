@@ -155,6 +155,31 @@ export default function BondDetailDrawer({
             <span>Рынок: {bond.market?.toUpperCase()}</span>
           </div>
 
+          {bond.distressed && (
+            <div style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+              padding: '12px 16px',
+              background: '#e0340012',
+              border: '1px solid #e0340026',
+              borderRadius: 10,
+              marginBottom: 16,
+            }}>
+              <AlertTriangle size={16} style={{ color: '#e03400', flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#b42318' }}>
+                  Дистрибуция / высокая вероятность дефолта
+                </div>
+                <div style={{ fontSize: 12, color: '#7a2e16', lineHeight: 1.45, marginTop: 2 }}>
+                  Цена ниже 80% от номинала при доходности выше 30% — рынок закладывает
+                  неисполнение обязательств. Расчётная доходность к погашению недостижима
+                  без полных выплат по графику.
+                </div>
+              </div>
+            </div>
+          )}
+
           {score ? (
             <div style={{
               padding: '20px',
@@ -229,8 +254,8 @@ export default function BondDetailDrawer({
 
           {score?.breakdown && <ScoreBreakdownBars breakdown={score.breakdown} />}
 
-          {explanation && explanation.factors.length > 0 && (
-            <ScoreExplanation factors={explanation.factors} />
+          {factors.length > 0 && (
+            <ScoreExplanation factors={factors} />
           )}
 
           <div style={{

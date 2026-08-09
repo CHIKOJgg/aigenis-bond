@@ -6,6 +6,7 @@ import { searchAllBonds, scoreFromLiveBond } from '../demo-api';
 import { bondDrawerStore } from '../drawer-store';
 import { formatPrice, formatYtm } from '../demo-format';
 import BondScoreBadge from '../components/BondScoreBadge';
+import { DistressedChip } from './DemoAnalyticsPage';
 import { SCORE_STATUS_LABEL } from '../demo-config';
 import type { DemoBond, ScoreStatus } from '../types';
 import { scoreStatusColor } from '../components/BondDetailDrawer';
@@ -185,7 +186,10 @@ export default function DemoSearchPage() {
                         {bond.market.toUpperCase()}
                       </span>
                     </td>
-                    <td style={tdStyle}>{formatYtm(bond.yield_to_maturity)}</td>
+                    <td style={tdStyle}>
+                      <div>{formatYtm(bond.yield_to_maturity)}</div>
+                      {bond.distressed && <DistressedChip />}
+                    </td>
                     <td style={tdStyle}>{formatPrice(bond.price)}</td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

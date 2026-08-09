@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Bell, Search, Settings, X } from 'lucide-react';
 import { DEMO_PERSONA } from '../demo-config';
 import { fetchLiveSearch } from '../live-demo-api';
@@ -18,8 +18,14 @@ interface Props {
 const SUGGESTION_DEBOUNCE = 220;
 const SUGGESTION_LIMIT = 8;
 
-export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
+export default function DemoTopBar({ market: marketProp, onMarketChange }: Props) {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The header market switch is global: it reads/writes the ?market= query
+  // param so it works on every demo page, not just the one that owns the
+  // market state. The prop override stays for embedded/explicit usage.
+  const routeMarket = (searchParams.get('market') ?? 'BCSE').toUpperCase();
+  const market = (marketProp ?? (routeMarket === 'BCSE' || routeMarket === 'MOEX' ? routeMarket : 'BCSE'));
   const [q, setQ] = useState('');
   const [suggestions, setSuggestions] = useState<DemoBond[]>([]);
   const [open, setOpen] = useState(false);
@@ -65,6 +71,16 @@ export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
     bondDrawerStore.open(bond.internal_id);
   };
 
+  const changeMarket = (m: string) => {
+    if (onMarketChange) {
+      onMarketChange(m);
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.set('market', m);
+    setSearchParams(next, { replace: true });
+  };
+
   return (
     <header
       style={{
@@ -83,7 +99,7 @@ export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
           {['BCSE', 'MOEX'].map((m) => (
             <button
               key={m}
-              onClick={() => onMarketChange?.(m)}
+              onClick={() => changeMarket(m)}
               style={{
                 padding: '6px 16px',
                 border: 'none',
@@ -220,6 +236,7 @@ export default function DemoTopBar({ market = 'BCSE', onMarketChange }: Props) {
                     </div>
                     <div style={{ fontSize: 11, color: scoreStatusColor(status) }}>
                       {SCORE_STATUS_LABEL[status]}
+                      {bond.distressed && <span style={{ color: '#e03400', fontWeight: 600 }}> · дистрибуция</span>}
                     </div>
                   </div>
                 </button>

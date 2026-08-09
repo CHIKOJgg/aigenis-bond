@@ -203,6 +203,43 @@ def test_score_bond_tier_boundaries():
     assert high.tier in {"S", "A", "B"}
 
 
+def test_distressed_bond_yield_reward_is_capped():
+    # Regression: Republic of Belarus 2027 USD (price 71, phantom 92% YTM on
+    # a defaulted issue) used to top the universe with S/87.1. A bond below
+    # 80% of face with YTM > 30% is distressed debt: the yield is a risk
+    # signal, not an opportunity, so reward is capped and risk deepened.
+    distressed = score_bond(
+        internal_id="DISTR",
+        yield_to_maturity=92.4,
+        currency="USD",
+        maturity_date=date(2027, 6, 29),
+        status="active",
+        issuer="Republic of Belarus",
+        price=71.0,
+        nominal=100.0,
+        coupon_rate=7.625,
+    )
+    assert distressed.breakdown.yield_component <= 20.0
+    assert distressed.breakdown.volatility_component <= -18.0
+    assert distressed.score < 75.0
+    assert distressed.tier in {"C", "D"}
+
+    # Same credit at par is not distressed: normal reward stays.
+    healthy = score_bond(
+        internal_id="HEALTHY",
+        yield_to_maturity=25.0,
+        currency="USD",
+        maturity_date=date(2027, 6, 29),
+        status="active",
+        issuer="Republic of Belarus",
+        price=100.0,
+        nominal=100.0,
+        coupon_rate=7.625,
+    )
+    assert healthy.breakdown.yield_component == 25.0
+    assert healthy.score > distressed.score
+
+
 def test_score_bonds_batch():
     out = score_bonds(
         [
@@ -361,3 +398,62 @@ def test_zero_coupon_bond_penalty():
 )
 def test_issuer_classification(issuer, expected_tier):
     assert _classify_issuer(issuer) == expected_tier
+
+def test_historical_volatility_branches():
+    from scoring.engine import _historical_volatility_component
+    assert _historical_volatility_component(None) == 0.0
+    assert _historical_volatility_component([5.0, 5.0]) == 0.0
+    assert _historical_volatility_component([5.0, 5.0, -1.0]) == 0.0
+    assert _historical_volatility_component([5.0, 5.0, 5.0]) == 5.0
+    assert _historical_volatility_component([1.0, 1.0, 5.0, 9.0, 9.0]) == 0.0
+
+
+def test_historical_volatility_stdev_error(monkeypatch):
+    from scoring.engine import _historical_volatility_component, statistics
+    def boom(values):
+        raise statistics.StatisticsError("n < 2")
+    monkeypatch.setattr("scoring.engine.statistics.stdev", boom)
+    assert _historical_volatility_component([1.0, 2.0, 3.0]) == 0.0
+
+
+def test_peer_relative_branches(monkeypatch):
+    from scoring.engine import _peer_relative_component, statistics
+    assert _peer_relative_component(None, "USD", [8, 9, 10, 11, 12]) == 0.0
+    assert _peer_relative_component(5.0, "USD", [8, 9, 10, 11]) == 0.0
+    assert _peer_relative_component(5.0, "USD", [8, 9, 10, 11, -1]) == 0.0
+    assert _peer_relative_component(5.0, "USD", [5.0] * 5) == 0.0
+    assert _peer_relative_component(10.0, "USD", [8, 9, 10, 11, 12]) == 1.0
+    assert _peer_relative_component(7.0, "USD", [8, 9, 10, 11, 12]) == -3.0
+
+    def boom(values):
+        raise statistics.StatisticsError("n < 2")
+    monkeypatch.setattr("scoring.engine.statistics.stdev", boom)
+    assert _peer_relative_component(5.0, "USD", [8, 9, 10, 11, 12]) == 0.0
+
+
+def test_classify_issuer_sub_sovereign():
+    from scoring.engine import _classify_issuer
+    assert _classify_issuer("Федеральное агентство") == "sub_sovereign"
+
+
+def test_volatility_component_price_band():
+    from scoring.engine import _volatility_component
+    assert _volatility_component(ytm_pct=None, price=40.0, nominal=100.0, status="active", coupon_pct=None) == -1.0
+
+
+def test_inflation_component_market():
+    from scoring.engine import _inflation_component_market
+    assert _inflation_component_market("RUB", 20.0, True) == 5.0
+    assert _inflation_component_market("RUB", 15.0, True) == 3.0
+    assert _inflation_component_market("RUB", 12.0, True) == 0.0
+    assert _inflation_component_market("RUB", 5.0, True) == -2.0
+    assert _inflation_component_market("BYN", 12.0, True) == 2.0
+    assert _inflation_component_market("BYN", 5.0, True) == -1.0
+    assert _inflation_component_market("BYN", None, False) == -5.0
+    assert _inflation_component_market("USD", 3.0, True) == 3.0
+
+
+def test_efficiency_ratio_zero():
+    from scoring.engine import _compute_efficiency_ratio, ScoreBreakdown
+    b = ScoreBreakdown()
+    assert _compute_efficiency_ratio(b) == 0.0

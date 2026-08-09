@@ -83,6 +83,239 @@ def test_stock_boards_default() -> None:
     assert _stock_boards() == ["TQBR", "TQOD", "TQDE"]
 
 
+def test_stock_boards_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MOEX_STOCK_BOARDS", " tqbr, spb ")
+    assert _stock_boards() == ["TQBR", "SPB"]
+
+
+def test_stock_boards_fallback_without_stock_cfg() -> None:
+    from scraper.moex_stocks import _stock_boards
+
+    assert _stock_boards(_fake_settings(None)) == ["TQBR", "TQOD", "TQDE"]
+
+
+def test_to_dec_branches() -> None:
+    from scraper.moex_stocks import _to_dec
+
+    assert _to_dec(None) is None
+    assert _to_dec("") is None
+    assert _to_dec("12.5") == Decimal("12.5")
+    assert _to_dec("abc") is None
+    assert _to_dec(complex(1, 2)) is None
+
+
+def test_to_int_branches() -> None:
+    from scraper.moex_stocks import _to_int
+
+    assert _to_int(None) is None
+    assert _to_int("") is None
+    assert _to_int("10") == 10
+    assert _to_int("10.9") == 10
+    assert _to_int("abc") is None
+
+
+def test_to_date_branches() -> None:
+    from datetime import datetime
+
+    from scraper.moex_stocks import _to_date
+
+    assert _to_date(None) is None
+    assert _to_date("") is None
+    assert _to_date(datetime(2026, 1, 2, 10, 30)) == __import__("datetime").date(2026, 1, 2)
+    assert _to_date("2026-08-05") == __import__("datetime").date(2026, 8, 5)
+    assert _to_date("not a date") is None
+
+
+# --- custom URL->payload client for branch coverage ------------------------ #
+
+
+class _MapClient(_FakeClient):
+    def __init__(self, mapping: dict[str, dict]) -> None:
+        self._mapping = mapping
+
+    async def get(self, url: str):
+        if _fail_requests:
+            raise RuntimeError("moex down")
+        for key, payload in self._mapping.items():
+            if key in url:
+                return _FakeResp(payload)
+        raise AssertionError(f"unexpected url: {url}")
+
+
+def test_fetch_stocks_cap_limits_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _fail_requests
+    _fail_requests = False
+    client = _make_client(boards=["TQBR"])
+    client._cap = 2
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stocks()
+
+    fetched = _run(go())
+    assert len(fetched) == 2
+
+
+def test_fetch_stocks_explicit_board(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _fail_requests
+    _fail_requests = False
+    client = _make_client()
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stocks("tqde")
+
+    fetched = _run(go())
+    assert fetched and all(s.board == "TQDE" for s in fetched)
+
+
+def test_fetch_board_skips_row_without_secid(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _fail_requests
+    _fail_requests = False
+    payload = {
+        "securities": {
+            "columns": ["SECID", "SECNAME", "ISIN"],
+            "data": [[], ["S1", "Stock One", "BY123"]],
+        },
+        "marketdata": {"columns": ["SECID", "IS_TRADED"], "data": [["S1", 1]]},
+    }
+    client = _make_client(boards=["TQBR"])
+    monkeypatch.setattr(
+        "scraper.moex_stocks.httpx.AsyncClient",
+        lambda *a, **k: _MapClient({"securities.json": payload}),
+    )
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stocks()
+
+    fetched = _run(go())
+    assert len(fetched) == 1
+    assert fetched[0].secid == "S1"
+
+
+def test_fetch_board_skips_row_that_fails_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _fail_requests
+    _fail_requests = False
+    payload = {
+        "securities": {
+            "columns": ["SECID", "SECNAME", "ISIN"],
+            "data": [["BAD", "Bond-ish", {"oops": 1}], ["OK", "Stock OK", "BY123"]],
+        },
+        "marketdata": {"columns": ["SECID", "IS_TRADED"], "data": [["BAD", 1], ["OK", 1]]},
+    }
+    client = _make_client(boards=["TQBR"])
+    monkeypatch.setattr(
+        "scraper.moex_stocks.httpx.AsyncClient",
+        lambda *a, **k: _MapClient({"securities.json": payload}),
+    )
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stocks()
+
+    fetched = _run(go())
+    assert [s.secid for s in fetched] == ["OK"]
+
+
+def test_fetch_stock_detail_from_prefix_without_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _fail_requests
+    _fail_requests = False
+    client = _make_client(boards=["TQBR"])
+
+    async def go() -> object:
+        async with client:
+            return await client.fetch_stock_detail("MOEX_LKOH")
+
+    detail = _run(go())
+    assert detail.secid == "LKOH"
+
+
+def test_fetch_stock_detail_unknown_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scraper.errors import NotFoundError
+
+    client = _make_client(boards=["TQBR"])
+
+    async def go() -> object:
+        async with client:
+            await client.fetch_stocks()
+            return await client.fetch_stock_detail("NOPE")
+
+    with pytest.raises(NotFoundError):
+        _run(go())
+
+
+def test_fetch_stock_detail_no_securities_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from scraper.errors import NotFoundError
+
+    payload = {
+        "securities": {"columns": ["SECID"], "data": []},
+        "marketdata": {"columns": ["SECID", "IS_TRADED"], "data": []},
+    }
+    client = _make_client(boards=["TQBR"])
+    monkeypatch.setattr(
+        "scraper.moex_stocks.httpx.AsyncClient",
+        lambda *a, **k: _MapClient({"securities/LKOH.json": payload}),
+    )
+
+    async def go() -> object:
+        async with client:
+            return await client.fetch_stock_detail("MOEX_LKOH")
+
+    with pytest.raises(NotFoundError):
+        _run(go())
+
+
+def test_fetch_stock_history_unknown_returns_empty() -> None:
+    client = _make_client(boards=["TQBR"])
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stock_history("NO_SUCH")
+
+    assert _run(go()) == []
+
+
+def test_fetch_stock_history_skips_bad_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    global _fail_requests
+    _fail_requests = False
+    payload = {
+        "history": {
+            "columns": ["TRADEDATE", "OPEN", "CLOSE", "VOLUME"],
+            "data": [
+                ["garbage", "1", "2", 100],
+                [{"x": 1}, "1", "2", 100],
+                ["2026-08-05", "10", "11", 100],
+                ["2026-08-04", "9", "10", "1e309"],
+            ],
+        }
+    }
+    client = _make_client(boards=["TQBR"])
+    monkeypatch.setattr(
+        "scraper.moex_stocks.httpx.AsyncClient",
+        lambda *a, **k: _MapClient({"candles.json": payload}),
+    )
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stock_history("MOEX_SBER")
+
+    rows = _run(go())
+    assert [r.date.isoformat() for r in rows] == ["2026-08-05"]
+
+
+def test_fetch_stock_history_network_failure_returns_empty() -> None:
+    global _fail_requests
+    _fail_requests = True
+    client = _make_client(boards=["TQBR"])
+
+    async def go() -> list:
+        async with client:
+            return await client.fetch_stock_history("MOEX_SBER")
+
+    assert _run(go()) == []
+
+
 def test_fetch_stocks_parses_tqbr() -> None:
     global _fail_requests
     _fail_requests = False

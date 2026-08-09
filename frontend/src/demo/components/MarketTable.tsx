@@ -2,15 +2,32 @@ import { getBonds, scoreFromLiveBond } from '../demo-api';
 import BondScoreBadge from './BondScoreBadge';
 import { formatPrice, formatYtm } from '../demo-format';
 import type { DemoScore } from '../types';
+import { DistressedChip } from '../pages/DemoAnalyticsPage';
 
 interface Props {
   market: string;
   bonds?: import('../types').DemoBond[];
+  loading?: boolean;
   onSelect?: (internalId: string) => void;
 }
 
-export default function MarketTable({ market, bonds: liveBonds, onSelect }: Props) {
+const STATUS_LABEL: Record<string, string> = {
+  active: 'Активна',
+  delisted: 'Исключена',
+  matured: 'Погашена',
+  unknown: 'Статус не определён',
+};
+
+export default function MarketTable({ market, bonds: liveBonds, loading, onSelect }: Props) {
   const bonds = liveBonds ?? getBonds(market);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: 'center', padding: 40, color: '#516c79' }}>
+        Загрузка данных рынка…
+      </div>
+    );
+  }
 
   if (bonds.length === 0) {
     return (
@@ -57,13 +74,18 @@ export default function MarketTable({ market, bonds: liveBonds, onSelect }: Prop
                   <div style={{ fontSize: 12, color: '#717680' }}>{bond.isin || bond.internal_id}</div>
                 </td>
                 <td style={tdStyle}>{formatPrice(bond.price)}</td>
-                <td style={tdStyle}>{formatYtm(bond.yield_to_maturity)}</td>
+                <td style={tdStyle}>
+                  <div>{formatYtm(bond.yield_to_maturity)}</div>
+                  {bond.distressed && <DistressedChip />}
+                </td>
                 <td style={tdStyle}>{bond.maturity_date ?? '—'}</td>
                 <td style={tdStyle}>
                   <BondScoreBadge score={score} />
                 </td>
                 <td style={tdStyle}>
-                  <span style={statusStyle(bond.status)}>{bond.status}</span>
+                  <span style={statusStyle(bond.status)}>
+                    {STATUS_LABEL[bond.status] || bond.status}
+                  </span>
                 </td>
               </tr>
             );
@@ -85,7 +107,7 @@ const thStyle: React.CSSProperties = {
 
 const tdStyle: React.CSSProperties = {
   padding: '14px 16px',
-  verticalAlign: 'top',
+  verticalAlign: 'middle',
 };
 
 function statusStyle(status: string): React.CSSProperties {

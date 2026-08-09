@@ -259,6 +259,13 @@ class MoexClient:
             secid = sec.get("SECID")
             if not secid:
                 continue
+            name = str(sec.get("SECNAME") or secid)
+            # Structured notes (e.g. «СФО БКС Структурные Ноты N») have
+            # index/trigger-linked payoffs — pricing them with the plain-bond
+            # YTM formula produces meaningless "opportunities" (a 75-price
+            # note maturing in days showing 66% YTM). Skip them entirely.
+            if "структурн" in name.lower():
+                continue
             md = marketdata.get(secid, {})
             cur = _norm_currency(sec.get("FACEUNIT") or "RUB")
             internal_id = f"MOEX_{secid}"

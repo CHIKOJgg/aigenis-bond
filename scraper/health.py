@@ -47,5 +47,5 @@ def asyncio_run(coro):
     return asyncio.run(coro)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - exercised via subprocess test
     main()

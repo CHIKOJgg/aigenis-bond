@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
 import { getBonds, getScore, getMarketSummary, scoreFromLiveBond } from '../demo-api';
 import { filterAndSortBonds } from '../demo-filter';
 import { formatYtm, formatYears, formatDurationYears } from '../demo-format';
@@ -10,6 +11,8 @@ import AnalyticsFilters from '../components/AnalyticsFilters';
 import BondScoreBadge from '../components/BondScoreBadge';
 import { bondDrawerStore } from '../drawer-store';
 import { fetchLiveMarket, type LiveMarketSnapshot } from '../live-demo-api';
+
+const API_MARKET: Record<string, 'bcse' | 'moex'> = { BCSE: 'bcse', MOEX: 'moex' };
 
 export default function DemoAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -24,11 +27,28 @@ export default function DemoAnalyticsPage() {
   const [sortKey, setSortKey] = useState<'score' | 'ytm'>('score');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [live, setLive] = useState<LiveMarketSnapshot | null>(null);
+  const [liveLoading, setLiveLoading] = useState(true);
   const [liveError, setLiveError] = useState('');
 
   useEffect(() => {
-    if (market !== 'BCSE') return;
-    fetchLiveMarket('bcse').then(setLive).catch(() => setLiveError('Не удалось получить актуальные данные BCSE'));
+    let cancelled = false;
+    setLive(null);
+    setLiveLoading(true);
+    setLiveError('');
+    fetchLiveMarket(API_MARKET[market])
+      .then((snap) => {
+        if (cancelled) return;
+        setLive(snap);
+        setLiveLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLiveError('Не удалось получить актуальные данные — показаны демо-данные');
+        setLiveLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [market]);
 
   useEffect(() => {
@@ -40,10 +60,10 @@ export default function DemoAnalyticsPage() {
     ...fixtureSummary,
     global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
   } : fixtureSummary;
-  const bonds = (market === 'BCSE' && live ? live.bonds : getBonds(market));
+  const bonds = (live ? live.bonds : getBonds(market));
 
   const scoreLookup = useMemo(() => {
-    if (market !== 'BCSE' || !live) return getScore;
+    if (!live) return getScore;
     const liveById = new Map(live.bonds.map((b) => [b.internal_id, b]));
     return (id: string): DemoScore | undefined =>
       (() => {
@@ -51,7 +71,7 @@ export default function DemoAnalyticsPage() {
         const liveScore = bond ? scoreFromLiveBond(bond) : undefined;
         return liveScore ?? getScore(id);
       })();
-  }, [market, live]);
+  }, [live]);
 
   const filtered = useMemo(
     () => filterAndSortBonds(bonds, { currency, term, status, sortKey, sortDir }, scoreLookup),
@@ -64,7 +84,30 @@ export default function DemoAnalyticsPage() {
   }, [bonds]);
 
   const marketStats = summary.markets[market.toLowerCase()];
-  const liveScores = market === 'BCSE' && live;
+
+  // KPIs computed from the visible universe (live or fixtures). The "best
+  // yield" card is deliberately computed on non-distressed bonds only: a
+  // bond trading below 80% with YTM > 30% prices near-default, and its
+  // coupon-schedule yield is not an achievable return.
+  const kpis = useMemo(() => {
+    if (!live) {
+      return {
+        attractive: marketStats?.attractive_ideas ?? 0,
+        review: marketStats?.needs_review ?? 0,
+        distressed: 0,
+        bestYield: marketStats?.best_yield_pct ?? 0,
+      };
+    }
+    const withScore = bonds.filter((b) => scoreLookup(b.internal_id));
+    const attractive = withScore.filter((b) => scoreLookup(b.internal_id)?.status === 'attractive').length;
+    const review = withScore.filter((b) => scoreLookup(b.internal_id)?.status === 'review').length;
+    const distressed = bonds.filter((b) => b.distressed).length;
+    const clean = bonds.filter((b) => !b.distressed && (b.yield_to_maturity ?? 0) > 0);
+    const bestYield = clean.length
+      ? Math.max(...clean.map((b) => b.yield_to_maturity ?? 0))
+      : marketStats?.best_yield_pct ?? 0;
+    return { attractive, review, distressed, bestYield };
+  }, [live, bonds, scoreLookup, marketStats]);
 
   const handleMarketChange = (m: string) => {
     setSearchParams({ market: m });
@@ -85,14 +128,26 @@ export default function DemoAnalyticsPage() {
       </div>
 
       <AnalyticsKpiStrip
-        attractive={liveScores ? bonds.filter((b) => scoreLookup(b.internal_id)?.status === 'attractive').length : market === 'BCSE' ? bonds.filter((b) => (b.yield_to_maturity ?? 0) >= 12).length : marketStats?.attractive_ideas ?? 0}
-        review={liveScores ? bonds.filter((b) => scoreLookup(b.internal_id)?.status === 'review').length : marketStats?.needs_review ?? 0}
-        bestYield={market === 'BCSE' ? Math.max(...bonds.map((b) => b.yield_to_maturity ?? 0), 0) : marketStats?.best_yield_pct ?? 0}
+        attractive={kpis.attractive}
+        review={kpis.review}
+        distressed={kpis.distressed}
+        bestYield={kpis.bestYield}
         asOf={summary.global.updated_at}
       />
 
-      {liveError && <div style={{ color: '#b42318', marginBottom: 12 }}>{liveError}</div>}
-      {live && <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>Источник: {live.source} · актуально на {new Date(live.as_of ?? '').toLocaleString('ru-RU')}</div>}
+      {liveError && (
+        <div style={{
+          color: '#b42318', fontSize: 13, marginBottom: 12,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <AlertTriangle size={14} /> {liveError}
+        </div>
+      )}
+      {live && (
+        <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>
+          Источник: {live.source} · актуально на {new Date(live.as_of ?? '').toLocaleString('ru-RU')}
+        </div>
+      )}
 
       <AnalyticsFilters
         market={market}
@@ -125,7 +180,13 @@ export default function DemoAnalyticsPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {liveLoading ? (
+              <tr>
+                <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#717680' }}>
+                  Загрузка данных рынка…
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#717680' }}>
                   Нет бумаг, соответствующих фильтрам
@@ -155,7 +216,8 @@ export default function DemoAnalyticsPage() {
                     <StatusCell status={scoreLookup(bond.internal_id)?.status ?? 'no_data'} />
                   </td>
                   <td style={tdStyle}>
-                    {formatYtm(bond.yield_to_maturity)}
+                    <div>{formatYtm(bond.yield_to_maturity)}</div>
+                    {bond.distressed && <DistressedChip />}
                   </td>
                   <td style={tdStyle}>{bond.maturity_date ?? '—'}</td>
                   <td style={tdStyle}>
@@ -185,6 +247,28 @@ export default function DemoAnalyticsPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+export function DistressedChip() {
+  return (
+    <span
+      title="Цена ниже 80% при доходности выше 30% — рынок закладывает дефолт; расчётная доходность не является достижимой"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 4,
+        padding: '1px 8px',
+        borderRadius: 10,
+        fontSize: 11,
+        fontWeight: 600,
+        color: '#e03400',
+        background: '#e0340014',
+      }}
+    >
+      <AlertTriangle size={11} /> дистрибуция
+    </span>
   );
 }
 

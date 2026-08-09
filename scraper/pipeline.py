@@ -366,6 +366,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                             price=b.price,
                             yield_to_maturity=b.yield_to_maturity,
                             isin=b.isin,
+                            market=b.market or "bcse",
                             status=b.status,
                             is_government=b.is_government,
                             fetched_at=datetime.now(UTC),
@@ -384,6 +385,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                     existing.price = b.price if b.price is not None else existing.price
                     existing.yield_to_maturity = b.yield_to_maturity
                     existing.isin = b.isin or existing.isin
+                    existing.market = b.market or existing.market
                     existing.status = b.status or existing.status
                     existing.is_government = (
                         b.is_government if b.is_government else existing.is_government

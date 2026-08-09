@@ -76,7 +76,7 @@ def _parse_coupon_rate_from_description(text: str) -> str | None:
 def _parse_coupon_frequency_from_description(text: str) -> int | None:
     """Извлечь периодичность купона из описания."""
     text_lower = text.lower()
-    if "кажд" in text_lower or "месяц" in text_lower:
+    if "кажд" in text_lower or "месяц" in text_lower or "раз" in text_lower:
         if "1 раз в месяц" in text_lower or "ежемесяч" in text_lower:
             return 12
         if "1 раз в квартал" in text_lower:
@@ -84,7 +84,7 @@ def _parse_coupon_frequency_from_description(text: str) -> int | None:
         if "2 раз" in text_lower:
             return 2
     # "N раз в год" pattern
-    m = re.search(r"(\d+)\s+раз\s+в\s+год", text_lower)
+    m = re.search(r"(\d+)\s+раз[а-я]*\s+в\s+год", text_lower)
     if m:
         return int(m.group(1))
     # "1 раз в N месяцев" pattern
@@ -192,7 +192,6 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                 rate_str = text.replace("%", "").replace(",", ".").strip()
                 if rate_str and rate_str != "—" and re.fullmatch(r"\d+([.,]\d+)?", rate_str):
                     payload["coupon_rate"] = rate_str
-                    payload["coupon_description"] = text
 
     # --- Извлекаем expanded content (после раскрытия) ---
     content_div = block.find("div", class_="content")
@@ -266,7 +265,7 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                 ps = row.find_all("p")
                 for p in ps:
                     text = p.get_text(strip=True)
-                    if text:
+                    if text and not payload.get("coupon_description"):
                         payload["coupon_description"] = text
                         cr = _parse_coupon_rate_from_description(text)
                         if cr:
@@ -285,7 +284,9 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                     payload["guarantor"] = guarantor
 
     # --- Пытаемся извлечь coupon_rate и maturity_date из футера ---
-    footer = block.find("div", class_="bounds-footer")
+    footer = block.find("div", class_="bounds-footer") or block.find(
+        "p", class_="bounds-footer"
+    )
     if footer:
         footer_text = footer.get_text(" ", strip=True)
         if "организац" in footer_text.lower():

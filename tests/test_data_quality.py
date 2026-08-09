@@ -31,6 +31,111 @@ def test_valid_bond_passes_all_checks():
     assert len(dq.issues) == 0
 
 
+def test_confidence_low_when_critical():
+    from scoring.data_quality import DataQualityResult
+
+    dq = DataQualityResult(internal_id="x", overall="critical")
+    assert dq.confidence == "low"
+    assert not dq.is_rated
+
+
+def test_invalid_isin_is_warning():
+    dq = validate_bond_data(
+        internal_id="X",
+        yield_to_maturity=10.0,
+        currency="USD",
+        maturity_date=None,
+        status="active",
+        issuer=None,
+        price=None,
+        nominal=None,
+        coupon_rate=None,
+        isin="123",
+    )
+    assert dq.overall == "warning"
+    assert any("INVALID_ISIN" in i for i in dq.issues)
+
+
+def test_data_age_warning_under_three_days():
+    dq = validate_bond_data(
+        internal_id="X",
+        yield_to_maturity=10.0,
+        currency="USD",
+        maturity_date=None,
+        status="active",
+        issuer=None,
+        price=None,
+        nominal=None,
+        coupon_rate=None,
+        fetched_at=datetime.now(UTC) - timedelta(hours=100),
+    )
+    assert dq.overall == "warning"
+    assert any("DATA_AGE_WARN" in i for i in dq.issues)
+
+
+def test_maturity_in_past_is_warning():
+    dq = validate_bond_data(
+        internal_id="X",
+        yield_to_maturity=10.0,
+        currency="USD",
+        maturity_date=date.today() - timedelta(days=730),
+        status="active",
+        issuer=None,
+        price=None,
+        nominal=None,
+        coupon_rate=None,
+    )
+    assert dq.overall == "warning"
+    assert any("MATURITY_PAST" in i for i in dq.issues)
+
+
+def test_duration_excessive_is_critical():
+    dq = validate_bond_data(
+        internal_id="X",
+        yield_to_maturity=10.0,
+        currency="USD",
+        maturity_date=date.today() + timedelta(days=200 * 365),
+        status="active",
+        issuer=None,
+        price=None,
+        nominal=None,
+        coupon_rate=None,
+    )
+    assert dq.overall == "critical"
+    assert any("DURATION_EXCESSIVE" in i for i in dq.issues)
+
+
+def test_price_too_high_is_warning():
+    dq = validate_bond_data(
+        internal_id="X",
+        yield_to_maturity=10.0,
+        currency="USD",
+        maturity_date=None,
+        status="active",
+        issuer=None,
+        price=6000.0,
+        nominal=100.0,
+        coupon_rate=None,
+    )
+    assert dq.overall == "warning"
+    assert any("PRICE_TOO_HIGH" in i for i in dq.issues)
+
+
+def test_price_zero_or_negative_is_warning():
+    dq = validate_bond_data(
+        internal_id="X",
+        yield_to_maturity=10.0,
+        currency="USD",
+        maturity_date=None,
+        status="active",
+        issuer=None,
+        price=0.0,
+        nominal=100.0,
+        coupon_rate=None,
+    )
+    assert any("PRICE_ZERO_OR_NEGATIVE" in i for i in dq.issues)
+
+
 def test_missing_id_is_critical():
     dq = validate_bond_data(
         internal_id="",
