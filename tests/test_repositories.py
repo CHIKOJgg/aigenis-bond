@@ -1,4 +1,4 @@
-"""Tests for scraper/repositories (bonds, history, stocks) against SQLite."""
+﻿"""Tests for scraper/repositories (bonds, history, stocks) against SQLite."""
 
 from __future__ import annotations
 
@@ -86,31 +86,31 @@ def test_is_technical_name():
     assert _is_technical_name("")
     assert _is_technical_name("B-001")
     assert _is_technical_name("OP-30")
-    assert not _is_technical_name("Айгенис Оп 30")
+    assert not _is_technical_name("РђР№РіРµРЅРёСЃ РћРї 30")
     assert not _is_technical_name("Some Bond 2028")
 
 
 def test_enrich_bond_name():
     assert _enrich_bond_name(_bond("OP-30")) == "iGenis OP30"
-    named = _bond("X1", name="Хорошее Имя Облигации")
-    assert _enrich_bond_name(named) == "Хорошее Имя Облигации"
-    issuer_no_number = _bond("X2", name="OP-12", issuer="ООО Эмитент")
-    assert _enrich_bond_name(issuer_no_number) == "Эмитент"
-    issuer_with_number = _bond("X3", name="OP-12", issuer="ООО Эмитент", issue_number=3)
-    assert _enrich_bond_name(issuer_with_number) == "Эмитент #3"
+    named = _bond("X1", name="РҐРѕСЂРѕС€РµРµ РРјСЏ РћР±Р»РёРіР°С†РёРё")
+    assert _enrich_bond_name(named) == "РҐРѕСЂРѕС€РµРµ РРјСЏ РћР±Р»РёРіР°С†РёРё"
+    issuer_no_number = _bond("X2", name="OP-12", issuer="РћРћРћ Р­РјРёС‚РµРЅС‚")
+    assert _enrich_bond_name(issuer_no_number) == "Р­РјРёС‚РµРЅС‚"
+    issuer_with_number = _bond("X3", name="OP-12", issuer="РћРћРћ Р­РјРёС‚РµРЅС‚", issue_number=3)
+    assert _enrich_bond_name(issuer_with_number) == "Р­РјРёС‚РµРЅС‚ #3"
     technical_issuer = _bond("X4", name="OP-12", issuer="RUS-2028-01")
     assert _enrich_bond_name(technical_issuer) == "X4"
     digits = _bond("42", name="42", issuer=None)
-    assert _enrich_bond_name(digits) == "Выпуск #42"
+    assert _enrich_bond_name(digits) == "Р’С‹РїСѓСЃРє #42"
     plain = _bond("MF-LB-USD-0265", name="", issuer=None)
     assert _enrich_bond_name(plain) == "MF LB USD 0265"
 
 
 def test_register_xlsx_names():
     try:
-        register_xlsx_names({"OP-99": "Новое имя"})
-        assert BOND_NAME_MAP["OP-99"] == "Новое имя"
-        assert _enrich_bond_name(_bond("OP-99")) == "Новое имя"
+        register_xlsx_names({"OP-99": "РќРѕРІРѕРµ РёРјСЏ"})
+        assert BOND_NAME_MAP["OP-99"] == "РќРѕРІРѕРµ РёРјСЏ"
+        assert _enrich_bond_name(_bond("OP-99")) == "РќРѕРІРѕРµ РёРјСЏ"
     finally:
         BOND_NAME_MAP.pop("OP-99", None)
 
@@ -150,12 +150,12 @@ async def test_upsert_bond_overwrites_and_empty_batch():
 async def test_update_bond_name():
     async with session_scope() as session:
         await upsert_bond(session, _bond("RB-30"))
-        await update_bond_name(session, "RB-30", "Новое имя")
+        await update_bond_name(session, "RB-30", "РќРѕРІРѕРµ РёРјСЏ")
         found = await session.get(__import__("scraper.orm", fromlist=["BondORM"]).BondORM, "RB-30")
-        assert found is not None and found.name == "Новое имя"
-        await update_bond_name(session, "RB-30", "Ещё новее")
+        assert found is not None and found.name == "РќРѕРІРѕРµ РёРјСЏ"
+        await update_bond_name(session, "RB-30", "Р•С‰С‘ РЅРѕРІРµРµ")
         found = await session.get(__import__("scraper.orm", fromlist=["BondORM"]).BondORM, "RB-30")
-        assert found.name == "Ещё новее"
+        assert found.name == "Р•С‰С‘ РЅРѕРІРµРµ"
 
 
 def _bhistory(internal_id: str, day: int, **kw) -> BondHistory:
@@ -242,36 +242,37 @@ async def test_instrument_summary_and_search():
     async with session_scope() as session:
         await upsert_bond(
             session,
-            _bond("IS-1", name="Газпром Облигация", issuer="Газпром", yield_to_maturity=Decimal("8.5")),
+            _bond("IS-1", name="Р“Р°Р·РїСЂРѕРј РћР±Р»РёРіР°С†РёСЏ", issuer="Р“Р°Р·РїСЂРѕРј", yield_to_maturity=Decimal("8.5")),
         )
         await upsert_stock(
             session,
-            _stock("IS-2", name="Газпром Акция", dividend_yield=Decimal("5.5")),
+            _stock("IS-2", name="Р“Р°Р·РїСЂРѕРј РђРєС†РёСЏ", dividend_yield=Decimal("5.5")),
         )
-        await upsert_stock(session, _stock("IS-3", name="Сбер Акция", pbr_ratio=Decimal("1.2")))
-        await upsert_stock(session, _stock("IS-4", name="Простая Акция"))
+        await upsert_stock(session, _stock("IS-3", name="РЎР±РµСЂ РђРєС†РёСЏ", pbr_ratio=Decimal("1.2")))
+        await upsert_stock(session, _stock("IS-4", name="РџСЂРѕСЃС‚Р°СЏ РђРєС†РёСЏ"))
 
         bond_sum = await instrument_summary(session, "IS-1")
         assert bond_sum is not None and bond_sum.asset_class == "bond"
-        assert bond_sum.headline == "Доходность 8.5000%"
+        assert bond_sum.headline == "Р”РѕС…РѕРґРЅРѕСЃС‚СЊ 8.5000%"
         assert bond_sum.market == "bcse"
 
         div_stock = await instrument_summary(session, "IS-2")
         assert div_stock is not None and div_stock.asset_class == "equity"
-        assert div_stock.headline == "Див. доходность 5.5%"
+        assert div_stock.headline == "Р”РёРІ. РґРѕС…РѕРґРЅРѕСЃС‚СЊ 5.5%"
         assert div_stock.market == "TQBR"
 
         pbr_stock = await instrument_summary(session, "IS-3")
-        assert pbr_stock.headline == "P/B 1.2"
+        assert pbr_stock.headline == "P/B 1.2000"
 
         plain_stock = await instrument_summary(session, "IS-4")
         assert plain_stock.headline is None
 
         assert await instrument_summary(session, "IS-MISSING") is None
 
-        hits = await search_instruments(session, "Газпром")
+        hits = await search_instruments(session, "Р“Р°Р·РїСЂРѕРј")
         assert {h.internal_id for h in hits} == {"IS-1", "IS-2"}
         by_id = await search_instruments(session, "IS-2")
         assert {h.internal_id for h in by_id} == {"IS-2"}
         empty = await search_instruments(session, "zzzz")
         assert empty == []
+
