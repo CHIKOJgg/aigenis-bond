@@ -40,6 +40,13 @@ METAL_EXTRA_BONUS: dict[str, float] = {
     "XPT": 3.0,
 }
 
+_METAL_MINER_KEYWORDS: dict[str, list[str]] = {
+    "gold": ["полюс", "югк", "южуралзолото", "гдк", "селигдар", "polyus"],
+    "platinum": ["норникель", "nornickel", "гмк"],
+    "silver": ["холдинг серебро"],
+    "basemetals": ["русал", "rusal", "мечел", "ммк", "nlmk", "северсталь", "альроса", "алроса"],
+}
+
 
 def _duration_years(maturity: date | None, ref: date | None = None) -> float | None:
     if maturity is None:
@@ -144,8 +151,22 @@ def _currency_component(currency: str) -> float:
     return CURRENCY_BONUS.get(currency.upper(), 0.0)
 
 
-def _metal_component(currency: str) -> float:
-    return METAL_EXTRA_BONUS.get(currency.upper(), 0.0)
+def _metal_component(currency: str, issuer: str | None = None) -> float:
+    """Score metal exposure: direct XAU/XAG/XPT currency or metal-mining issuer."""
+    direct = METAL_EXTRA_BONUS.get(currency.upper(), 0.0)
+    if direct > 0 or not issuer:
+        return direct
+    s = issuer.lower().strip()
+    for kind, kws in _METAL_MINER_KEYWORDS.items():
+        if any(k in s for k in kws):
+            if kind == "gold":
+                return 3.0
+            if kind == "platinum":
+                return 2.0
+            if kind == "silver":
+                return 2.0
+            return 1.0
+    return 0.0
 
 
 def _liquidity_component(
@@ -430,7 +451,7 @@ def score_bond(
             price=price_f,
             nominal=nominal_f,
         ),
-        metal_component=_metal_component(currency),
+        metal_component=_metal_component(currency, issuer),
         credit_risk_component=_credit_risk_component(issuer, status),
         inflation_component=_inflation_component_market(currency, ytm_pct, is_moex),
         coupon_component=_coupon_component(coupon_pct, ytm_pct),

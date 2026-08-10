@@ -10,34 +10,11 @@ const API_MARKET: Record<string, 'bcse' | 'moex'> = { BCSE: 'bcse', MOEX: 'moex'
 export default function DemoTradingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const market = searchParams.get('market') || 'BCSE';
+  const market = searchParams.get('market') || 'ALL';
   const [bonds, setBonds] = useState<DemoBond[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [source, setSource] = useState<{ name: string; asOf: string | null } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    setSource(null);
-    setBonds([]);
-    fetchLiveMarket(API_MARKET[market] ?? 'bcse')
-      .then((snap) => {
-        if (cancelled) return;
-        setBonds(snap.bonds);
-        setSource({ name: snap.source, asOf: snap.as_of });
-        setLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setError('Не удалось получить актуальные данные — показаны демо-данные');
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [market]);
 
   const handleMarketChange = (m: string) => {
     setSearchParams({ market: m });
@@ -47,17 +24,54 @@ export default function DemoTradingPage() {
     bondDrawerStore.open(internalId);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    setSource(null);
+    setBonds([]);
+
+    if (market === 'ALL') {
+      Promise.all([
+        fetchLiveMarket('bcse').catch(() => null),
+        fetchLiveMarket('moex').catch(() => null),
+      ]).then((snaps) => {
+        if (cancelled) return;
+        const live = snaps.filter((s): s is NonNullable<typeof s> => s !== null);
+        const merged = live.flatMap((s) => s.bonds);
+        setBonds(merged);
+        setSource({ name: live[0]?.source ?? 'Aigenis', asOf: live[0]?.as_of ?? null });
+        setLoading(false);
+      });
+    } else {
+      fetchLiveMarket(API_MARKET[market] ?? 'bcse')
+        .then((snap) => {
+          if (cancelled) return;
+          setBonds(snap.bonds);
+          setSource({ name: snap.source, asOf: snap.as_of });
+          setLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setError('Не удалось получить актуальные данные');
+          setLoading(false);
+        });
+    }
+    return () => { cancelled = true; };
+  }, [market]);
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 4px' }}>Торги</h1>
         <p style={{ color: '#516c79', fontSize: 14, margin: 0 }}>
-          Текущие котировки и итоги торгов на {market}
+          {market === 'ALL' ? 'Все рынки' : market}
+          {bonds.length > 0 ? ` · ${bonds.length} облигаций` : ''}
         </p>
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-        {['BCSE', 'MOEX'].map((m) => (
+        {['ALL', 'BCSE', 'MOEX'].map((m) => (
           <button
             key={m}
             onClick={() => handleMarketChange(m)}
@@ -72,7 +86,7 @@ export default function DemoTradingPage() {
               cursor: 'pointer',
             }}
           >
-            {m}
+            {m === 'ALL' ? 'Все рынки' : m}
           </button>
         ))}
       </div>
@@ -80,34 +94,24 @@ export default function DemoTradingPage() {
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
           <span style={{ fontSize: 13, color: '#516c79', padding: '4px 12px', background: '#f5f5f5', borderRadius: 6 }}>
-            Акции / Облигации
+            Облигации
           </span>
           <span
             onClick={() => navigate(`/demo/analytics?market=${market}`)}
             style={{
-              fontSize: 13,
-              color: '#0B526B',
-              padding: '4px 12px',
-              background: '#eef3f5',
-              borderRadius: 6,
-              fontWeight: 600,
-              cursor: 'pointer',
-              textDecoration: 'underline',
+              fontSize: 13, color: '#0B526B', padding: '4px 12px',
+              background: '#eef3f5', borderRadius: 6, fontWeight: 600,
+              cursor: 'pointer', textDecoration: 'underline',
             }}
           >
-            Аналитика · Новое
+            Аналитика
           </span>
           <span
             onClick={() => navigate(`/demo/search?market=${market}`)}
             style={{
-              fontSize: 13,
-              color: '#0B526B',
-              padding: '4px 12px',
-              background: '#eef3f5',
-              borderRadius: 6,
-              fontWeight: 600,
-              cursor: 'pointer',
-              textDecoration: 'underline',
+              fontSize: 13, color: '#0B526B', padding: '4px 12px',
+              background: '#eef3f5', borderRadius: 6, fontWeight: 600,
+              cursor: 'pointer', textDecoration: 'underline',
             }}
           >
             Поиск
