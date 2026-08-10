@@ -24,7 +24,7 @@ from sqlalchemy import or_, select
 from desk.ytm import to_price_pct, ytm_from_price
 from scraper.db import session_scope
 from scraper.logging import get_logger
-from scraper.orm import BondHistoryORM, BondORM
+from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
 
 logger = get_logger("api.demo")
 
@@ -166,6 +166,145 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
 
 DATA_ROOT = Path(__file__).resolve().parents[1] / "demo-data" / "v1"
 
+
+def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[str, Any]:
+    """Lightweight payload for the list endpoint — reads pre-computed scores."""
+    ref = date.today()
+    ytm = (
+        float(bond.yield_to_maturity)
+        if bond.yield_to_maturity and float(bond.yield_to_maturity) > 0
+        else None
+    )
+    price_pct = to_price_pct(bond.price, bond.nominal)
+    computed_ytm = False
+    if (
+        ytm is None
+        and price_pct is not None
+        and bond.coupon_rate is not None
+        and bond.maturity_date is not None
+    ):
+        try:
+            solved = ytm_from_price(
+                price_pct,
+                float(bond.coupon_rate),
+                int(bond.coupon_frequency or 2),
+                bond.maturity_date,
+                ref,
+            )
+            if solved and solved > 0:
+                ytm = round(solved, 4)
+                computed_ytm = True
+        except Exception:
+            pass
+
+    duration_years = None
+    if bond.maturity_date is not None:
+        try:
+            from desk.duration import macaulay_duration
+
+            raw_dur = macaulay_duration(
+                nominal=bond.nominal or Decimal("1000"),
+                coupon_rate_pct=float(bond.coupon_rate)
+                if bond.coupon_rate is not None
+                else (ytm or 0),
+                coupon_frequency=int(bond.coupon_frequency or 2),
+                ytm_pct=ytm or 0,
+                maturity=bond.maturity_date,
+                ref=ref,
+                issue_date=bond.start_date,
+            )
+            duration_years = round(raw_dur, 2)
+        except Exception:
+            duration_years = round(max((bond.maturity_date - ref).days / 365.25, 0.0), 2)
+
+    distressed = price_pct is not None and ytm is not None and price_pct < 80.0 and ytm > 30.0
+
+    score_payload = None
+    explanation = None
+    if score_row is not None:
+        score_payload = {
+            "score": round(float(score_row.score), 2),
+            "tier": score_row.tier,
+            "score_status": _TIER_STATUS.get(score_row.tier or "", "no_data"),
+            "computed_at": score_row.computed_at.isoformat(),
+            "breakdown": score_row.breakdown,
+            "explanation": None,
+        }
+    elif price_pct is not None or ytm is not None:
+        from scoring.engine import score_bond
+
+        bs = score_bond(
+            internal_id=bond.internal_id,
+            yield_to_maturity=ytm,
+            currency=bond.currency,
+            maturity_date=bond.maturity_date,
+            status=str(bond.status or "active"),
+            issuer=bond.issuer,
+            price=price_pct,
+            nominal=Decimal("100"),
+            coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+            market=str(bond.market or "bcse"),
+        )
+        score_payload = {
+            "score": round(bs.score, 2),
+            "tier": bs.tier,
+            "score_status": _TIER_STATUS.get(bs.tier, "no_data"),
+            "computed_at": bs.computed_at.isoformat(),
+            "breakdown": bs.breakdown.model_dump(),
+            "explanation": None,
+        }
+        try:
+            from scoring.explain import explain_score
+
+            expl = explain_score(
+                bs,
+                currency=bond.currency,
+                ytm_pct=ytm,
+                coupon_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+            )
+            explanation = {
+                "verdict": expl.verdict,
+                "summary": expl.summary,
+                "strengths": expl.strengths,
+                "weaknesses": expl.weaknesses,
+                "factors": [f.as_dict() for f in expl.factors],
+            }
+        except Exception:
+            pass
+
+    return {
+        "internal_id": bond.internal_id,
+        "isin": bond.isin,
+        "name": bond.name,
+        "issuer": bond.issuer,
+        "issuer_logo": bond.issuer_logo,
+        "currency": bond.currency,
+        "nominal": float(bond.nominal) if bond.nominal is not None else None,
+        "coupon_rate": float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+        "coupon_frequency": bond.coupon_frequency,
+        "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
+        "price": float(bond.price) if bond.price is not None else None,
+        "yield_to_maturity": ytm,
+        "computed_ytm": computed_ytm,
+        "distressed": distressed,
+        "duration_years": duration_years,
+        "score": score_payload["score"] if score_payload else None,
+        "tier": score_payload["tier"] if score_payload else None,
+        "score_status": score_payload["score_status"] if score_payload else None,
+        "breakdown": score_payload["breakdown"] if score_payload else None,
+        "explanation": explanation,
+        "market": bond.market,
+        "status": bond.status,
+        "is_government": bool(bond.is_government),
+        "in_stock": bond.in_stock,
+        "guarantor": bond.guarantor,
+        "maturity_term_text": bond.maturity_term_text,
+        "coupon_description": bond.coupon_description,
+        "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
+        "term_days": bond.term_days,
+    }
+
+
 AllocationPct = Literal[5, 10, 15]
 
 
@@ -239,18 +378,17 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
 async def live_market_data(
     market: str = Query("bcse", pattern="^(bcse|moex)$"),
     currency: str | None = Query(None, min_length=3, max_length=3),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(2000, ge=1, le=2000),
 ) -> dict[str, Any]:
     """Read-only, sanitized market snapshot for the protected demo UI.
 
-    The old public demo shipped fabricated fixture securities.  This endpoint
-    reads the latest licensed ingestion snapshot, never accepts writes, and
-    exposes only instrument fields needed by the showcase.  Access to this
-    route must stay behind the demo network/Cloudflare Access policy.
+    Uses pre-computed scores from bond_scores table for fast response.
+    Returns all active bonds by default (up to 2000).
     """
     async with session_scope() as session:
         stmt = (
-            select(BondORM)
+            select(BondORM, BondScoreORM)
+            .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
             .where(BondORM.market == market)
             .where(BondORM.status == "active")
             .order_by(BondORM.fetched_at.desc(), BondORM.name.asc())
@@ -258,9 +396,9 @@ async def live_market_data(
         )
         if currency:
             stmt = stmt.where(BondORM.currency == currency.upper())
-        rows = (await session.execute(stmt)).scalars().all()
+        rows = (await session.execute(stmt)).all()
 
-    bonds = [_bond_payload(bond, _bond_analytics(bond)) for bond in rows]
+    bonds = [_fast_bond_payload(bond, score) for bond, score in rows]
     as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
     return {
         "source": "Aigenis official feed",
@@ -296,7 +434,8 @@ async def demo_search(
         }
     async with session_scope() as session:
         stmt = (
-            select(BondORM)
+            select(BondORM, BondScoreORM)
+            .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
             .where(BondORM.status == "active")
             .where(
                 or_(
@@ -311,11 +450,9 @@ async def demo_search(
             stmt = stmt.where(BondORM.market == market)
         if currency:
             stmt = stmt.where(BondORM.currency == currency.upper())
-        rows = (
-            (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).scalars().all()
-        )
+        rows = (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).all()
 
-    bonds = [_bond_payload(bond, _bond_analytics(bond)) for bond in rows]
+    bonds = [_fast_bond_payload(bond, score) for bond, score in rows]
     return {
         "query": term,
         "market": market,

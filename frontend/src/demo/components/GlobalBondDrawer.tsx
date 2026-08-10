@@ -97,8 +97,7 @@ export default function GlobalBondDrawer() {
       onPortfolioImpact={() => {
         const id = bondId;
         bondDrawerStore.close();
-        const next = window.location.pathname.replace(/\/bonds\/[^/]+$/, '');
-        window.location.href = `${next}/portfolio-impact/${encodeURIComponent(id)}?market=ALL`;
+        window.location.href = `/demo/portfolio-impact/${encodeURIComponent(id)}?market=ALL`;
       }}
     />
   );

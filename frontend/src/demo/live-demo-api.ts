@@ -14,7 +14,7 @@ export async function fetchLiveMarket(
   market = 'bcse',
   currency?: string,
 ): Promise<LiveMarketSnapshot> {
-  const params = new URLSearchParams({ market, limit: '100' });
+  const params = new URLSearchParams({ market, limit: '2000' });
   if (currency && currency !== 'ALL') params.set('currency', currency);
   const response = await fetch(`/api/v1/demo/market-data?${params.toString()}`, {
     headers: { Accept: 'application/json' },
@@ -27,7 +27,7 @@ export async function fetchLiveSearch(
   q: string,
   market?: string,
 ): Promise<LiveSearchResult> {
-  const params = new URLSearchParams({ q, limit: '30' });
+  const params = new URLSearchParams({ q, limit: '50' });
   if (market && market !== 'ALL') params.set('market', market.toLowerCase());
   const response = await fetch(`/api/v1/demo/search?${params.toString()}`, {
     headers: { Accept: 'application/json' },
