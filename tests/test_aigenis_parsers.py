@@ -20,12 +20,18 @@ from scraper.sources.aigenis.parsers.detail import (
     _coerce,
     _find_label,
     _id_matches,
-    _parse_coupon_frequency_from_description as detail_freq,
-    _parse_coupon_rate_from_description as detail_rate,
-    _parse_coupon_schedule as detail_schedule,
     _parse_dom,
     _try_json_state,
     parse_detail_html,
+)
+from scraper.sources.aigenis.parsers.detail import (
+    _parse_coupon_frequency_from_description as detail_freq,
+)
+from scraper.sources.aigenis.parsers.detail import (
+    _parse_coupon_rate_from_description as detail_rate,
+)
+from scraper.sources.aigenis.parsers.detail import (
+    _parse_coupon_schedule as detail_schedule,
 )
 from scraper.sources.aigenis.parsers.history import (
     _parse_table,
@@ -50,6 +56,7 @@ CURRENCIES = ("USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT")
 
 # ---------------------------------------------------------------- listing ---
 
+
 class TestTryJsonLd:
     def test_graph(self):
         soup = BeautifulSoup(
@@ -59,9 +66,7 @@ class TestTryJsonLd:
         assert _try_jsonld(soup) == [{"a": 1}]
 
     def test_list(self):
-        soup = BeautifulSoup(
-            '<script type="application/ld+json">[{"a": 1}, []]</script>', "lxml"
-        )
+        soup = BeautifulSoup('<script type="application/ld+json">[{"a": 1}, []]</script>', "lxml")
         assert _try_jsonld(soup) == [{"a": 1}]
 
     def test_invalid_json_skipped(self):
@@ -127,15 +132,11 @@ class TestTryTable:
         assert _try_table(soup, "usd") == []
 
     def test_bad_href_skipped(self):
-        soup = BeautifulSoup(
-            '<div class="bond-row"><a href="/prices/1">x</a></div>', "lxml"
-        )
+        soup = BeautifulSoup('<div class="bond-row"><a href="/prices/1">x</a></div>', "lxml")
         assert _try_table(soup, "usd") == []
 
     def test_href_without_id_skipped(self):
-        soup = BeautifulSoup(
-            '<div class="bond-row"><a href="/bonds/">x</a></div>', "lxml"
-        )
+        soup = BeautifulSoup('<div class="bond-row"><a href="/bonds/">x</a></div>', "lxml")
         assert _try_table(soup, "usd") == []
 
 
@@ -199,12 +200,17 @@ class TestCouponSchedule:
         )
         assert _parse_coupon_schedule(soup) == {"2026": ["15.01.2026"]}
 
+    def test_whitespace_token_skipped(self):
+        soup = BeautifulSoup(
+            "<div><p class='bounds-years'>2026\n \n15.01.2026</p></div>",
+            "lxml",
+        )
+        assert _parse_coupon_schedule(soup) == {"2026": ["15.01.2026"]}
+
 
 class TestGuarantor:
     def test_found(self):
-        soup = BeautifulSoup(
-            "<div><p class='bounds-years'>Организация: Айгенис</p></div>", "lxml"
-        )
+        soup = BeautifulSoup("<div><p class='bounds-years'>Организация: Айгенис</p></div>", "lxml")
         assert _parse_guarantor(soup) == "Айгенис"
 
     def test_not_found(self):
@@ -289,9 +295,9 @@ class TestParseBondBlock:
         assert p["guarantor"] == "Гарант"
 
     def test_no_currency_returns_none(self):
-        block = BeautifulSoup(
-            _block_html(**{"data-curency": ""}), "lxml"
-        ).select_one(".wp-block-aigenis-bounds")
+        block = BeautifulSoup(_block_html(**{"data-curency": ""}), "lxml").select_one(
+            ".wp-block-aigenis-bounds"
+        )
         assert _parse_aigenis_bond_block(block, "ALL") is None
 
     def test_currency_filter_mismatch(self):
@@ -318,9 +324,7 @@ class TestParseBondBlock:
         """,
             "",
         )
-        html = html.replace(
-            '<p>12,5% годовых, 2 раза в год</p>', '<p>просто текст</p>'
-        )
+        html = html.replace("<p>12,5% годовых, 2 раза в год</p>", "<p>просто текст</p>")
         block = BeautifulSoup(html, "lxml").select_one(".wp-block-aigenis-bounds")
         p = _parse_aigenis_bond_block(block, "ALL")
         assert p["coupon_rate"] == "7"
@@ -371,7 +375,9 @@ class TestParseBondBlock:
             "<p class='bounds-years'>2026",
             "<p class='bounds-years'>текст без дат",
         )
-        html = html.replace("15.01.2026, 15.07.2026\n            2027\n            15.01.2027\n", "")
+        html = html.replace(
+            "15.01.2026, 15.07.2026\n            2027\n            15.01.2027\n", ""
+        )
         block = BeautifulSoup(html, "lxml").select_one(".wp-block-aigenis-bounds")
         p = _parse_aigenis_bond_block(block, "ALL")
         assert p.get("guarantor") == "Гарант"
@@ -379,9 +385,7 @@ class TestParseBondBlock:
 
 class TestTryAigenisByBlocks:
     def test_multiple_blocks(self):
-        html = _block_html() + _block_html(
-            **{"data-code": "Айгенис 52", "data-reg": "OP-52"}
-        )
+        html = _block_html() + _block_html(**{"data-code": "Айгенис 52", "data-reg": "OP-52"})
         soup = BeautifulSoup(html, "lxml")
         out = _try_aigenis_by_blocks(soup, "ALL")
         assert [p["internal_id"] for p in out] == ["OP-51", "OP-52"]
@@ -450,6 +454,7 @@ class TestParseListingHtml:
 
 # ---------------------------------------------------------------- history ---
 
+
 class TestHistoryState:
     def _soup(self, payload):
         import json
@@ -471,7 +476,9 @@ class TestHistoryState:
     def test_none(self):
         assert _try_state(self._soup({"other": 1})) is None
         assert _try_state(BeautifulSoup("<html></html>", "lxml")) is None
-        assert _try_state(BeautifulSoup('<script id="__NEXT_DATA__">{bad}</script>', "lxml")) is None
+        assert (
+            _try_state(BeautifulSoup('<script id="__NEXT_DATA__">{bad}</script>', "lxml")) is None
+        )
 
 
 class TestHistoryTable:
@@ -537,19 +544,17 @@ class TestParseHistoryHtml:
             )
             + "</script></body></html>"
         )
-        assert parse_history_html(html, "OP-51") == [
-            {"date": "2026-06-01", "price": 99}
-        ]
+        assert parse_history_html(html, "OP-51") == [{"date": "2026-06-01", "price": 99}]
 
     def test_table_path(self):
         html = (
-            "<table class='history'><tbody><tr>"
-            "<td>2026-06-01</td><td>100</td></tr></tbody></table>"
+            "<table class='history'><tbody><tr><td>2026-06-01</td><td>100</td></tr></tbody></table>"
         )
         assert parse_history_html(html, "OP-51")[0]["price"] == "100"
 
 
 # ------------------------------------------------------------------ detail ---
+
 
 class TestIdMatches:
     def test_exact(self):
@@ -602,8 +607,7 @@ class TestTryJsonState:
 
     def test_jsonld_bond(self):
         soup = BeautifulSoup(
-            "<script type='application/ld+json'>"
-            '{"@type": "Bond", "name": "X"}</script>',
+            '<script type=\'application/ld+json\'>{"@type": "Bond", "name": "X"}</script>',
             "lxml",
         )
         assert _try_json_state(soup) == {"@type": "Bond", "name": "X"}
@@ -618,26 +622,25 @@ class TestTryJsonState:
 
     def test_jsonld_ignores_other_types(self):
         soup = BeautifulSoup(
-            "<script type='application/ld+json'>" '{"@type": "Article"}</script>',
+            '<script type=\'application/ld+json\'>{"@type": "Article"}</script>',
             "lxml",
         )
         assert _try_json_state(soup) is None
 
     def test_invalid_json(self):
-        assert _try_json_state(BeautifulSoup('<script id="__NEXT_DATA__">{x}</script>', "lxml")) is None
+        assert (
+            _try_json_state(BeautifulSoup('<script id="__NEXT_DATA__">{x}</script>', "lxml"))
+            is None
+        )
 
     def test_invalid_ldjson_skipped(self):
-        soup = BeautifulSoup(
-            '<script type="application/ld+json">{bad json}</script>', "lxml"
-        )
+        soup = BeautifulSoup('<script type="application/ld+json">{bad json}</script>', "lxml")
         assert _try_json_state(soup) is None
 
 
 class TestFindLabel:
     def test_sibling_value(self):
-        soup = BeautifulSoup(
-            "<div><span>Эмитент</span><div>Айгенис</div></div>", "lxml"
-        )
+        soup = BeautifulSoup("<div><span>Эмитент</span><div>Айгенис</div></div>", "lxml")
         assert _find_label(soup, ["эмитент"]) == "Айгенис"
 
     def test_colon_in_parent(self):
@@ -691,27 +694,23 @@ class TestDetailCouponHelpers:
         assert detail_freq("unknown") is None
 
     def test_schedule(self):
-        assert (
-            detail_schedule(
-                "<div><p class='bounds-years'>2026\n15.01.2026</p></div>"
-            )
-            == {"2026": ["15.01.2026"]}
-        )
+        assert detail_schedule("<div><p class='bounds-years'>2026\n15.01.2026</p></div>") == {
+            "2026": ["15.01.2026"]
+        }
         assert detail_schedule("<div>no schedule</div>") is None
-        assert (
-            detail_schedule(
-                "<div><p class='bounds-years'>2026\n15.01.2026</p></div>"
-            )
-            == {"2026": ["15.01.2026"]}
-        )
+        assert detail_schedule("<div><p class='bounds-years'>2026\n15.01.2026</p></div>") == {
+            "2026": ["15.01.2026"]
+        }
 
     def test_schedule_empty_tokens_skipped(self):
-        assert (
-            detail_schedule(
-                "<div><p class='bounds-years'>2026\n\n\n15.01.2026</p></div>"
-            )
-            == {"2026": ["15.01.2026"]}
-        )
+        assert detail_schedule("<div><p class='bounds-years'>2026\n\n\n15.01.2026</p></div>") == {
+            "2026": ["15.01.2026"]
+        }
+
+    def test_schedule_whitespace_token_skipped(self):
+        assert detail_schedule("<div><p class='bounds-years'>2026\n \n15.01.2026</p></div>") == {
+            "2026": ["15.01.2026"]
+        }
 
 
 class TestParseDom:
@@ -734,9 +733,7 @@ class TestParseDom:
 
     def test_block_path(self):
         block = _block_html().replace('<span class="title">Доходность</span>', "")
-        block = block.replace(
-            '<span class="text">7,5%</span>', '<span class="text">—</span>'
-        )
+        block = block.replace('<span class="text">7,5%</span>', '<span class="text">—</span>')
         html = f"<html><body>{block}</body></html>"
         p = _parse_dom(html, "OP-51")
         assert p["id"] == "OP-51"
@@ -759,9 +756,7 @@ class TestParseDom:
         assert "income_method" not in p
 
     def test_block_without_content_skipped(self):
-        block = _block_html().replace(
-            '<div class="content">', '<div class="other">'
-        )
+        block = _block_html().replace('<div class="content">', '<div class="other">')
         html = f"<html><body>{block}</body></html>"
         p = _parse_dom(html, "OP-51")
         assert p["registration_number"] == "OP-51"
@@ -937,9 +932,7 @@ class TestParseBondPayload:
         assert bond.internal_id == "OP-9"
 
     def test_bad_fetched_at(self):
-        bond = parse_bond_payload(
-            {"id": "OP-1", "name": "X", "fetched_at": "не дата"}
-        )
+        bond = parse_bond_payload({"id": "OP-1", "name": "X", "fetched_at": "не дата"})
         assert bond.fetched_at is not None
 
     def test_bad_dates_raise(self):

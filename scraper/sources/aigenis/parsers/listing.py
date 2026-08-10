@@ -284,9 +284,7 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                     payload["guarantor"] = guarantor
 
     # --- Пытаемся извлечь coupon_rate и maturity_date из футера ---
-    footer = block.find("div", class_="bounds-footer") or block.find(
-        "p", class_="bounds-footer"
-    )
+    footer = block.find("div", class_="bounds-footer") or block.find("p", class_="bounds-footer")
     if footer:
         footer_text = footer.get_text(" ", strip=True)
         if "организац" in footer_text.lower():

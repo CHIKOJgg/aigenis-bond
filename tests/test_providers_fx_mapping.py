@@ -23,7 +23,6 @@ from scraper.instrument_map import (
 )
 from scraper.lineage import latest_lineage, record_snapshot_lineage
 
-
 # ──────────────────────────────────────────────
 # scraper.providers
 # ──────────────────────────────────────────────
@@ -57,7 +56,9 @@ def test_data_lineage_to_dict():
 
     from scraper.providers import DataLineage
 
-    dl = DataLineage(source="test", license_contract_id="L1", as_of=datetime(2026, 1, 2, 3, 4, tzinfo=UTC))
+    dl = DataLineage(
+        source="test", license_contract_id="L1", as_of=datetime(2026, 1, 2, 3, 4, tzinfo=UTC)
+    )
     out = dl.to_dict()
     assert out["source"] == "test"
     assert out["license_contract_id"] == "L1"
@@ -77,11 +78,10 @@ def test_provider_abstract_members():
 
 
 def test_registry_get_provider_known_names():
-    from scraper.providers.registry import get_provider
-
     from scraper.providers.aigenis_official import AigenisOfficialProvider
     from scraper.providers.demo import DemoFixtureProvider
     from scraper.providers.moex import MoexProvider
+    from scraper.providers.registry import get_provider
 
     assert isinstance(get_provider("moex"), MoexProvider)
     assert isinstance(get_provider("moex_iss"), MoexProvider)
@@ -105,7 +105,10 @@ def test_registry_default_profile_default_env(monkeypatch):
 
 
 def test_fail_closed_with_both_sources(monkeypatch):
-    from scraper.providers.registry import ProviderNotConfiguredError, assert_browser_scraping_allowed
+    from scraper.providers.registry import (
+        ProviderNotConfiguredError,
+        assert_browser_scraping_allowed,
+    )
 
     monkeypatch.setenv("DEPLOYMENT_PROFILE", "aigenis")
     monkeypatch.setenv("DATA_SOURCE", "both")
@@ -161,7 +164,9 @@ def test_demo_default_fixtures_shallow_copies():
     assert first[0] is not second[0]
     assert {b["market"] for b in first} == {"bcse", "moex"}
     assert {b["currency"] for b in first} == {"BYN", "RUB"}
-    assert all(b["is_government"] is False for b in first if b["issuer"] not in ("Минфин РБ", "Минфин РФ"))
+    assert all(
+        b["is_government"] is False for b in first if b["issuer"] not in ("Минфин РБ", "Минфин РФ")
+    )
 
 
 # ──────────────────────────────────────────────
@@ -174,11 +179,15 @@ async def test_list_mappings_db_with_and_without_market():
     async with session_scope() as session:
         await upsert_mapping_db(
             session,
-            InstrumentMapping(aigenis_instrument_id="L-BCSE", market="BCSE", analytics_internal_id="b1"),
+            InstrumentMapping(
+                aigenis_instrument_id="L-BCSE", market="BCSE", analytics_internal_id="b1"
+            ),
         )
         await upsert_mapping_db(
             session,
-            InstrumentMapping(aigenis_instrument_id="L-MOEX", market="MOEX", analytics_internal_id="b2"),
+            InstrumentMapping(
+                aigenis_instrument_id="L-MOEX", market="MOEX", analytics_internal_id="b2"
+            ),
         )
 
     async with session_scope() as session:
@@ -313,8 +322,8 @@ class RatesFakeClient(FakeClient):
 
 @pytest.mark.asyncio
 async def test_fetch_and_save_rates(monkeypatch):
-    from scraper.fx import fetch_and_save_rates
     from notifications.fx_repository import latest_fx
+    from scraper.fx import fetch_and_save_rates
 
     client = RatesFakeClient()
     monkeypatch.setattr("httpx.AsyncClient", lambda **kw: client)
@@ -386,8 +395,8 @@ async def test_fetch_metal_prices_soap(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_and_save_metal_prices(monkeypatch):
-    from scraper.fx import TROY_OZ_PER_GRAM, fetch_and_save_metal_prices
     from notifications.fx_repository import latest_metal
+    from scraper.fx import TROY_OZ_PER_GRAM, fetch_and_save_metal_prices
 
     async def fake_fetch(metal_id, from_date, to_date):
         return [] if metal_id == 1 else [Decimal("1.5")]

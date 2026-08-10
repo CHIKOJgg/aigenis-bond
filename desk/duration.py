@@ -305,10 +305,15 @@ def portfolio_duration(
         / total_w
     )
     cvx = (
-        sum(float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].convexity for b in bonds)
+        sum(
+            float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].convexity for b in bonds
+        )
         / total_w
     )
-    dv = sum(float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].dv01 for b in bonds) / total_w
+    dv = (
+        sum(float(weights.get(b.internal_id, 0.0)) * reports[b.internal_id].dv01 for b in bonds)
+        / total_w
+    )
     krds: dict[str, float] = {}
     for b in bonds:
         rep = reports[b.internal_id]

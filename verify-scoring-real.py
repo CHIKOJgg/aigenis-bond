@@ -25,11 +25,7 @@ def _derive_ytm(bond: BondORM) -> float | None:
     if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0:
         return float(bond.yield_to_maturity)
     price_pct = to_price_pct(bond.price, bond.nominal)
-    if (
-        price_pct is not None
-        and bond.coupon_rate is not None
-        and bond.maturity_date is not None
-    ):
+    if price_pct is not None and bond.coupon_rate is not None and bond.maturity_date is not None:
         solved = ytm_from_price(
             price_pct=price_pct,
             coupon_rate_pct=float(bond.coupon_rate),
@@ -107,8 +103,9 @@ async def run(limit: int, market: str | None) -> int:
         tiers[r["tier"]] = tiers.get(r["tier"], 0) + 1
 
     print("=" * 78)
-    print(f"SCORING vs REAL DATA: {n} bonds scored from DB "
-          f"(market={market or 'all'}, limit={limit})")
+    print(
+        f"SCORING vs REAL DATA: {n} bonds scored from DB (market={market or 'all'}, limit={limit})"
+    )
     print("=" * 78)
     print(f"  scored:               {n_scored}/{n}")
     print(f"  with strengths:       {n_strengths}  ({100 * n_strengths / max(n, 1):.0f}%)")
@@ -121,16 +118,20 @@ async def run(limit: int, market: str | None) -> int:
     ordered = sorted(rows, key=lambda r: r["score"] or -1, reverse=True)
     for label, idx in (("TOP", 0), ("MIDDLE", len(ordered) // 2), ("BOTTOM", -1)):
         r = ordered[idx]
-        print(f"--- {label}: {r['id']} | {r['name'][:60]} | "
-              f"score={r['score']:.2f} tier={r['tier']} ytm={r['ytm']}%")
+        print(
+            f"--- {label}: {r['id']} | {r['name'][:60]} | "
+            f"score={r['score']:.2f} tier={r['tier']} ytm={r['ytm']}%"
+        )
         print(f"    verdict: {r['verdict']}")
         print(f"    strengths  ({len(r['strengths'])}): " + " | ".join(r["strengths"]))
         print(f"    weaknesses ({len(r['weaknesses'])}): " + " | ".join(r["weaknesses"]))
 
     print("-" * 78)
     ok = n_scored > 0 and n_strengths > 0 and n_weaknesses > 0
-    print(("OK: " if ok else "FAIL: ") + "advantages (strengths) and disadvantages "
-          "(weaknesses) are generated from real market data")
+    print(
+        ("OK: " if ok else "FAIL: ") + "advantages (strengths) and disadvantages "
+        "(weaknesses) are generated from real market data"
+    )
     return 0 if ok else 1
 
 

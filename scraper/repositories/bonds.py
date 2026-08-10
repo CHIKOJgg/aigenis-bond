@@ -46,8 +46,11 @@ def _enrich_bond_name(bond: Bond) -> str:
     # 3. Если есть issuer — строим "Issuer #N"
     if bond.issuer and not _is_technical_name(bond.issuer):
         base = bond.issuer.strip()
-        if _is_technical_name(base):
-            return bond.internal_id
+        # pragma: no cover - provably unreachable: _is_technical_name only
+        # strips whitespace and removes [0-9\-_/], so the result is identical
+        # for `x` and `x.strip()` — the outer guard already excludes this case
+        if _is_technical_name(base):  # pragma: no cover
+            return bond.internal_id  # pragma: no cover
         # Убираем юр.форму для краткости
         base = re.sub(
             r"^\s*(ОАО|ЗАО|ООО|ОДО|ИП|СООО|УП|АО)\s+",

@@ -7,11 +7,11 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy import select
 
 from scraper import job_runs, observability
 from scraper.db import session_scope
 from scraper.orm.jobs import JobRunORM
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -80,10 +80,10 @@ async def test_wrap_with_history_ok():
 
     async with session_scope() as session:
         rows = (
-            await session.execute(
-                select(JobRunORM).where(JobRunORM.job_name == "wrapped-ok")
-            )
-        ).scalars().all()
+            (await session.execute(select(JobRunORM).where(JobRunORM.job_name == "wrapped-ok")))
+            .scalars()
+            .all()
+        )
         assert rows
         assert all(r.status == "ok" for r in rows)
         assert all(r.error is None for r in rows)
@@ -99,10 +99,10 @@ async def test_wrap_with_history_failed():
 
     async with session_scope() as session:
         rows = (
-            await session.execute(
-                select(JobRunORM).where(JobRunORM.job_name == "wrapped-fail")
-            )
-        ).scalars().all()
+            (await session.execute(select(JobRunORM).where(JobRunORM.job_name == "wrapped-fail")))
+            .scalars()
+            .all()
+        )
         assert rows
         assert all(r.status == "failed" for r in rows)
         assert all(r.error == "boom failed" for r in rows)

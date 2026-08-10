@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -12,9 +11,20 @@ import scraper.db as db
 
 
 def test_log_slow_query_warns_and_skips():
-    db._log_slow_query(None, None, "SELECT 1" * 50, None, SimpleNamespace(get_total_execution_time=lambda: 5.0), None)
-    db._log_slow_query(None, None, "x", None, SimpleNamespace(get_total_execution_time=lambda: 0), None)
-    db._log_slow_query(None, None, "x", None, SimpleNamespace(get_total_execution_time=lambda: 5.0), None)
+    db._log_slow_query(
+        None,
+        None,
+        "SELECT 1" * 50,
+        None,
+        SimpleNamespace(get_total_execution_time=lambda: 5.0),
+        None,
+    )
+    db._log_slow_query(
+        None, None, "x", None, SimpleNamespace(get_total_execution_time=lambda: 0), None
+    )
+    db._log_slow_query(
+        None, None, "x", None, SimpleNamespace(get_total_execution_time=lambda: 5.0), None
+    )
 
 
 def test_get_engine_non_sqlite_kwargs(monkeypatch):
@@ -160,7 +170,9 @@ async def test_advisory_lock_acquired_and_released(monkeypatch):
 async def test_advisory_lock_not_acquired(monkeypatch):
     conn = _FakeConn(False)
     monkeypatch.setattr("scraper.db._is_postgresql", lambda: True)
-    monkeypatch.setattr("sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: _FakeEngine(conn))
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: _FakeEngine(conn)
+    )
 
     lock = db.AdvisoryLock()
     assert await lock.acquire("other") is False
@@ -174,7 +186,9 @@ async def test_advisory_lock_acquire_failure(monkeypatch):
             raise RuntimeError("pg down")
 
     monkeypatch.setattr("scraper.db._is_postgresql", lambda: True)
-    monkeypatch.setattr("sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: BrokenEngine())
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: BrokenEngine()
+    )
 
     lock = db.AdvisoryLock()
     assert await lock.acquire("leader") is False
@@ -185,7 +199,9 @@ async def test_advisory_lock_acquire_failure(monkeypatch):
 async def test_advisory_lock_execute_failure_closes_conn(monkeypatch):
     conn = _FakeConn(True, fail_on_call=1)
     monkeypatch.setattr("scraper.db._is_postgresql", lambda: True)
-    monkeypatch.setattr("sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: _FakeEngine(conn))
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: _FakeEngine(conn)
+    )
 
     lock = db.AdvisoryLock()
     assert await lock.acquire("leader") is False
@@ -205,7 +221,9 @@ async def test_advisory_lock_sqlite_local(monkeypatch):
 async def test_advisory_lock_unlock_failure_logged(monkeypatch):
     conn = _FakeConn(True, fail_on_call=2)
     monkeypatch.setattr("scraper.db._is_postgresql", lambda: True)
-    monkeypatch.setattr("sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: _FakeEngine(conn))
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine", lambda *a, **k: _FakeEngine(conn)
+    )
 
     lock = db.AdvisoryLock()
     assert await lock.acquire("leader") is True

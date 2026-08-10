@@ -1,8 +1,11 @@
-import http.server, socketserver, os
+import http.server
+import os
+import socketserver
 from urllib.parse import unquote
 
 DIR = os.path.abspath(r"C:\Users\Honor\Desktop\aigenis-parser\.demo-dist")
 PORT = 5176
+
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
@@ -20,9 +23,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_HEAD(self):
         return self.do_GET()
 
+
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+
 
 if __name__ == "__main__":
     print(f"Serving demo SPA at http://localhost:{PORT} (from {DIR})")

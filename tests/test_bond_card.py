@@ -82,9 +82,7 @@ async def _seed_pro_user_and_rv_group():
             )
         )
         # Three same-currency bonds => RV peer group exists, signal must be built.
-        for i, (bid, ytm) in enumerate(
-            [("OP-1", 12.0), ("OP-2", 9.0), ("OP-3", 7.0)], start=1
-        ):
+        for i, (bid, ytm) in enumerate([("OP-1", 12.0), ("OP-2", 9.0), ("OP-3", 7.0)], start=1):
             s.add(
                 BondORM(
                     internal_id=bid,

@@ -191,6 +191,87 @@ def test_build_coupon_schedule_groups_by_year() -> None:  # type: ignore[no-unty
     assert sched["2025"] == ["2025-06-29", "2025-12-29"]
     assert sched["2026"] == ["2026-06-29"]
 
+
+@pytest.mark.asyncio
+async def test_fetch_bonds_skips_parse_failure(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    payload = {
+        "securities": {
+            "columns": [
+                "SECID",
+                "SECNAME",
+                "ISSUER",
+                "SHORTNAME",
+                "FACEUNIT",
+                "FACEVALUE",
+                "COUPONVALUE",
+                "COUPONPERIOD",
+                "MATDATE",
+                "ISIN",
+                "COUPONPERCENT",
+            ],
+            "data": [
+                [
+                    "BAD1",
+                    "Bad bond",
+                    "OOO Test",
+                    "BAD1",
+                    "SUR",
+                    "NaN",
+                    "90",
+                    "182",
+                    "2029-01-01",
+                    "RU000BAD1",
+                    "10",
+                ],
+                [
+                    "GOOD1",
+                    "Good bond",
+                    "OOO Test",
+                    "GOOD1",
+                    "SUR",
+                    "1000",
+                    "90",
+                    "182",
+                    "2029-01-01",
+                    "RU000GOOD1",
+                    "10",
+                ],
+            ],
+        },
+        "marketdata": {
+            "columns": ["SECID", "LAST", "YIELD"],
+            "data": [["BAD1", "101.5", "11.2"], ["GOOD1", "101.5", "11.2"]],
+        },
+    }
+
+    monkeypatch.setenv("MOEX_BOARDS", "TQCB")
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: _FakeClient(payload))
+    bonds = await MoexClient().fetch_bonds()
+    assert [b.internal_id for b in bonds] == ["MOEX_GOOD1"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_history_skips_bad_candle(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    payload = {
+        "history": {
+            "columns": ["BOARDID", "TRADEDATE", "SECID", "CLOSE", "YIELDCLOSE"],
+            "data": [
+                ["TQOB", "2025-01-21", "TEST2", "NaN", "5.10"],
+                ["TQOB", "2025-01-22", "TEST2", "85.1", "5.05"],
+            ],
+        },
+        "history.cursor": {"columns": ["INDEX", "TOTAL", "PAGESIZE"], "data": [[0, 2, 100]]},
+    }
+
+    monkeypatch.setenv("MOEX_BOARDS", "TQOB")
+    monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: _FakeClient(payload))
+    client = MoexClient()
+    client._id_by_internal["MOEX_TEST2"] = "TEST2"
+    hist = await client.fetch_history("MOEX_TEST2", _days=30)
+    assert len(hist) == 1
+    assert hist[0].price == __import__("decimal").Decimal("85.1")
+
+
 def test_boards_env(monkeypatch) -> None:
     from scraper.moex import _boards
 
@@ -230,20 +311,21 @@ def test_coupon_rate_pct_branches() -> None:
     from scraper.moex import _coupon_rate_pct
 
     assert _coupon_rate_pct({"COUPONPERCENT": "10"}) == __import__("decimal").Decimal("10")
-    assert _coupon_rate_pct({"COUPONVALUE": None, "FACEVALUE": "1000", "COUPONPERIOD": "182"}) is None
-    assert _coupon_rate_pct(
-        {"COUPONVALUE": "50", "FACEVALUE": "1000", "COUPONPERIOD": "abc"}
-    ) is None
-    assert _coupon_rate_pct({"COUPONVALUE": "50", "FACEVALUE": "1000", "COUPONPERIOD": "0"}) is None
-    derived = _coupon_rate_pct(
-        {"COUPONVALUE": "50", "FACEVALUE": "1000", "COUPONPERIOD": "182"}
+    assert (
+        _coupon_rate_pct({"COUPONVALUE": None, "FACEVALUE": "1000", "COUPONPERIOD": "182"}) is None
     )
+    assert (
+        _coupon_rate_pct({"COUPONVALUE": "50", "FACEVALUE": "1000", "COUPONPERIOD": "abc"}) is None
+    )
+    assert _coupon_rate_pct({"COUPONVALUE": "50", "FACEVALUE": "1000", "COUPONPERIOD": "0"}) is None
+    derived = _coupon_rate_pct({"COUPONVALUE": "50", "FACEVALUE": "1000", "COUPONPERIOD": "182"})
     assert derived is not None
     assert abs(float(derived) - 10.0275) < 0.001
 
 
 def test_to_date_branches() -> None:
     from datetime import datetime as _dt
+
     from scraper.moex import _to_date
 
     assert _to_date("") is None
@@ -259,6 +341,7 @@ def test_parse_iss_rows_missing_block() -> None:
 
 def test_quote_and_yield_branches() -> None:
     from decimal import Decimal
+
     from scraper.moex import _quote_and_yield
 
     assert _quote_and_yield({"SECID": "X"}, {"LAST": "0"}) == (None, None)
@@ -294,10 +377,14 @@ async def test_client_context_and_listing(monkeypatch) -> None:
         assert client is not None
     monkeypatch.setattr("httpx.AsyncClient", lambda *a, **k: _FakeClient(_PAYLOAD))
     rows = await MoexClient().fetch_listing(None)
-    assert rows == [
-        {"internal_id": "MOEX_TEST1", "currency": "RUB", "name": "Test Bond 1"},
-        {"internal_id": "MOEX_TEST2", "currency": "USD", "name": "Test Eurobond"},
-    ] * 2
+    assert (
+        rows
+        == [
+            {"internal_id": "MOEX_TEST1", "currency": "RUB", "name": "Test Bond 1"},
+            {"internal_id": "MOEX_TEST2", "currency": "USD", "name": "Test Eurobond"},
+        ]
+        * 2
+    )
 
 
 @pytest.mark.asyncio
@@ -400,8 +487,10 @@ async def test_fetch_coupons_unknown_and_failure(monkeypatch) -> None:
     assert await client.fetch_coupons("NOT_MOEX_1") == []
     assert await client.fetch_coupons("MOEX_TEST1") == []
 
+
 def test_quote_and_yield_price_only() -> None:
     from decimal import Decimal
+
     from scraper.moex import _quote_and_yield
 
     price, ytm = _quote_and_yield({"SECID": "X"}, {"LAST": "100"})

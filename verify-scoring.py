@@ -1,9 +1,16 @@
 from datetime import date
 from decimal import Decimal
+
 from scoring.engine import score_bond
 from scoring.explain import explain_score
 
-TIER_TO_STATUS = {"S": "attractive", "A": "attractive", "B": "neutral", "C": "review", "D": "high_risk"}
+TIER_TO_STATUS = {
+    "S": "attractive",
+    "A": "attractive",
+    "B": "neutral",
+    "C": "review",
+    "D": "high_risk",
+}
 
 bonds = [
     ("demo-bond-001", 12.5, 5.0, date(2030, 8, 7)),

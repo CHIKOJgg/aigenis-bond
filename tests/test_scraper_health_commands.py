@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from scraper import health, validation
 from scraper.errors import ValidationError as ScraperValidationError
@@ -28,7 +29,9 @@ class _Result:
 class TestHealth:
     async def test_ok(self, capsys, monkeypatch):
         monkeypatch.setattr("scraper.repositories.bonds.count_bonds", AsyncMock(return_value=3))
-        monkeypatch.setattr("scraper.repositories.history.count_history", AsyncMock(return_value=10))
+        monkeypatch.setattr(
+            "scraper.repositories.history.count_history", AsyncMock(return_value=10)
+        )
         latest = MagicMock()
         latest.isoformat.return_value = "2026-06-01T10:00:00"
         monkeypatch.setattr(
@@ -180,7 +183,9 @@ class TestValidateDetail:
 
     def test_bad_ytm(self):
         with pytest.raises(ScraperValidationError) as exc:
-            validation.validate_detail({"id": "OP-1", "name": "X", "currency": "BYN", "yield_to_maturity": "abc"})
+            validation.validate_detail(
+                {"id": "OP-1", "name": "X", "currency": "BYN", "yield_to_maturity": "abc"}
+            )
         assert "yield_to_maturity" in str(exc.value)
         assert exc.value.__cause__ is not None
 
@@ -211,6 +216,4 @@ class TestValidateListing:
 
     def test_validate_listing_raises(self):
         with pytest.raises(ScraperValidationError):
-            validation.validate_listing(
-                [{"internal_id": "OP-2", "name": "Y"}]
-            )
+            validation.validate_listing([{"internal_id": "OP-2", "name": "Y"}])

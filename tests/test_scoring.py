@@ -399,8 +399,10 @@ def test_zero_coupon_bond_penalty():
 def test_issuer_classification(issuer, expected_tier):
     assert _classify_issuer(issuer) == expected_tier
 
+
 def test_historical_volatility_branches():
     from scoring.engine import _historical_volatility_component
+
     assert _historical_volatility_component(None) == 0.0
     assert _historical_volatility_component([5.0, 5.0]) == 0.0
     assert _historical_volatility_component([5.0, 5.0, -1.0]) == 0.0
@@ -410,14 +412,17 @@ def test_historical_volatility_branches():
 
 def test_historical_volatility_stdev_error(monkeypatch):
     from scoring.engine import _historical_volatility_component, statistics
+
     def boom(values):
         raise statistics.StatisticsError("n < 2")
+
     monkeypatch.setattr("scoring.engine.statistics.stdev", boom)
     assert _historical_volatility_component([1.0, 2.0, 3.0]) == 0.0
 
 
 def test_peer_relative_branches(monkeypatch):
     from scoring.engine import _peer_relative_component, statistics
+
     assert _peer_relative_component(None, "USD", [8, 9, 10, 11, 12]) == 0.0
     assert _peer_relative_component(5.0, "USD", [8, 9, 10, 11]) == 0.0
     assert _peer_relative_component(5.0, "USD", [8, 9, 10, 11, -1]) == 0.0
@@ -427,22 +432,31 @@ def test_peer_relative_branches(monkeypatch):
 
     def boom(values):
         raise statistics.StatisticsError("n < 2")
+
     monkeypatch.setattr("scoring.engine.statistics.stdev", boom)
     assert _peer_relative_component(5.0, "USD", [8, 9, 10, 11, 12]) == 0.0
 
 
 def test_classify_issuer_sub_sovereign():
     from scoring.engine import _classify_issuer
+
     assert _classify_issuer("Федеральное агентство") == "sub_sovereign"
 
 
 def test_volatility_component_price_band():
     from scoring.engine import _volatility_component
-    assert _volatility_component(ytm_pct=None, price=40.0, nominal=100.0, status="active", coupon_pct=None) == -1.0
+
+    assert (
+        _volatility_component(
+            ytm_pct=None, price=40.0, nominal=100.0, status="active", coupon_pct=None
+        )
+        == -1.0
+    )
 
 
 def test_inflation_component_market():
     from scoring.engine import _inflation_component_market
+
     assert _inflation_component_market("RUB", 20.0, True) == 5.0
     assert _inflation_component_market("RUB", 15.0, True) == 3.0
     assert _inflation_component_market("RUB", 12.0, True) == 0.0
@@ -454,6 +468,7 @@ def test_inflation_component_market():
 
 
 def test_efficiency_ratio_zero():
-    from scoring.engine import _compute_efficiency_ratio, ScoreBreakdown
+    from scoring.engine import ScoreBreakdown, _compute_efficiency_ratio
+
     b = ScoreBreakdown()
     assert _compute_efficiency_ratio(b) == 0.0

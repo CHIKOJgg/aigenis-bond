@@ -15,24 +15,24 @@ from scraper.models import (
     stock_instrument_ref,
 )
 
-BASE_BOND = dict(
-    internal_id="B1",
-    name="Test bond",
-    currency="BYN",
-    fetched_at=datetime(2024, 1, 1),
-)
+BASE_BOND = {
+    "internal_id": "B1",
+    "name": "Test bond",
+    "currency": "BYN",
+    "fetched_at": datetime(2024, 1, 1),
+}
 
 
 def make_bond(**kw):
     return Bond(**{**BASE_BOND, **kw})
 
 
-BASE_STOCK = dict(
-    internal_id="S1",
-    secid="GAZP",
-    name="Test stock",
-    fetched_at=datetime(2024, 1, 1),
-)
+BASE_STOCK = {
+    "internal_id": "S1",
+    "secid": "GAZP",
+    "name": "Test stock",
+    "fetched_at": datetime(2024, 1, 1),
+}
 
 
 def make_stock(**kw):

@@ -167,9 +167,7 @@ def _quote_and_yield(
     estimate, or None so downstream can honestly show "no data".
     """
     price = (
-        _to_dec(md.get("LAST"))
-        or _to_dec(md.get("LCLOSEPRICE"))
-        or _to_dec(md.get("MARKETPRICE"))
+        _to_dec(md.get("LAST")) or _to_dec(md.get("LCLOSEPRICE")) or _to_dec(md.get("MARKETPRICE"))
     )
     if price is None or price <= 0:
         return None, None

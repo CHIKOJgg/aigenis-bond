@@ -94,7 +94,7 @@ def test_explain_detail_helpers():
 
     assert "Металл (XAU)" in _currency_detail("xau")
     assert "XAG" in _currency_detail("XAG")
-    assert "Валюта RUR." == _currency_detail("RUR")
+    assert _currency_detail("RUR") == "Валюта RUR."
 
     assert "Короткий" in _duration_detail(20)
     assert "Средний" in _duration_detail(12)

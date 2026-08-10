@@ -267,9 +267,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print({"sitemap": "written", "bytes": len(xml)})
         return 0
-    parser.print_help()
-    return 1
+    # unreachable: every subcommand has a dispatch branch above
+    parser.print_help()  # pragma: no cover
+    return 1  # pragma: no cover
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover - exercised via subprocess test
     sys.exit(main())

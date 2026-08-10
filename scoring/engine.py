@@ -452,12 +452,7 @@ def score_bond(
     # defaulted/frozen issuers (e.g. Belarus eurobonds at 92% YTM) to the top
     # of the opportunity lists, so the reward is capped and the risk penalty
     # is deepened instead. Profiled against real MOEX/BCSE quotes 2026-08.
-    distressed = (
-        price_f is not None
-        and ytm_pct is not None
-        and price_f < 80.0
-        and ytm_pct > 30.0
-    )
+    distressed = price_f is not None and ytm_pct is not None and price_f < 80.0 and ytm_pct > 30.0
     if distressed:
         breakdown.yield_component = min(breakdown.yield_component, 20.0)
         breakdown.volatility_component -= 18.0

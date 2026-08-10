@@ -79,7 +79,9 @@ def test_market_data_computes_ytm_duration_score() -> None:
     assert "breakdown" in bond
     # Plain-language explanation (pros / cons / verdict) is always served for scored bonds.
     assert bond["explanation"] is not None
-    assert {"verdict", "summary", "strengths", "weaknesses", "factors"} <= set(bond["explanation"].keys())
+    assert {"verdict", "summary", "strengths", "weaknesses", "factors"} <= set(
+        bond["explanation"].keys()
+    )
     assert isinstance(bond["explanation"]["strengths"], list)
     assert isinstance(bond["explanation"]["weaknesses"], list)
     assert isinstance(bond["explanation"]["factors"], list)

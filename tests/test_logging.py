@@ -5,8 +5,6 @@ from __future__ import annotations
 import io
 import sys
 
-import pytest
-
 import scraper.logging as slogging
 
 
@@ -24,9 +22,9 @@ def test_utf8_stream_write_encodes():
     sink = slogging._Utf8Stream(stream)
     written = sink.write("Привет, мир!")
     assert written == len("Привет, мир!")
-    assert stream.getvalue() == "Привет, мир!".encode("utf-8")
+    assert stream.getvalue() == "Привет, мир!".encode()
     sink.flush()
-    assert stream.getvalue() == "Привет, мир!".encode("utf-8")
+    assert stream.getvalue() == "Привет, мир!".encode()
 
 
 def test_utf8_stream_write_closed_buffer_suppressed():

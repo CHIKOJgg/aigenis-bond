@@ -6,8 +6,6 @@ import os
 from datetime import date, datetime
 from decimal import Decimal
 
-import pytest
-
 from scraper.parsers.xlsx import (
     XLSX_URLS,
     _extract_bond_name,
@@ -287,7 +285,9 @@ class TestParseCalculator:
         calc = _make_calculator_workbook(tmp_path)
         import scraper.parsers.xlsx as xlsx_mod
 
-        monkeypatch.setattr(xlsx_mod, "download_xlsx_files", lambda dest_dir=None: {"calculator": str(calc)})
+        monkeypatch.setattr(
+            xlsx_mod, "download_xlsx_files", lambda dest_dir=None: {"calculator": str(calc)}
+        )
         result = parse_all()
         assert set(result.byn_bonds) == {23, 24}
         assert result.daily_accruals == []
@@ -459,12 +459,12 @@ class TestDownload:
         result = download_xlsx_files(str(tmp_path))
         assert set(result) == set(XLSX_URLS)
         assert len(calls) == 3
-        for key, path in result.items():
+        for _, path in result.items():
             assert os.path.exists(path)
             with open(path, "rb") as f:
                 assert f.read() == b"fake-xlsx-content"
 
-        result2 = download_xlsx_files(str(tmp_path))
+        download_xlsx_files(str(tmp_path))
         assert len(calls) == 3
 
     def test_download_into_temp_default(self, tmp_path, monkeypatch):

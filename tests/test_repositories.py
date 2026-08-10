@@ -1,4 +1,4 @@
-﻿"""Tests for scraper/repositories (bonds, history, stocks) against SQLite."""
+"""Tests for scraper/repositories (bonds, history, stocks) against SQLite."""
 
 from __future__ import annotations
 
@@ -44,40 +44,45 @@ from scraper.repositories.stocks import (
     upsert_stocks_batch,
 )
 
+# BOND_NAME_MAP carries built-in defaults (OP-30/OP-43/OP-51) plus names
+# registered by other tests at runtime; snapshot the built-ins so pure-name
+# tests are order-independent.
+_ENRICH_DEFAULTS = dict(BOND_NAME_MAP)
+
 
 def _bond(internal_id: str, **kw) -> Bond:
-    base = dict(
-        internal_id=internal_id,
-        name="Bond Name",
-        issuer="Issuer",
-        currency="USD",
-        nominal=Decimal("1000"),
-        coupon_rate=Decimal("5.0"),
-        coupon_frequency=2,
-        maturity_date=date(2030, 1, 1),
-        price=Decimal("100"),
-        yield_to_maturity=Decimal("8.0"),
-        isin=f"RU000{internal_id}",
-        market="bcse",
-        status="active",
-        fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    base = {
+        "internal_id": internal_id,
+        "name": "Bond Name",
+        "issuer": "Issuer",
+        "currency": "USD",
+        "nominal": Decimal("1000"),
+        "coupon_rate": Decimal("5.0"),
+        "coupon_frequency": 2,
+        "maturity_date": date(2030, 1, 1),
+        "price": Decimal("100"),
+        "yield_to_maturity": Decimal("8.0"),
+        "isin": f"RU000{internal_id}",
+        "market": "bcse",
+        "status": "active",
+        "fetched_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
     base.update(kw)
     return Bond(**base)
 
 
 def _stock(internal_id: str, **kw) -> Stock:
-    base = dict(
-        internal_id=internal_id,
-        secid=internal_id,
-        name="Stock Name",
-        board="TQBR",
-        currency="RUB",
-        price=Decimal("100"),
-        value_traded=Decimal("1000"),
-        status="active",
-        fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
+    base = {
+        "internal_id": internal_id,
+        "secid": internal_id,
+        "name": "Stock Name",
+        "board": "TQBR",
+        "currency": "RUB",
+        "price": Decimal("100"),
+        "value_traded": Decimal("1000"),
+        "status": "active",
+        "fetched_at": datetime(2026, 1, 1, tzinfo=UTC),
+    }
     base.update(kw)
     return Stock(**base)
 
@@ -91,19 +96,28 @@ def test_is_technical_name():
 
 
 def test_enrich_bond_name():
-    assert _enrich_bond_name(_bond("OP-30")) == "iGenis OP30"
-    named = _bond("X1", name="Хорошее Имя Облигации")
-    assert _enrich_bond_name(named) == "Хорошее Имя Облигации"
-    issuer_no_number = _bond("X2", name="OP-12", issuer="ООО Эмитент")
-    assert _enrich_bond_name(issuer_no_number) == "Эмитент"
-    issuer_with_number = _bond("X3", name="OP-12", issuer="ООО Эмитент", issue_number=3)
-    assert _enrich_bond_name(issuer_with_number) == "Эмитент #3"
-    technical_issuer = _bond("X4", name="OP-12", issuer="RUS-2028-01")
-    assert _enrich_bond_name(technical_issuer) == "X4"
-    digits = _bond("42", name="42", issuer=None)
-    assert _enrich_bond_name(digits) == "Выпуск #42"
-    plain = _bond("MF-LB-USD-0265", name="", issuer=None)
-    assert _enrich_bond_name(plain) == "MF LB USD 0265"
+    from scraper.repositories.bonds import BOND_NAME_MAP
+
+    saved = dict(BOND_NAME_MAP)
+    try:
+        BOND_NAME_MAP.clear()
+        BOND_NAME_MAP.update(_ENRICH_DEFAULTS)
+        assert _enrich_bond_name(_bond("OP-30")) == "iGenis OP30"
+        named = _bond("X1", name="Хорошее Имя Облигации")
+        assert _enrich_bond_name(named) == "Хорошее Имя Облигации"
+        issuer_no_number = _bond("X2", name="OP-12", issuer="ООО Эмитент")
+        assert _enrich_bond_name(issuer_no_number) == "Эмитент"
+        issuer_with_number = _bond("X3", name="OP-12", issuer="ООО Эмитент", issue_number=3)
+        assert _enrich_bond_name(issuer_with_number) == "Эмитент #3"
+        technical_issuer = _bond("X4", name="OP-12", issuer="RUS-2028-01")
+        assert _enrich_bond_name(technical_issuer) == "X4"
+        digits = _bond("42", name="42", issuer=None)
+        assert _enrich_bond_name(digits) == "Выпуск #42"
+        plain = _bond("MF-LB-USD-0265", name="", issuer=None)
+        assert _enrich_bond_name(plain) == "MF LB USD 0265"
+    finally:
+        BOND_NAME_MAP.clear()
+        BOND_NAME_MAP.update(saved)
 
 
 def test_register_xlsx_names():
@@ -159,11 +173,11 @@ async def test_update_bond_name():
 
 
 def _bhistory(internal_id: str, day: int, **kw) -> BondHistory:
-    values = dict(
-        price=Decimal("100"),
-        yield_=Decimal("8"),
-        status="active",
-    )
+    values = {
+        "price": Decimal("100"),
+        "yield_": Decimal("8"),
+        "status": "active",
+    }
     values.update(kw)
     return BondHistory(internal_id=internal_id, date=date(2026, 1, day), **values)
 

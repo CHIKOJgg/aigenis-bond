@@ -69,6 +69,7 @@ class TestInProcessMetrics:
 
     def test_timed_async_error(self):
         import asyncio
+
         import pytest
 
         async def boom():

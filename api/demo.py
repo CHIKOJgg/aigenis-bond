@@ -126,9 +126,7 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
                 bs,
                 currency=bond.currency,
                 ytm_pct=ytm,
-                coupon_pct=(
-                    float(bond.coupon_rate) if bond.coupon_rate is not None else None
-                ),
+                coupon_pct=(float(bond.coupon_rate) if bond.coupon_rate is not None else None),
             )
             explanation = {
                 "verdict": expl.verdict,
@@ -155,12 +153,7 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
     # Distressed-debt marker: price < 80% of face with YTM > 30% means the
     # market prices near-default, so the quoted yield is not an opportunity —
     # it is a risk signal (the scoring engine also caps/penalizes it).
-    distressed = (
-        price_pct is not None
-        and ytm is not None
-        and price_pct < 80.0
-        and ytm > 30.0
-    )
+    distressed = price_pct is not None and ytm is not None and price_pct < 80.0 and ytm > 30.0
 
     return {
         "yield_to_maturity": ytm,
@@ -319,9 +312,7 @@ async def demo_search(
         if currency:
             stmt = stmt.where(BondORM.currency == currency.upper())
         rows = (
-            (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit)))
-            .scalars()
-            .all()
+            (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).scalars().all()
         )
 
     bonds = [_bond_payload(bond, _bond_analytics(bond)) for bond in rows]
@@ -344,9 +335,7 @@ async def demo_bond_detail(internal_id: str) -> dict[str, Any]:
     """
     async with session_scope() as session:
         bond = (
-            await session.execute(
-                select(BondORM).where(BondORM.internal_id == internal_id)
-            )
+            await session.execute(select(BondORM).where(BondORM.internal_id == internal_id))
         ).scalar_one_or_none()
         if bond is None:
             raise HTTPException(status_code=404, detail=f"Bond {internal_id} not found")

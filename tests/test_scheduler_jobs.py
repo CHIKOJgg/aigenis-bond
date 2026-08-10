@@ -27,13 +27,18 @@ class FakeClient:
     async def fetch_history(self, internal_id, _days=30):
         if self._raise:
             raise RuntimeError("history boom")
-        return self._history
+        rows = []
+        for row in self._history:
+            fields = dict(row.__dict__)
+            fields.pop("internal_id", None)
+            rows.append(type(row)(internal_id=internal_id, **fields))
+        return rows
 
     async def fetch_coupons(self, internal_id):
         return self._coupons
 
 
-async def _add_bond(session, internal_id: str, currency: str) -> None:
+async def _add_bond(session, internal_id: str, currency: str, ytm: str = "8.0") -> None:
     from decimal import Decimal
 
     from scraper.orm import BondORM
@@ -45,7 +50,7 @@ async def _add_bond(session, internal_id: str, currency: str) -> None:
             currency=currency,
             market="bcse",
             status="active",
-            yield_to_maturity=Decimal("8.0"),
+            yield_to_maturity=Decimal(ytm),
             fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
     )
@@ -54,7 +59,6 @@ async def _add_bond(session, internal_id: str, currency: str) -> None:
 
 @pytest.mark.asyncio
 async def test_scheduled_stocks_job_success_and_failure(monkeypatch):
-    from unittest.mock import AsyncMock
 
     from scraper import pipeline
     from scraper.scheduler import scheduled_stocks_job
@@ -81,7 +85,9 @@ async def test_scheduled_stocks_job_disabled(monkeypatch):
         return SimpleNamespace(stock=SimpleNamespace(enabled=False))
 
     monkeypatch.setattr("scraper.scheduler.get_settings", fake_settings)
-    monkeypatch.setattr(pipeline, "run_once_moex_stocks", lambda: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(
+        pipeline, "run_once_moex_stocks", lambda: (_ for _ in ()).throw(AssertionError)
+    )
     await scheduled_stocks_job()
 
 
@@ -105,37 +111,52 @@ async def test_scheduled_history_job_skipped_variants(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scheduled_history_job_moex_source(monkeypatch):
-    from scraper import repositories
-    from scraper.moex import MoexClient
-    from scraper.pipeline import _build_coupon_schedule
-    from scraper.scheduler import scheduled_history_job
+    from decimal import Decimal
+
     from scraper.models import BondHistory
+    from scraper.moex import MoexClient
+    from scraper.orm import BondORM
+    from scraper.scheduler import scheduled_history_job
 
     monkeypatch.setenv("DATA_SOURCE", "moex")
-    monkeypatch.setenv("MOEX_HISTORY_SAMPLE", "5")
+    monkeypatch.setenv("MOEX_HISTORY_SAMPLE", "1000")
     monkeypatch.setenv("MOEX_HISTORY_DAYS", "10")
-    monkeypatch.setattr(MoexClient, "fetch_history", FakeClient().fetch_history)
-    monkeypatch.setattr(
-        MoexClient,
-        "fetch_coupons",
-        FakeClient(coupons=[{"date": date(2026, 6, 29), "coupon": __import__("decimal").Decimal("38.57")}]).fetch_coupons,
+    history = [
+        BondHistory(
+            internal_id="SH-M1",
+            date=date(2026, 1, 2),
+            price=Decimal("100"),
+            yield_=Decimal("8"),
+            status="active",
+        )
+    ]
+    fake = FakeClient(
+        history=history,
+        coupons=[{"date": date(2026, 6, 29), "coupon": Decimal("38.57")}],
     )
 
+    async def fh(self, internal_id, _days=30):
+        return await fake.fetch_history(internal_id, _days=_days)
+
+    async def fc(self, internal_id):
+        return await fake.fetch_coupons(internal_id)
+
+    monkeypatch.setattr(MoexClient, "fetch_history", fh)
+    monkeypatch.setattr(MoexClient, "fetch_coupons", fc)
+
     async with session_scope() as session:
-        await _add_bond(session, "SH-M1", "RUB")
-        await _add_bond(session, "SH-M2", "USD")
+        await _add_bond(session, "SH-M1", "RUB", ytm="99")
+        await _add_bond(session, "SH-M2", "USD", ytm="99")
     assert await scheduled_history_job() == "ok"
 
     async with session_scope() as session:
-        from scraper.orm import BondORM
-
         orm = (
             await session.execute(
                 __import__("sqlalchemy").select(BondORM).where(BondORM.internal_id == "SH-M2")
             )
         ).scalar_one_or_none()
-    assert orm is not None
-    assert orm.coupon_schedule is not None
+        assert orm is not None
+        assert orm.coupon_schedule is not None
 
 
 @pytest.mark.asyncio
@@ -144,8 +165,16 @@ async def test_scheduled_history_job_moex_failure_path(monkeypatch):
     from scraper.scheduler import scheduled_history_job
 
     monkeypatch.setenv("DATA_SOURCE", "moex")
-    monkeypatch.setattr(MoexClient, "fetch_history", FakeClient(raise_history=True).fetch_history)
-    monkeypatch.setattr(MoexClient, "fetch_coupons", FakeClient().fetch_coupons)
+    fake = FakeClient(raise_history=True)
+
+    async def fh(self, internal_id, _days=30):
+        return await fake.fetch_history(internal_id, _days=_days)
+
+    async def fc(self, internal_id):
+        return await fake.fetch_coupons(internal_id)
+
+    monkeypatch.setattr(MoexClient, "fetch_history", fh)
+    monkeypatch.setattr(MoexClient, "fetch_coupons", fc)
 
     async with session_scope() as session:
         await _add_bond(session, "SH-F1", "RUB")
@@ -157,13 +186,12 @@ async def test_scheduled_history_job_aigenis_source(monkeypatch):
     from unittest.mock import AsyncMock
 
     from scraper.client import AigenisClient
-    from scraper.pipeline import backfill_history
     from scraper.scheduler import scheduled_history_job
 
     monkeypatch.setenv("DATA_SOURCE", "aigenis")
     monkeypatch.setattr(AigenisClient, "__aenter__", FakeClient().__aenter__)
     monkeypatch.setattr(AigenisClient, "__aexit__", FakeClient().__aexit__)
-    monkeypatch.setattr(backfill_history, "__call__", AsyncMock(return_value=(5, 1)))
+    monkeypatch.setattr("scraper.pipeline.backfill_history", AsyncMock(return_value=(5, 1)))
 
     async with session_scope() as session:
         await _add_bond(session, "SH-A1", "USD")
@@ -176,15 +204,22 @@ async def test_scheduled_history_job_both_sources(monkeypatch):
 
     from scraper.client import AigenisClient
     from scraper.moex import MoexClient
-    from scraper.pipeline import backfill_history
     from scraper.scheduler import scheduled_history_job
 
     monkeypatch.setenv("DATA_SOURCE", "both")
-    monkeypatch.setattr(MoexClient, "fetch_history", FakeClient().fetch_history)
-    monkeypatch.setattr(MoexClient, "fetch_coupons", FakeClient().fetch_coupons)
+    fake = FakeClient()
+
+    async def fh(self, internal_id, _days=30):
+        return await fake.fetch_history(internal_id, _days=_days)
+
+    async def fc(self, internal_id):
+        return await fake.fetch_coupons(internal_id)
+
+    monkeypatch.setattr(MoexClient, "fetch_history", fh)
+    monkeypatch.setattr(MoexClient, "fetch_coupons", fc)
     monkeypatch.setattr(AigenisClient, "__aenter__", FakeClient().__aenter__)
     monkeypatch.setattr(AigenisClient, "__aexit__", FakeClient().__aexit__)
-    monkeypatch.setattr(backfill_history, "__call__", AsyncMock(return_value=(0, 0)))
+    monkeypatch.setattr("scraper.pipeline.backfill_history", AsyncMock(return_value=(0, 0)))
 
     async with session_scope() as session:
         await _add_bond(session, "SH-B1", "BYN")
@@ -197,7 +232,6 @@ async def test_scheduled_job_sources_and_sitemap_failure(monkeypatch):
 
     from scraper.client import AigenisClient
     from scraper.moex import MoexClient
-    from scraper.pipeline import run_once, run_once_moex
     from scraper.scheduler import scheduled_job
 
     monkeypatch.setenv("DATA_SOURCE", "both")
@@ -205,8 +239,8 @@ async def test_scheduled_job_sources_and_sitemap_failure(monkeypatch):
     monkeypatch.setattr(MoexClient, "__aexit__", FakeClient().__aexit__)
     monkeypatch.setattr(AigenisClient, "__aenter__", FakeClient().__aenter__)
     monkeypatch.setattr(AigenisClient, "__aexit__", FakeClient().__aexit__)
-    monkeypatch.setattr(run_once_moex, "__call__", AsyncMock())
-    monkeypatch.setattr(run_once, "__call__", AsyncMock())
+    monkeypatch.setattr("scraper.pipeline.run_once_moex", AsyncMock())
+    monkeypatch.setattr("scraper.pipeline.run_once", AsyncMock())
 
     def boom():
         raise RuntimeError("sitemap down")
@@ -217,10 +251,7 @@ async def test_scheduled_job_sources_and_sitemap_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scheduled_job_failure_logs_and_returns_ok(monkeypatch):
-    from unittest.mock import AsyncMock
-
     from scraper.moex import MoexClient
-    from scraper.pipeline import run_once_moex
     from scraper.scheduler import scheduled_job
 
     monkeypatch.setenv("DATA_SOURCE", "moex")
@@ -230,7 +261,7 @@ async def test_scheduled_job_failure_logs_and_returns_ok(monkeypatch):
     async def boom():
         raise RuntimeError("pipeline down")
 
-    monkeypatch.setattr(run_once_moex, "__call__", boom)
+    monkeypatch.setattr("scraper.pipeline.run_once_moex", boom)
     assert await scheduled_job() == "ok"
 
 
@@ -269,7 +300,12 @@ def test_build_scheduler_stock_disabled(monkeypatch):
 
     from scraper.scheduler import build_scheduler
 
-    for mod in ("scraper.scheduler_v3", "scraper.scheduler_v4", "scraper.fx", "api.notifications.reminders"):
+    for mod in (
+        "scraper.scheduler_v3",
+        "scraper.scheduler_v4",
+        "scraper.fx",
+        "api.notifications.reminders",
+    ):
         monkeypatch.setitem(sys.modules, mod, None)
 
     def fake_settings():
@@ -283,8 +319,6 @@ def test_build_scheduler_stock_disabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_run_forever_shutdown_flow(monkeypatch):
-    import asyncio
-    import signal
 
     class FakeEvent:
         def __init__(self) -> None:
@@ -320,3 +354,79 @@ async def test_run_forever_shutdown_flow(monkeypatch):
     monkeypatch.setattr("scraper.db.dispose", fake_dispose)
     await __import__("scraper.scheduler", fromlist=["run_forever"]).run_forever()
     assert fake_scheduler._started and fake_scheduler._shutdown
+
+
+@pytest.mark.asyncio
+async def test_run_forever_signal_handler(monkeypatch):
+    import asyncio
+
+    registered: dict[int, object] = {}
+    loop = asyncio.get_running_loop()
+
+    def fake_add_signal_handler(sig, callback):
+        registered[sig] = callback
+
+    monkeypatch.setattr(loop, "add_signal_handler", fake_add_signal_handler)
+
+    class FakeScheduler:
+        def start(self) -> None:
+            return None
+
+        def get_jobs(self):
+            return [SimpleNamespace(id="job1")]
+
+        def shutdown(self, **kw):
+            return None
+
+    monkeypatch.setattr("scraper.scheduler.build_scheduler", lambda: FakeScheduler())
+
+    async def fake_dispose() -> None:
+        return None
+
+    monkeypatch.setattr("scraper.db.dispose", fake_dispose)
+    run_forever = __import__("scraper.scheduler", fromlist=["run_forever"]).run_forever
+    task = asyncio.create_task(run_forever())
+    for _ in range(50):
+        if registered:
+            break
+        await asyncio.sleep(0.02)
+    assert registered
+    registered[15]()
+    await asyncio.wait_for(task, timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_scheduled_job_skipped_variants(monkeypatch):
+    from scraper.db import PIPELINE_LOCK
+    from scraper.scheduler import scheduled_job
+
+    assert await PIPELINE_LOCK.acquire("pipeline") is True
+    try:
+        assert await scheduled_job() == "skipped"
+    finally:
+        await PIPELINE_LOCK.release()
+
+    async def not_acquired(name: str) -> bool:
+        return False
+
+    monkeypatch.setattr(PIPELINE_LOCK, "acquire", not_acquired)
+    assert await scheduled_job() == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_scheduled_history_job_pipeline_failure(monkeypatch):
+    from scraper.client import AigenisClient
+    from scraper.scheduler import scheduled_history_job
+
+    monkeypatch.setenv("DATA_SOURCE", "aigenis")
+    monkeypatch.setattr(AigenisClient, "__aenter__", FakeClient().__aenter__)
+    monkeypatch.setattr(AigenisClient, "__aexit__", FakeClient().__aexit__)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("history pipeline down")
+
+    monkeypatch.setattr("scraper.pipeline.backfill_history", boom)
+
+    async with session_scope() as session:
+        await _add_bond(session, "SH-A2", "USD")
+    assert await scheduled_history_job() == "ok"

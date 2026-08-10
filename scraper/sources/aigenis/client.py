@@ -424,7 +424,9 @@ class AigenisClient:
             with attempt:
                 async with self._circuit_breaker:
                     return await _do_request()
-        raise RuntimeError("unreachable")
+        raise RuntimeError(
+            "unreachable"
+        )  # pragma: no cover - AsyncRetrying(reraise=True) raises inside the loop
 
     async def _retrying(self, func, *args, **kwargs):
         pw_timeout_error = _playwright_imports()[1]
@@ -438,7 +440,9 @@ class AigenisClient:
             with attempt:
                 async with self._circuit_breaker:
                     return await func(*args, **kwargs)
-        raise RuntimeError("unreachable")
+        raise RuntimeError(
+            "unreachable"
+        )  # pragma: no cover - AsyncRetrying(reraise=True) raises inside the loop
 
     async def _fetch_json(self, url: str) -> dict[str, Any]:
         if self._context is None:

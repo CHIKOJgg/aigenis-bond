@@ -60,7 +60,7 @@ export default function DemoSearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [q, market]);
+  }, [q, market, setSearchParams]);
 
   const openBond = (id: string) => {
     bondDrawerStore.open(id);
