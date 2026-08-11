@@ -195,6 +195,41 @@ All partner endpoints require a partner API key in the `X-Partner-Key` header.
 
 ---
 
+## Live Demo API
+
+The standalone Aigenis demo uses only these read-only routes through the nginx
+proxy. They read the current production database populated by the configured
+provider; fixtures are not a runtime fallback.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/demo/market-data?market=bcse\|moex` | Live market rows with YTM, duration and Score |
+| `GET` | `/api/v1/demo/search?q=...` | Live search by issuer, name, ISIN or internal ID |
+| `GET` | `/api/v1/demo/bond/{internal_id}` | Live detail, explainability, history and coupons |
+
+Each bond row may include:
+
+```json
+{
+  "score": 36.0,
+  "score_status": "high_risk",
+  "issuer_risk": {
+    "score": 36.0,
+    "level": "Высокий",
+    "basis": "Отрицательный кредитный компонент корпоративного эмитента",
+    "credit_component": -3.0,
+    "method": "Reward/Risk engine: issuer classification + credit component + status"
+  }
+}
+```
+
+`issuer_risk` is an internal explainable risk view derived from the scoring
+engine. It is not an external credit rating and must not be used to claim that
+one named issuer is safer than another without validated financial or rating
+data. Demo write routes, payments, auth and Telegram endpoints are closed.
+
+---
+
 ## Billing
 
 | Method | Path | Description |

@@ -32,9 +32,12 @@ curl http://localhost:8000/health
 
 The API is available at `http://localhost:8000`. The frontend is served by nginx on port 80 (HTTP) and 443 (HTTPS with self-signed cert).
 
-## Demo Instance (public, $0, read-only)
+## Demo Instance (public, live, read-only)
 
-Quick start of a public demo with real MOEX data — no paid source, no bot, no payments needed:
+The standalone demo serves the React UI and proxies only the read-only
+`/api/v1/demo/*` family to the API. Market data, Score, YTM and bond detail are
+live; fixtures are not used as a runtime fallback. No bot, payments, auth or
+write endpoints are exposed.
 
 ```bash
 # 1. Clone and configure env for demo mode
@@ -52,10 +55,15 @@ SEO_PUBLIC_BASE_URL=https://demo.yourdomain.com
 ```
 
 ```bash
-# 2. Run demo stack (no paid source needed)
-docker compose up -d postgres redis parser api frontend
+# 2. Start the data/API services and create the shared network
+docker compose up -d postgres redis parser api
 
-# 3. Health check
+# 3. Build and start the live demo frontend
+docker compose -f docker-compose.demo.yml up -d --build
+
+# 4. Health and live data checks
+curl -f http://localhost:8080/health
+curl -f "http://localhost:8080/api/v1/demo/market-data?market=bcse&limit=5"
 curl -f http://localhost:8000/health
 ```
 
@@ -63,11 +71,18 @@ Public access via Cloudflare Tunnel (see below): quick tunnel
 (`docker compose --profile quick-tunnel up -d cloudflared-quick`, URL in logs)
 or a named tunnel with your domain.
 
-**What works in demo mode (no auth, read-only, watermark):** `/bonds` leaderboard,
-`/bonds/{id}` detail, `/partners` self-serve API key form, `/widget/top` embed,
-`/calculator` YTM calculator, `/guides/*`. All data is real (MOEX ISS).
-Trial partner keys are self-served; premium analysis (RV/ML) requires a paid key.
-Bot commands and YooKassa are not needed (paywall returns 402 upgrade hint).
+**What works in the standalone demo (no auth, live, read-only, watermark):**
+`/demo/trading`, `/demo/analytics`, `/demo/search`, bond detail drawer and
+`/demo/portfolio-impact/{internal_id}`. These screens show live market data,
+Score breakdown, explainability, YTM, duration, history when available and
+portfolio impact. All write-side endpoints fail closed.
+
+The standalone demo requires the API container to be reachable as `api:8000`
+on the external `aigenis-net` Docker network. If the network does not exist:
+
+```bash
+docker network create aigenis-net
+```
 
 ## Production Deployment
 

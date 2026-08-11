@@ -1,10 +1,10 @@
 # Bonds Engine — One-Pager (Executive Summary)
 
-**Коротко.** Production-ready Fixed Income платформа с полным циклом:
-сбор данных → скоринг → ML → Desk-аналитика → подписки (B2C + B2B).
-Построена на открытых данных MOEX ISS. 306 автотестов, CI, Docker,
-Telegram-бот + React SPA + API. Готова к запуску **Day 1** — без R&D,
-найма и 6-месячного time-to-market.
+**Коротко.** Fixed Income аналитический слой с полным техническим циклом:
+сбор данных → скоринг → explainability → portfolio analytics → API/UI.
+Live demo работает на read-only данных BCSE/MOEX, показывает timestamp источника,
+issuer risk и не отправляет торговые заявки. Production-интеграция требует
+официального data contract, SSO и compliance-приёмки Aigenis.
 
 > **Крючок для Aigenis (август 2026):** вы вывели MOEX в aigenis invest,
 > но FAQ отправляет ваших клиентов за аналитикой облигаций на cbonds.ru /
@@ -16,23 +16,24 @@ Telegram-бот + React SPA + API. Готова к запуску **Day 1** — 
 
 | Актив | Состояние |
 |---|---|
-| Парсер MOEX ISS (RUB TQCB + USD/EUR евробонды TQOB, без логина) — **1500+ облигаций** | Работает 24/7 |
-| Reward/Risk Score v2 0–100 + тиры S/A/B/C/D + объяснение «почему» (9 компонентов: YTM, валюта, дюрация, ликвидность, металлы, кредитный риск, инфляция, купон, волатильность) | В продакшене |
+| Live data adapters BCSE/MOEX и нормализация выпуска | Проверяется в demo и пилоте |
+| Reward/Risk Score 0–100 + тиры + объяснение «почему» | Работает в live demo |
+| Issuer risk view на основе credit component, классификации и статуса | Работает в live demo; не внешний кредитный рейтинг |
 | ML: YTM-регрессия + классификатор buy/hold/wait/avoid, walk-forward CV | Обучен, предсказывает |
 | Симуляция Монте-Карло (перцентили p5–p95, CVaR) | В продакшене |
 | Fixed Income Desk: Duration/Convexity/DV01/KRD, NS-кривая, RV, Carry, Repo, Stress (7 сценариев), Z/G-spreads | Валидирован |
 | Портфель: оптимизация на YTM, Sharpe/Sortino/Calmar/VaR, FIFO P&L, ребалансировка, бэктест | В продакшене |
 | Telegram-бот (aiogram 3) — все команды | Онбординг, алерты, карточки |
-| React SPA + FastAPI + SEO-страницы, 3 языка (RU/EN/BE) | Готово |
+| React SPA + FastAPI + read-only demo API | Готово для proof-of-value |
 | AI-ассистент по облигациям + новости эмитентов | В продакшене |
 | Биллинг: Telegram Stars + YooKassa (защита от refund-атак) | Приём платежей, гейтинг 402 |
 | Партнёрский API + widget + affiliate + webhook (HMAC) | Самообслуживание |
-| Docker Compose (9 сервисов), Cloudflare Tunnel, Prometheus + Grafana + Sentry | Production-ready |
-| 306 автотестов, ruff, mypy, CI | Качество кода |
+| Docker Compose, Cloudflare Tunnel, Prometheus + Grafana + Sentry | Инфраструктурная база |
+| CI, frontend tests, E2E и visual checks | Проверено; acceptance scope согласуется отдельно |
 
 ## ROI-кейс для Aigenis
 
-### Сценарий А: Build vs Buy
+### Сценарий А: Build vs Pilot
 
 | Статья | Разработка с нуля | Покупка Bonds Engine |
 |---|---|---|
@@ -41,13 +42,13 @@ Telegram-бот + React SPA + API. Готова к запуску **Day 1** — 
 | React SPA + API (1 фронтендер, 4 мес) | $32 000 | — |
 | Desk-модули (1 quant, 4 мес) | $32 000 | — |
 | DevOps + CI/CD + инфра (2 мес) | $16 000 | — |
-| **Итого** | **$176 000** | — |
-| **Bonds Engine (IP + поддержка 3 мес)** | — | **$45 000** |
-| **Экономия** | | **$131 000** |
-| **Time-to-market** | 6–9 мес | 1 день |
+| **Итого оценки** | **$176 000** | Не является офертой |
+| **Bonds Engine / pilot** | — | Обсуждается после discovery |
+| **Экономический эффект** | | Требует расчёта по scope Aigenis |
+| **Time-to-market** | 6–9 мес оценки | Зависит от feed, SSO и compliance |
 
-> Команда Aigenis — ~12 человек. Шесть месяцев на Desk = стоп развитию
-> торговой платформы. Покупка готового движка не отвлекает core-команду.
+> Гипотеза для проверки: готовый аналитический слой может сократить объём
+> собственной R&D. Это нужно подтвердить на discovery и пилоте.
 
 ### Сценарий Б: Удержание аудитории (ключевой аргумент 2026)
 
@@ -67,9 +68,8 @@ Score и вердиктом, Desk для платных подписчиков, 
    fail-closed auth, Cloudflare Tunnel. Продукт проверен боем.
 4. **Актив, а не код.** Репозиторий с историей, Docker-образы, документация,
    3 месяца поддержки, опционально — переход разработчика в штат.
-5. **Прозрачные данные.** Открытый API MOEX ISS без юридических хвостов.
-   Адаптер белорусского рынка (BYN) в рамках сделки переводится на
-   официальный партнёрский канал.
+5. **Прозрачные данные.** Demo показывает источник и timestamp. Для коммерческой
+   эксплуатации белорусского канала нужен официальный data contract.
 
 ## Варианты сделки
 
