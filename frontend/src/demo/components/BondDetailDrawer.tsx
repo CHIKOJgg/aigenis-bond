@@ -224,6 +224,34 @@ export default function BondDetailDrawer({
             </div>
           )}
 
+          {bond.issuer_risk && (
+            <div style={{
+              padding: '14px 16px',
+              background: '#f5f9fb',
+              border: '1px solid #d6e2e6',
+              borderRadius: 10,
+              marginBottom: 20,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Риск эмитента</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: issuerRiskColor(bond.issuer_risk.level) }}>
+                  {bond.issuer_risk.level} · {bond.issuer_risk.score}/100
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: '#516c79', lineHeight: 1.45, marginTop: 6 }}>
+                {bond.issuer_risk.basis}
+              </div>
+              <div style={{ fontSize: 11, color: '#717680', marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span>credit_component: <strong>{bond.issuer_risk.credit_component.toFixed(2)}</strong></span>
+                <span>·</span>
+                <span>{bond.issuer_risk.method}</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#717680', marginTop: 6 }}>
+                Показатель движка, не внешний кредитный рейтинг.
+              </div>
+            </div>
+          )}
+
           {(finalStrengths.length > 0 || finalWeaknesses.length > 0) && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
@@ -491,6 +519,12 @@ export function scoreStatusColor(status: string): string {
     no_data: '#717680',
   };
   return colors[status] || '#717680';
+}
+
+function issuerRiskColor(level: string): string {
+  if (level === 'Очень низкий' || level === 'Низкий') return '#06b663';
+  if (level === 'Критический' || level === 'Высокий') return '#e03400';
+  return '#dc6803';
 }
 
 const iconBtnStyle: React.CSSProperties = {

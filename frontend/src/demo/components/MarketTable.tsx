@@ -70,8 +70,13 @@ export default function MarketTable({ market, bonds: liveBonds, loading, onSelec
                 onMouseLeave={(e) => { if (onSelect) e.currentTarget.style.background = ''; }}
               >
                 <td style={tdStyle}>
-                  <div style={{ fontWeight: 600 }}>{bond.name}</div>
-                  <div style={{ fontSize: 12, color: '#717680' }}>{bond.isin || bond.internal_id}</div>
+                    <div style={{ fontWeight: 600 }}>{bond.name}</div>
+                    <div style={{ fontSize: 12, color: '#717680' }}>{bond.isin || bond.internal_id}</div>
+                    {bond.issuer_risk && (
+                      <div style={{ fontSize: 11, color: '#516c79', marginTop: 3 }}>
+                        Эмитент: {bond.issuer_risk.level} риск · {bond.issuer_risk.score}/100
+                      </div>
+                    )}
                 </td>
                 <td style={tdStyle}>{formatPrice(bond.price)}</td>
                 <td style={tdStyle}>
