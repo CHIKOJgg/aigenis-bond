@@ -1,10 +1,21 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle } from 'lucide-react';
-import { getBonds, getScore, getMarketSummary, scoreFromLiveBond } from '../demo-api';
+import { AlertTriangle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ZAxis,
+} from 'recharts';
+import type { TooltipProps } from 'recharts';
+import { getScore, getMarketSummary, scoreFromLiveBond } from '../demo-api';
 import { filterAndSortBonds } from '../demo-filter';
 import { formatYtm, formatYears, formatDurationYears } from '../demo-format';
-import type { DemoScore, ScoreStatus, TermFilter } from '../types';
+import type { DemoBond, DemoScore, ScoreStatus, TermFilter } from '../types';
 import { SCORE_STATUS_LABEL } from '../demo-config';
 import AnalyticsKpiStrip from '../components/AnalyticsKpiStrip';
 import AnalyticsFilters from '../components/AnalyticsFilters';
@@ -13,6 +24,7 @@ import { bondDrawerStore } from '../drawer-store';
 import { fetchLiveMarket, type LiveMarketSnapshot } from '../live-demo-api';
 
 const API_MARKET: Record<string, 'bcse' | 'moex'> = { BCSE: 'bcse', MOEX: 'moex' };
+const EMPTY_BONDS: DemoBond[] = [];
 
 export default function DemoAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,6 +47,7 @@ export default function DemoAnalyticsPage() {
     setLive(null);
     setLiveLoading(true);
     setLiveError('');
+
     fetchLiveMarket(API_MARKET[market])
       .then((snap) => {
         if (cancelled) return;
@@ -43,7 +56,7 @@ export default function DemoAnalyticsPage() {
       })
       .catch(() => {
         if (cancelled) return;
-        setLiveError('Не удалось получить актуальные данные — показаны демо-данные');
+          setLiveError('Не удалось получить актуальные live-данные');
         setLiveLoading(false);
       });
     return () => {
@@ -60,7 +73,7 @@ export default function DemoAnalyticsPage() {
     ...fixtureSummary,
     global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
   } : fixtureSummary;
-  const bonds = (live ? live.bonds : getBonds(market));
+  const bonds = live?.bonds ?? EMPTY_BONDS;
 
   const scoreLookup = useMemo(() => {
     if (!live) return getScore;
@@ -149,6 +162,8 @@ export default function DemoAnalyticsPage() {
         </div>
       )}
 
+      {live && <ScoreYtmChart bonds={bonds} scoreLookup={scoreLookup} />}
+
       <AnalyticsFilters
         market={market}
         onMarketChange={handleMarketChange}
@@ -184,6 +199,12 @@ export default function DemoAnalyticsPage() {
               <tr>
                 <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#717680' }}>
                   Загрузка данных рынка…
+                </td>
+              </tr>
+            ) : liveError ? (
+              <tr>
+                <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#b42318' }}>
+                  {liveError}
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
@@ -315,4 +336,331 @@ const thStyle: React.CSSProperties = {
 const tdStyle: React.CSSProperties = {
   padding: '14px 16px',
   verticalAlign: 'middle',
+};
+
+function ScoreYtmChart({
+  bonds,
+  scoreLookup,
+}: {
+  bonds: DemoBond[];
+  scoreLookup: (id: string) => DemoScore | undefined;
+}) {
+  type Point = { internal_id: string; name: string; score: number; ytm: number; status?: ScoreStatus; ticker?: string; isin?: string | null; currency?: string; issuer_risk?: { level: string; score: number } | null; distressed?: boolean };
+  const points: Point[] = useMemo(() => bonds
+    .map<Point | null>((bond) => {
+      const score = scoreLookup(bond.internal_id)?.score ?? null;
+      const ytm = bond.yield_to_maturity ?? null;
+      if (score == null || ytm == null || ytm <= 0) return null;
+      return {
+        internal_id: bond.internal_id,
+        name: bond.name,
+        score,
+        ytm,
+        status: bond.score_status ?? undefined,
+        ticker: bond.internal_id,
+        isin: bond.isin ?? null,
+        currency: bond.currency,
+        issuer_risk: bond.issuer_risk ?? null,
+        distressed: bond.distressed,
+      };
+    })
+    .filter((p): p is Point => p !== null)
+    .slice(0, 500), [bonds, scoreLookup]);
+
+  type View = { scoreMin: number; scoreMax: number; ytmMin: number; ytmMax: number };
+
+  const ytmMax = useMemo(() => {
+    if (!points.length) return 30;
+    return Math.max(8, Math.ceil(Math.max(...points.map((p) => p.ytm)) / 5) * 5);
+  }, [points]);
+
+  const fullView: View = { scoreMin: 0, scoreMax: 100, ytmMin: 0, ytmMax };
+  const [view, setView] = useState<View>(fullView);
+  const panRef = useRef<{ x: number; y: number; view: View; moved: boolean } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartWrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setView({ scoreMin: 0, scoreMax: 100, ytmMin: 0, ytmMax });
+  }, [ytmMax]);
+
+  const visibleCount = points.filter((p) =>
+    p.score >= view.scoreMin && p.score <= view.scoreMax &&
+    p.ytm >= view.ytmMin && p.ytm <= view.ytmMax,
+  ).length;
+
+  if (points.length < 2) return null;
+
+  const zoomFactor = (f: number) =>
+    setView((v) => {
+      const cX = (v.scoreMin + v.scoreMax) / 2;
+      const cY = (v.ytmMin + v.ytmMax) / 2;
+      const spanX = ((v.scoreMax - v.scoreMin) * f) / 2;
+      const spanY = ((v.ytmMax - v.ytmMin) * f) / 2;
+      return {
+        scoreMin: Math.max(0, cX - spanX),
+        scoreMax: Math.min(100, cX + spanX),
+        ytmMin: Math.max(0, cY - spanY),
+        ytmMax: Math.min(ytmMax, cY + spanY),
+      };
+    });
+
+  const zoomIn = () => zoomFactor(0.65);
+  const zoomOut = () => zoomFactor(1.35);
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    zoomFactor(e.deltaY > 0 ? 1.25 : 0.8);
+  };
+
+  const recenter = () => setView(fullView);
+
+  const startPan = (e: React.MouseEvent<HTMLDivElement>) => {
+    panRef.current = { x: e.clientX, y: e.clientY, view, moved: false };
+    if (chartWrapRef.current) chartWrapRef.current.style.cursor = 'grabbing';
+  };
+
+  const movePan = (e: React.MouseEvent<HTMLDivElement>) => {
+    const p = panRef.current;
+    if (!p) return;
+    if (Math.abs(e.clientX - p.x) + Math.abs(e.clientY - p.y) < 5) return;
+    p.moved = true;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dx = ((e.clientX - p.x) / rect.width) * (view.scoreMax - view.scoreMin);
+    const dy = ((e.clientY - p.y) / rect.height) * (view.ytmMax - view.ytmMin);
+    setView({
+      scoreMin: Math.max(0, Math.min(100 - (view.scoreMax - view.scoreMin), p.view.scoreMin - dx)),
+      scoreMax: Math.min(100, Math.max(100 - (view.scoreMax - view.scoreMin), p.view.scoreMax - dx)),
+      ytmMin: Math.max(0, Math.min(ytmMax - (view.ytmMax - view.ytmMin), p.view.ytmMin + dy)),
+      ytmMax: Math.min(ytmMax, Math.max(ytmMax - (view.ytmMax - view.ytmMin), p.view.ytmMax + dy)),
+    });
+  };
+
+  const endPan = () => {
+    panRef.current = null;
+    if (chartWrapRef.current) chartWrapRef.current.style.cursor = 'grab';
+  };
+
+  const handlePointClick = (point: Point) => {
+    bondDrawerStore.open(point.internal_id);
+  };
+
+  const handleChartClick = (e: { activePayload?: { payload?: Point }[] } | null) => {
+    const payload = e && 'activePayload' in e ? e.activePayload?.[0]?.payload : undefined;
+    if (payload) handlePointClick(payload);
+  };
+
+  const handleChartContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (panRef.current?.moved) return;
+    const wrap = chartWrapRef.current;
+    if (!wrap) return;
+    const svg = wrap.querySelector('svg.recharts-surface');
+    if (!svg) return;
+    const svgRect = svg.getBoundingClientRect();
+    const plotLeft = svgRect.left + 12;
+    const plotTop = svgRect.top + 12;
+    const plotWidth = svgRect.width - 12 - 24;
+    const plotHeight = svgRect.height - 12 - 32;
+    const px = e.clientX - plotLeft;
+    const py = e.clientY - plotTop;
+    if (px < 0 || py < 0 || px > plotWidth || py > plotHeight) return;
+    const score = view.scoreMin + (px / plotWidth) * (view.scoreMax - view.scoreMin);
+    const ytm = view.ytmMax - (py / plotHeight) * (view.ytmMax - view.ytmMin);
+    let best: Point | null = null;
+    let bestDist = Infinity;
+    for (const p of points) {
+      const dx = ((p.score - score) / Math.max(1, view.scoreMax - view.scoreMin)) * plotWidth;
+      const dy = ((p.ytm - ytm) / Math.max(1, view.ytmMax - view.ytmMin)) * plotHeight;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < bestDist && d < 24) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    if (best) handlePointClick(best);
+  };
+
+  const statusColor = (status?: ScoreStatus) => {
+    switch (status) {
+      case 'attractive': return '#06b663';
+      case 'review': return '#dc6803';
+      case 'high_risk': return '#e03400';
+      case 'neutral': return '#0B526B';
+      case 'no_data': return '#516c79';
+      default: return '#0B526B';
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      style={{ marginBottom: 20, padding: '16px 18px', background: '#fff', border: '1px solid #eef3f5', borderRadius: 10 }}
+      onWheel={handleWheel}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>Карта возможностей рынка</div>
+          <div style={{ fontSize: 12, color: '#516c79' }}>
+            Score и YTM по live-универсу · клик по кружочку — карточка облигации · +/− — приблизить/отдалить · drag — сдвиг ·
+            показано {visibleCount} из {points.length}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#717680', marginRight: 4 }}>
+            {Math.round(((view.scoreMax - view.scoreMin) / 100) * 100)}% видимости · клик по точке — детали · +/− — zoom · drag — сдвиг
+          </span>
+          <button onClick={zoomOut} aria-label="Уменьшить" style={zoomBtnStyle}><ZoomOut size={14} /></button>
+          <button onClick={zoomIn} aria-label="Увеличить" style={zoomBtnStyle}><ZoomIn size={14} /></button>
+          <button onClick={recenter} aria-label="Сбросить масштаб" style={zoomBtnStyle}><RotateCcw size={14} /></button>
+        </div>
+      </div>
+      <div
+        ref={chartWrapRef}
+        style={{
+          height: 380,
+          width: '100%',
+          cursor: 'grab',
+          userSelect: 'none',
+          touchAction: 'none',
+        }}
+        onMouseDown={startPan}
+        onMouseMove={movePan}
+        onMouseUp={endPan}
+        onMouseLeave={endPan}
+        onClick={handleChartContainerClick}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart
+            margin={{ top: 12, right: 24, bottom: 32, left: 12 }}
+            onClick={handleChartClick}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#eef3f5" />
+            <XAxis
+              type="number"
+              dataKey="score"
+              domain={[view.scoreMin, view.scoreMax]}
+              tick={{ fontSize: 11, fill: '#516c79' }}
+              label={{ value: 'Score', position: 'insideBottom', offset: -10, fontSize: 12, fill: '#516c79' }}
+              tickCount={6}
+            />
+            <YAxis
+              type="number"
+              dataKey="ytm"
+              domain={[view.ytmMin, view.ytmMax]}
+              tick={{ fontSize: 11, fill: '#516c79' }}
+              label={{ value: 'YTM %', angle: -90, position: 'insideLeft', offset: 10, fontSize: 12, fill: '#516c79' }}
+              tickCount={6}
+            />
+              <ZAxis range={[60, 60]} />
+              <Tooltip
+                cursor={{ strokeDasharray: '3 3' }}
+                content={(props: TooltipProps<number, string>) => {
+                  const { active, payload } = props;
+                  if (!active || !payload || !payload.length) return null;
+                  const item = payload[0];
+                  if (!item || typeof item.payload !== 'object') return null;
+                  const p = item.payload as unknown as Point;
+                  return (
+                    <div style={tooltipStyle}>
+                      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>{p.name}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 8px', fontSize: 11 }}>
+                        <span style={{ color: '#717680' }}>ISIN:</span><span>{p.isin ?? '—'}</span>
+                        <span style={{ color: '#717680' }}>Score:</span><span style={{ fontWeight: 600 }}>{p.score.toFixed(1)}</span>
+                        <span style={{ color: '#717680' }}>YTM:</span><span style={{ fontWeight: 600 }}>{p.ytm.toFixed(2)}%</span>
+                        <span style={{ color: '#717680' }}>Валюта:</span><span>{p.currency ?? '—'}</span>
+                        {p.issuer_risk && (
+                          <>
+                            <span style={{ color: '#717680' }}>Риск эмитента:</span>
+                            <span>{p.issuer_risk.level} · {p.issuer_risk.score}/100</span>
+                          </>
+                        )}
+                        {p.distressed && (
+                          <>
+                            <span style={{ color: '#e03400' }}>Distressed:</span>
+                            <span style={{ color: '#e03400' }}>да</span>
+                          </>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#717680', marginTop: 4 }}>Кликните для деталей →</div>
+                    </div>
+                  );
+                }}
+              />
+              <Scatter
+                data={points}
+                fill="#0B526B"
+                shape={(props: { cx?: number; cy?: number; payload?: Point }) => {
+                  const payload = props.payload;
+                  if (!props.cx || !props.cy || !payload) return <g />;
+                return (
+                  <circle
+                    cx={props.cx}
+                    cy={props.cy}
+                    r={payload.distressed ? 6 : 5}
+                    fill={statusColor(payload.status)}
+                    stroke="#fff"
+                    strokeWidth={1}
+                    style={{ cursor: 'pointer', opacity: 0.85, pointerEvents: 'auto' }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`${payload.name}, Score ${payload.score.toFixed(1)}, YTM ${payload.ytm.toFixed(2)}%`}
+                    onKeyDown={(e: React.KeyboardEvent) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handlePointClick(payload);
+                      }
+                    }}
+                  />
+                );
+                }}
+              />
+            </ScatterChart>
+          </ResponsiveContainer>
+      </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 11, color: '#516c79', flexWrap: 'wrap' }}>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#06b663', verticalAlign: 'middle', marginRight: 4 }} />Привлекательная</span>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#0B526B', verticalAlign: 'middle', marginRight: 4 }} />Нейтральная</span>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#dc6803', verticalAlign: 'middle', marginRight: 4 }} />Проверка</span>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#e03400', verticalAlign: 'middle', marginRight: 4 }} />Высокий риск</span>
+        <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', border: '2px solid #e03400', verticalAlign: 'middle', marginRight: 4 }} />Distressed (тонкая граница)</span>
+      </div>
+      <details style={{ marginTop: 8 }}>
+        <summary style={{ cursor: 'pointer', fontSize: 11, color: '#516c79' }}>Как читать график</summary>
+        <div style={{ fontSize: 11, color: '#516c79', marginTop: 6, lineHeight: 1.5 }}>
+          Ось X — Reward/Risk Score (0–100, выше = сильнее профиль).
+          Ось Y — доходность к погашению (YTM, %).
+          Цвет точки: зелёный — привлекательная, синий — нейтральная,
+          оранжевый — на проверке, красный — высокий риск.
+          Бумаги с YTM выше 30% и ценой ниже 80% номинала помечены как
+          Distressed (тонкая красная граница): высокая доходность может
+          означать не выгоду, а сигнал о риске дефолта.
+          Используйте Ctrl + scroll для зума, drag для панорамирования.
+        </div>
+      </details>
+    </div>
+  );
+}
+
+const zoomBtnStyle: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #d6e2e6',
+  borderRadius: 6,
+  width: 28,
+  height: 28,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  color: '#516c79',
+};
+
+const tooltipStyle: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #d6e2e6',
+  borderRadius: 8,
+  padding: '8px 10px',
+  boxShadow: '0 4px 12px rgba(11, 82, 107, 0.12)',
+  maxWidth: 320,
+  pointerEvents: 'auto',
 };
