@@ -72,6 +72,9 @@ COPY telegram_bot ./telegram_bot
 COPY visualization ./visualization
 COPY api ./api
 COPY demo-data ./demo-data
+# Diagnostic/ops scripts (e.g. verify_live_db.py) are not part of the app
+# package but are needed inside the image for server-side DB audits.
+COPY scripts ./scripts
 COPY alembic ./alembic
 COPY alembic.ini ./
 COPY docker-entrypoint.sh /usr/local/bin/
