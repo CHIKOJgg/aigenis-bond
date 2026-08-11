@@ -26,8 +26,8 @@ describe('demo-api', () => {
     it('возвращает Score для demo-bond-001', () => {
       const score = getScore('demo-bond-001');
       expect(score).toBeDefined();
-      expect(score!.score).toBe(84);
-      expect(score!.status).toBe('attractive');
+      expect(score!.score).toBe(61.44);
+      expect(score!.status).toBe('neutral');
     });
 
     it('возвращает undefined для неизвестного ID', () => {

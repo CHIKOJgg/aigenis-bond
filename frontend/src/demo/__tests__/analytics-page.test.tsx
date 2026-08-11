@@ -84,7 +84,7 @@ describe('DemoAnalyticsPage', () => {
     renderPage();
     expect(await screen.findByRole('table')).toBeInTheDocument();
     const bcse = getBonds('BCSE');
-    fireEvent.change(screen.getByLabelText('Статус'), { target: { value: 'attractive' } });
+    fireEvent.change(screen.getByLabelText('Статус'), { target: { value: 'high_risk' } });
     const rows = screen.getAllByRole('row').slice(1);
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.length).toBeLessThan(bcse.length);

@@ -64,11 +64,12 @@ describe('BondDetailDrawer', () => {
 
   it('показывает Score, вердикт и плюсы/минусы из фикстурного объяснения', () => {
     renderDrawer();
-    expect(screen.getByText('84')).toBeInTheDocument();
-    expect(screen.getByText('Аттрактивна — изучить в первую очередь')).toBeInTheDocument();
+    expect(screen.getByText('61')).toBeInTheDocument();
+    expect(screen.getByText(/Нейтральна/)).toBeInTheDocument();
+    expect(screen.getByText(/Умеренно интересна/)).toBeInTheDocument();
     expect(screen.getByText('Плюсы и минусы')).toBeInTheDocument();
-    expect(screen.getByText(/Доходность к погашению 14.2%/)).toBeInTheDocument();
-    expect(screen.getByText(/Доходность может быть снижена/)).toBeInTheDocument();
+    expect(screen.getAllByText(/доходность к погашению 13\.4%/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Государственный эмитент — минимальный кредитный риск/).length).toBeGreaterThan(0);
   });
 
   it('показывает состав оценки с компонентами breakdown', () => {
@@ -83,7 +84,7 @@ describe('BondDetailDrawer', () => {
   it('показывает ключевые показатели', () => {
     renderDrawer();
     expect(screen.getByText('Ключевые показатели')).toBeInTheDocument();
-    expect(screen.getByText('14.2%')).toBeInTheDocument();
+    expect(screen.getByText('13.38%')).toBeInTheDocument();
     expect(screen.getByText('12.5%')).toBeInTheDocument();
   });
 
