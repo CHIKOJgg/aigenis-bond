@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import { DEMO_CONFIG, DEMO_PERSONA, ALLOCATION_OPTIONS } from '../demo-config';
 
 describe('feature flags (DEMO_CONFIG)', () => {
-  it('демо работает на фикстурах без live API', () => {
-    expect(DEMO_CONFIG.useFixtures).toBe(true);
-    expect(DEMO_CONFIG.enableLiveRefresh).toBe(false);
+  it('демо работает на live-данных с отключёнными side effects', () => {
+    expect(DEMO_CONFIG.useFixtures).toBe(false);
+    expect(DEMO_CONFIG.enableLiveRefresh).toBe(true);
   });
 
   it('в демо отключены все реальные side effects', () => {
@@ -41,9 +41,8 @@ describe('demo side-effect guard', () => {
     .filter((f) => !f.includes('__tests__'))
     .filter((f) => !f.endsWith('.test.ts') && !f.endsWith('.test.tsx'));
 
-  // The only sanctioned network call in the demo is the read-only BCSE
-  // snapshot from /api/v1/demo/market-data (the nginx demo gate proxies
-  // exactly this route and fails closed for every other /api family).
+  // The only sanctioned network calls in the demo are read-only routes under
+  // /api/v1/demo (the nginx demo gate fails closed for every other API family).
   const SANCTIONED = 'live-demo-api.ts';
 
   it('демо-модуль не содержит сетевых вызовов и платежей', () => {
@@ -64,7 +63,7 @@ describe('demo side-effect guard', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('демо-модуль не обращается к реальному API', () => {
+  it('демо-модуль обращается только к read-only demo API', () => {
     const offenders: string[] = [];
     for (const file of files) {
       if (file === SANCTIONED) continue;

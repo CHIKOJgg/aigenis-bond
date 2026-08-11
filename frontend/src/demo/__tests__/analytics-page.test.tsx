@@ -6,7 +6,34 @@ import GlobalBondDrawer from '../components/GlobalBondDrawer';
 import { getBonds } from '../demo-api';
 
 vi.mock('../live-demo-api', () => ({
-  fetchLiveMarket: vi.fn(() => Promise.reject(new Error('mock network'))),
+  fetchLiveMarket: vi.fn(async (market = 'bcse') => {
+    const { getBonds } = await import('../demo-api');
+    const bonds = getBonds(market.toUpperCase());
+    return {
+      source: 'test live source',
+      market,
+      currency: null,
+      as_of: '2026-08-10T15:07:49.000Z',
+      count: bonds.length,
+      bonds,
+      disclaimer: 'test live data',
+    };
+  }),
+  fetchLiveBond: vi.fn(async (internalId: string) => {
+    const { getAllBonds, getScore } = await import('../demo-api');
+    const bond = getAllBonds().find((item) => item.internal_id === internalId);
+    if (!bond) throw new Error('not found');
+    const score = getScore(internalId);
+    return {
+      ...bond,
+      score: score?.score ?? null,
+      tier: score?.tier ?? null,
+      score_status: score?.status ?? null,
+      breakdown: score?.breakdown ?? null,
+      history: [],
+      coupon_schedule: null,
+    };
+  }),
 }));
 
 function UrlProbe() {
@@ -49,9 +76,8 @@ describe('DemoAnalyticsPage', () => {
     const marketSelect = screen.getByLabelText('Рынок');
     fireEvent.change(marketSelect, { target: { value: 'MOEX' } });
     expect(screen.getByTestId('url-probe')).toHaveTextContent('market=MOEX');
-    expect(await screen.findByRole('table')).toBeInTheDocument();
     const moex = getBonds('MOEX');
-    expect(screen.getByText(moex[0].name)).toBeInTheDocument();
+    expect(await screen.findByText(moex[0].name)).toBeInTheDocument();
   });
 
   it('фильтр по статусу работает через UI', async () => {

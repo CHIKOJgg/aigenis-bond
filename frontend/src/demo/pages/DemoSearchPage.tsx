@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { fetchLiveSearch } from '../live-demo-api';
-import { searchAllBonds, scoreFromLiveBond } from '../demo-api';
+import { scoreFromLiveBond } from '../demo-api';
 import { bondDrawerStore } from '../drawer-store';
 import { formatPrice, formatYtm } from '../demo-format';
 import BondScoreBadge from '../components/BondScoreBadge';
@@ -50,9 +50,9 @@ export default function DemoSearchPage() {
         setSource('live');
       } catch {
         if (cancelled) return;
-        const fixture = searchAllBonds(term, market);
-        setResults(fixture);
-        setSource('fixtures');
+        setResults([]);
+        setSource('');
+        setError('Live-источник временно недоступен');
       } finally {
         if (!cancelled) setLoading(false);
       }

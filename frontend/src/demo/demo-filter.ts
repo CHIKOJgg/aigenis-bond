@@ -32,7 +32,7 @@ export function filterAndSortBonds(
 ): DemoBond[] {
   const rows = bonds.filter((b) => {
     if (filters.currency !== 'ALL' && b.currency !== filters.currency) return false;
-    if (!termMatches(b.term_days, filters.term)) return false;
+    if (!termMatches(b.term_days ?? (b.duration_years != null ? b.duration_years * 365.25 : null), filters.term)) return false;
     if (filters.status !== 'all' && getScore(b.internal_id)?.status !== filters.status) return false;
     return true;
   });

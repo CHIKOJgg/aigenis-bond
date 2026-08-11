@@ -1,7 +1,7 @@
 export const DEMO_CONFIG = {
   mode: 'concept' as 'concept' | 'approved',
-  useFixtures: true,
-  enableLiveRefresh: false,
+  useFixtures: false,
+  enableLiveRefresh: true,
   enableRequestCreation: false,
   enableExternalLinks: false,
   showBrandMark: false,

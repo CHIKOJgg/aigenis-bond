@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Bell, Search, Settings, X } from 'lucide-react';
 import { DEMO_PERSONA } from '../demo-config';
 import { fetchLiveSearch } from '../live-demo-api';
-import { searchAllBonds, scoreFromLiveBond } from '../demo-api';
+import { scoreFromLiveBond } from '../demo-api';
 import { bondDrawerStore } from '../drawer-store';
 import { formatYtm } from '../demo-format';
 import { scoreStatusColor } from './BondDetailDrawer';
@@ -43,7 +43,7 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
         const data = await fetchLiveSearch(term);
         setSuggestions(data.bonds.slice(0, SUGGESTION_LIMIT));
       } catch {
-        setSuggestions(searchAllBonds(term).slice(0, SUGGESTION_LIMIT));
+        setSuggestions([]);
       }
     }, SUGGESTION_DEBOUNCE);
     return () => window.clearTimeout(t);

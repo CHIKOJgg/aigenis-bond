@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { fetchLiveBond } from '../live-demo-api';
 import { bondDrawerStore, useOpenBond } from '../drawer-store';
 import {
-  getAllBonds,
   scoreFromLiveBond,
 } from '../demo-api';
 import BondDetailDrawer from './BondDetailDrawer';
@@ -39,12 +38,7 @@ export default function GlobalBondDrawer() {
         setState({ bond: detail, score, detail, loading: false, error: false });
       } catch {
         if (cancelled) return;
-        const fixture = getAllBonds().find((b) => b.internal_id === bondId);
-        if (!fixture) {
-          setState({ bond: null, score: undefined, detail: null, loading: false, error: true });
-          return;
-        }
-        setState({ bond: fixture, score: undefined, detail: null, loading: false, error: false });
+        setState({ bond: null, score: undefined, detail: null, loading: false, error: true });
       } finally {
         if (!cancelled) clearTimeout(timeout);
       }

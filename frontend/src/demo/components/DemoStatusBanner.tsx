@@ -14,7 +14,7 @@ export default function DemoStatusBanner() {
       }}
     >
       <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#0B526B' }} />
-      Защищённое демо · BCSE: реальные данные официального источника, обновляются автоматически
+       Демо на live-данных · Score и аналитика рассчитываются движком · только чтение
     </div>
   );
 }

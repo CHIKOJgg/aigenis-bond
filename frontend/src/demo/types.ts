@@ -29,6 +29,15 @@ export interface DemoBond {
   score_status?: ScoreStatus | null;
   breakdown?: ScoreBreakdown | null;
   explanation?: LiveExplanation | null;
+  issuer_risk?: IssuerRisk | null;
+}
+
+export interface IssuerRisk {
+  score: number;
+  level: string;
+  basis: string;
+  credit_component: number;
+  method: string;
 }
 
 export interface BondHistoryPoint {

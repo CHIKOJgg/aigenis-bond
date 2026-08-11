@@ -41,6 +41,7 @@ export default function DemoTradingPage() {
         const merged = live.flatMap((s) => s.bonds);
         setBonds(merged);
         setSource({ name: live[0]?.source ?? 'Aigenis', asOf: live[0]?.as_of ?? null });
+        if (!live.length) setError('Live-источник временно не вернул данные');
         setLoading(false);
       });
     } else {
