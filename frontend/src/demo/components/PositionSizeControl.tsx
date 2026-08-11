@@ -66,12 +66,17 @@ export default function PositionSizeControl({ bond, allocationPct, onChange, onL
   };
 
   const setFromByn = (raw: string) => {
-    setBynDraft(raw);
-    const byn = Number(raw.replace(/\s/g, '').replace(',', '.'));
-    if (!Number.isFinite(byn) || byn < 0) return;
-    onChange(clampPct(byn / PORTFOLIO * 100));
-    onLabelChange?.(`${fmt(byn)} BYN`);
-    setQtyDraft(unitAmount ? fmt(byn / unitAmount) : '');
+    const normalized = raw.replace(/\s/g, '').replace(',', '.');
+    const byn = Number(normalized);
+    if (!Number.isFinite(byn) || byn < 0) {
+      setBynDraft(raw);
+      return;
+    }
+    const safeByn = Math.min(PORTFOLIO, byn);
+    setBynDraft(fmt(safeByn));
+    onChange(clampPct(safeByn / PORTFOLIO * 100));
+    onLabelChange?.(`${fmt(safeByn)} BYN`);
+    setQtyDraft(unitAmount ? fmt(safeByn / unitAmount) : '');
   };
 
   const setFromQty = (raw: string) => {
