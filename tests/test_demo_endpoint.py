@@ -1,4 +1,4 @@
-"""Tests for the demo blueprint — deterministic, fixtures-only responses."""
+"""Tests for the demo blueprint — live read-only responses."""
 
 from __future__ import annotations
 
@@ -77,6 +77,8 @@ def test_market_data_computes_ytm_duration_score() -> None:
     assert bond["tier"] in {"S", "A", "B", "C", "D"}
     assert bond["score_status"] in {"attractive", "neutral", "review", "high_risk"}
     assert "breakdown" in bond
+    assert bond["issuer_risk"]["level"] == "Очень низкий"
+    assert bond["issuer_risk"]["score"] >= 90
     # Plain-language explanation (pros / cons / verdict) is always served for scored bonds.
     assert bond["explanation"] is not None
     assert {"verdict", "summary", "strengths", "weaknesses", "factors"} <= set(

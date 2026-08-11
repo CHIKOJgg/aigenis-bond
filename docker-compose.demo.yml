@@ -1,8 +1,9 @@
 # =============================================================================
-# Demo deployment — standalone fixtures-only frontend
+# Demo deployment — standalone live read-only frontend
 # =============================================================================
-# Запускает только демо-интерфейс (SPA на фикстурах). Без API, без платежей,
-# без Telegram-бота, без внешних сервисов. По умолчанию работает на
+# Запускает демо-интерфейс с live read-only proxy к API в общей Docker-сети.
+# API использует актуальные данные из PostgreSQL. Платежи, авторизация,
+# Telegram и любые write-endpoints недоступны. По умолчанию:
 # http://localhost:8080 (можно переопределить через DEMO_PORT).
 #
 # Использование:
@@ -11,7 +12,8 @@
 # Безопасность (6.8/6.9):
 #   - X-Robots-Tag: noindex, nofollow на всех ответах
 #   - robots.txt -> Disallow: /
-#   - нет проксирования /api, /billing, /admin, /webhook
+#   - проксируются только /api/v1/demo/* (market-data, search, bond detail)
+#   - /api, /billing, /admin и /webhook вне demo-family закрыты
 # =============================================================================
 
 services:

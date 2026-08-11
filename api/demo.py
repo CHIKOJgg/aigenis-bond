@@ -1,9 +1,9 @@
-"""Demo blueprint — fixtures-only public surface for `/demo/*`.
+"""Demo blueprint — live read-only public surface for `/demo/*`.
 
-All responses are deterministic and read from the bundled
-``demo-data/v1/`` dataset; no live API calls, no payments, no Telegram,
-no audit of real users. Guarded by DEMO_DISABLE_SIDE_EFFECTS so the
-blueprint is a safe showcase for pre-sale and pilot presentations.
+Market responses are read from the production database populated by the
+Aigenis provider; no write operations, payments or Telegram actions are exposed.
+Guarded by DEMO_DISABLE_SIDE_EFFECTS so the blueprint is a safe showcase for
+pre-sale and pilot presentations.
 
 Phase 1 (item 1.13) — deterministic ``POST /api/v1/demo/portfolio-impact``.
 """
@@ -37,6 +37,46 @@ _TIER_STATUS = {
     "C": "review",
     "D": "high_risk",
 }
+
+
+def _issuer_risk_payload(
+    issuer: str | None,
+    *,
+    is_government: bool,
+    credit_component: float | None,
+    status: str,
+) -> dict[str, Any]:
+    """Expose the engine's explainable issuer-risk view, not a credit rating."""
+    name = (issuer or "").lower()
+    credit = credit_component if credit_component is not None else -2.0
+    if status in {"defaulted", "delisted"}:
+        score, level = 15.0, "Критический"
+        basis = "Статус выпуска указывает на проблему с обращением"
+    elif is_government or any(k in name for k in ("министер", "правитель", "казнач", "республика")) or credit >= 10:
+        score, level = 90.0, "Очень низкий"
+        basis = "Суверенный/государственный профиль эмитента"
+    elif credit >= 6:
+        score, level = 78.0, "Низкий"
+        basis = "Государственная корпорация или субсуверенный профиль"
+    elif credit >= 3:
+        score, level = 68.0, "Умеренно низкий"
+        basis = "Системно значимый банковский профиль"
+    elif credit >= 0:
+        score, level = 56.0, "Умеренный"
+        basis = "Банковский/нейтральный кредитный компонент"
+    elif credit >= -2:
+        score, level = 46.0, "Повышенный"
+        basis = "Крупный корпоративный профиль без суверенной поддержки"
+    else:
+        score, level = 36.0, "Высокий"
+        basis = "Отрицательный кредитный компонент корпоративного эмитента"
+    return {
+        "score": score,
+        "level": level,
+        "basis": basis,
+        "credit_component": round(credit, 2),
+        "method": "Reward/Risk engine: issuer classification + credit component + status",
+    }
 
 
 def _bond_analytics(bond: BondORM) -> dict[str, Any]:
@@ -272,6 +312,7 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         except Exception:
             pass
 
+    score_breakdown = score_payload["breakdown"] if score_payload else {}
     return {
         "internal_id": bond.internal_id,
         "isin": bond.isin,
@@ -292,6 +333,12 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         "tier": score_payload["tier"] if score_payload else None,
         "score_status": score_payload["score_status"] if score_payload else None,
         "breakdown": score_payload["breakdown"] if score_payload else None,
+        "issuer_risk": _issuer_risk_payload(
+            bond.issuer,
+            is_government=bool(bond.is_government),
+            credit_component=score_breakdown.get("credit_risk_component"),
+            status=str(bond.status or "unknown"),
+        ),
         "explanation": explanation,
         "market": bond.market,
         "status": bond.status,
@@ -340,6 +387,7 @@ class PortfolioImpactResponse(BaseModel):
 def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
     """Sanitized public payload for one bond row (never exposes raw fields)."""
     score = analytics["score"]
+    score_breakdown = score["breakdown"] if score else {}
     return {
         "internal_id": bond.internal_id,
         "isin": bond.isin,
@@ -361,6 +409,12 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         "tier": score["tier"] if score else None,
         "score_status": score["score_status"] if score else None,
         "breakdown": score["breakdown"] if score else None,
+        "issuer_risk": _issuer_risk_payload(
+            bond.issuer,
+            is_government=bool(bond.is_government),
+            credit_component=score_breakdown.get("credit_risk_component"),
+            status=str(bond.status or "unknown"),
+        ),
         "explanation": score["explanation"] if score else None,
         "market": bond.market,
         "status": bond.status,
