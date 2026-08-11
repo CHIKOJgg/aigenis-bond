@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -24,6 +25,7 @@ from scraper.sources.aigenis.client import (
     _abs_url,
     _byn_per_ccy,
     _CircuitBreaker,
+    _sane_coupon_rate,
     _sane_yield,
     _to_price_pct,
     aigenis_client,
@@ -355,6 +357,46 @@ class TestToPricePct:
         result = await _to_price_pct("2938.6", 1000, "USD")
         assert isinstance(result, float)
         assert abs(result - 101.331034) < 0.001
+
+    @pytest.mark.asyncio
+    async def test_byn_identity_without_fx(self, monkeypatch):
+        # BYN issues are quoted in BYN: even when the FX lookup fails, the
+        # rate is treated as identity instead of dropping the price.
+        monkeypatch.setattr(client_mod, "_byn_per_ccy", AsyncMock(return_value=None))
+        result = await _to_price_pct("101.5", 1000, "BYN")
+        assert isinstance(result, float)
+        assert abs(result - 10.15) < 0.001
+
+    @pytest.mark.asyncio
+    async def test_out_of_range_keeps_raw(self, monkeypatch):
+        # A quote far outside 0.5-500% of face is a unit mismatch: keep the raw
+        # value so read-time normalization can retry with better context.
+        monkeypatch.setattr(client_mod, "_byn_per_ccy", AsyncMock(return_value=1.0))
+        monkeypatch.setattr(client_mod.logger, "warning", lambda *a, **k: None)
+        assert await _to_price_pct("123456", 1000, "USD") == "123456"
+
+
+class TestSaneCouponRate:
+    def test_none(self):
+        assert _sane_coupon_rate(None) is None
+
+    def test_empty(self):
+        assert _sane_coupon_rate("") is None
+
+    def test_bad_value(self):
+        assert _sane_coupon_rate("abc") == "abc"
+
+    def test_positive(self):
+        assert _sane_coupon_rate("7.5") == "7.5"
+
+    def test_zero_is_missing(self):
+        # 0.0 means "coupon not disclosed" (indexed bonds), not a zero coupon.
+        assert _sane_coupon_rate("0") is None
+        assert _sane_coupon_rate(0.0) is None
+        assert _sane_coupon_rate(Decimal("0.00")) is None
+
+    def test_negative_is_missing(self):
+        assert _sane_coupon_rate("-1") is None
 
 
 class TestSaneYield:

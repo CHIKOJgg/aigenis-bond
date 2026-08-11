@@ -129,10 +129,27 @@ async def _to_price_pct(value: Any, nominal: Any, currency: Any) -> Any:
         return value
     fx = await _byn_per_ccy(str(currency or "").upper())
     if fx is None or fx <= 0:
-        return value
+        if str(currency or "").upper() == "BYN":
+            # BYN issues are quoted in BYN: the rate is identity, no FX lookup.
+            fx = Decimal("1")
+        else:
+            return value
     # Return a JSON-safe float: the raw payload lands in the JSONB `raw`
     # column, and a Decimal would break json.dumps during the upsert.
-    return float(price / (nom * Decimal(str(fx))) * Decimal("100"))
+    result = float(price / (nom * Decimal(str(fx))) * Decimal("100"))
+    if not (Decimal("0.5") <= Decimal(str(result)) <= Decimal("500")):
+        # A bond quote outside 0.5-500% of face is almost certainly a unit
+        # mismatch; keep the raw value so read-time normalization can retry
+        # with better context instead of persisting a corrupt percent.
+        logger.warning(
+            "price_pct_out_of_range",
+            currency=str(currency),
+            price=str(value),
+            nominal=str(nominal),
+            result=result,
+        )
+        return value
+    return result
 
 
 def _sane_yield(value: Any) -> Any:
@@ -144,6 +161,25 @@ def _sane_yield(value: Any) -> Any:
     except (ValueError, ArithmeticError):
         return value
     return value if v > 0 else None
+
+
+def _sane_coupon_rate(value: Any) -> Any:
+    """Keep only positive coupon rates in percent points.
+
+    The feed ships 0.0 for bonds where the coupon is not disclosed (indexed
+    issues, e.g. «Айгенис Оп17»). Persisting 0 turns a coupon bond into a
+    zero-coupon bond downstream: YTM collapses to ~0% and the score loses its
+    yield component. Treat 0/negative as "not provided" instead.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        v = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return value
+    if v <= 0:
+        return None
+    return value
 
 
 class _CircuitBreaker:
@@ -625,7 +661,7 @@ class AigenisClient:
             "currency": str(item.get("settl_currency") or defn.get("currency") or currency).upper(),
             "isin": item.get("isin"),
             "nominal": defn.get("nominal"),
-            "coupon_rate": defn.get("coupon_rate"),
+            "coupon_rate": _sane_coupon_rate(defn.get("coupon_rate")),
             "coupon_frequency": defn.get("coupon_frequency"),
             "registration_number": defn.get("state_security_id"),
             "issue_number": defn.get("issue_number"),
@@ -702,7 +738,7 @@ class AigenisClient:
             "issuer_logo": issuer_logo,
             "currency": str(defn.get("currency") or data.get("settl_currency", "USD")).upper(),
             "nominal": defn.get("nominal"),
-            "coupon_rate": defn.get("coupon_rate"),
+            "coupon_rate": _sane_coupon_rate(defn.get("coupon_rate")),
             "coupon_frequency": defn.get("coupon_frequency"),
             "maturity_date": defn.get("maturity_date"),
             "price": await _to_price_pct(

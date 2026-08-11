@@ -232,7 +232,8 @@ def build_scheduler() -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Minsk")
 
     jobs: list[tuple[str, str, Callable[[], Awaitable[Any]], int]] = [
-        ("scrape_all_6h", "0 */6 * * *", scheduled_job, 900),
+        # Full scrape once per day (configurable via AIGENIS_SCRAPE_ALL_CRON).
+        ("scrape_daily", get_settings().aigenis.scrape_all_cron, scheduled_job, 900),
         # History-only refresh — NOT a duplicate full pipeline.
         ("scrape_history_daily", "0 3 * * *", scheduled_history_job, 1800),
     ]

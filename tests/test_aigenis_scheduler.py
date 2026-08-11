@@ -232,7 +232,7 @@ async def test_scheduler_builds_all_jobs() -> None:
 
     scheduler = build_scheduler()
     ids = [j.id for j in scheduler.get_jobs()]
-    assert "scrape_all_6h" in ids
+    assert "scrape_daily" in ids
     assert "scrape_history_daily" in ids
     assert "moex_stocks_30m" in ids
     assert len(ids) >= 4

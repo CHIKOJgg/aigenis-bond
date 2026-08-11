@@ -54,6 +54,11 @@ class Settings(BaseSettings):
 
     history_backfill_days: int = 1825
 
+    # Cron expression for the full bond scrape (Europe/Minsk). Bond quotes
+    # change rarely — once per day before market open is enough; the history
+    # refresh (3:00) keeps charts current without duplicating the full scrape.
+    scrape_all_cron: str = "0 2 * * *"
+
     log_level: str = "INFO"
     log_file: str = "logs/scraper.log"
     log_json: bool = True

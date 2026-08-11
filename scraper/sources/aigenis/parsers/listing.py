@@ -9,6 +9,21 @@ from typing import Any
 from bs4 import BeautifulSoup
 
 
+def _coupon_missing(value: Any) -> bool:
+    """True when the coupon rate is absent, empty or a literal zero.
+
+    A persisted "0"/"0.0" blocks downstream enrichment (``if not
+    payload.get("coupon_rate")`` treats the string as truthy), turning a
+    coupon bond into an untradeable-looking zero-coupon instrument.
+    """
+    if value is None or value == "":
+        return True
+    try:
+        return float(str(value).replace("%", "").replace(",", ".").replace(" ", "")) <= 0
+    except (ValueError, TypeError):
+        return True
+
+
 def _try_jsonld(soup: BeautifulSoup) -> list[dict[str, Any]] | None:
     for tag in soup.find_all("script", type="application/ld+json"):
         try:
@@ -188,10 +203,18 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
             title = title_el.get_text(strip=True).lower()
             text = text_el.get_text(strip=True)
             if "доход" in title:
-                # Это ставка купона (coupon_rate), не YTM!
+                # Колонка «Доходность» — это доходность, а НЕ ставка купона
+                # (купон достаём из секции «Ставка купона» ниже). Раньше тут
+                # писался coupon_rate: 0.00% неторгуемой бумаги превращало её
+                # в «нулевой купон» и блокировало реальную ставку из описания.
                 rate_str = text.replace("%", "").replace(",", ".").strip()
                 if rate_str and rate_str != "—" and re.fullmatch(r"\d+([.,]\d+)?", rate_str):
-                    payload["coupon_rate"] = rate_str
+                    try:
+                        rate_val = float(rate_str)
+                    except ValueError:
+                        rate_val = 0.0
+                    if rate_val > 0:
+                        payload["coupon_rate"] = rate_str
 
     # --- Извлекаем expanded content (после раскрытия) ---
     content_div = block.find("div", class_="content")
@@ -248,7 +271,7 @@ def _parse_aigenis_bond_block(block: BeautifulSoup, target_currency: str) -> dic
                     ):
                         payload["income_method"] = value
                         # Также парсим coupon_rate из описания "Купон, номинирована в EUR"
-                        if not payload.get("coupon_rate"):
+                        if _coupon_missing(payload.get("coupon_rate")):
                             cr = _parse_coupon_rate_from_description(value)
                             if cr:
                                 payload["coupon_rate"] = cr

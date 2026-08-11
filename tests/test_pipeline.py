@@ -356,7 +356,9 @@ async def test_enrich_from_xlsx_full_flow(monkeypatch):
         ],
     )
     result = await enrich_from_xlsx(xlsx_data=xlsx)
-    assert result["xlsx_bonds_enriched"] == 1
+    # 2: обычная BYN-бумага (X1) + индексируемая (op-17), которая теперь
+    # обогащается купоном/номиналом из XLSX, а не только переименовывается.
+    assert result["xlsx_bonds_enriched"] == 2
     assert result["xlsx_accruals_written"] == 1
 
     async with session_scope() as session:
@@ -379,6 +381,11 @@ async def test_enrich_from_xlsx_full_flow(monkeypatch):
             await session.execute(select(BondORM).where(BondORM.internal_id == "op-17"))
         ).scalar_one()
         assert renamed.name == "Индексируемый 17.xlsx"
+        # Индексируемая бумага обогащается из XLSX (фид не отдаёт её купон):
+        assert renamed.nominal == Decimal("1000")
+        assert renamed.coupon_rate == Decimal("8.5")
+        assert renamed.coupon_frequency == 1
+        assert renamed.coupon_schedule == {"2026": ["2026-01-15"]}
 
 
 # -------------------------------------------------------------- run_once_moex ---

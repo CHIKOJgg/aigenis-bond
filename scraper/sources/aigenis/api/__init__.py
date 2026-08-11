@@ -36,6 +36,16 @@ def _first_not_none(*values: Any) -> Any:
     return None
 
 
+def _sane_coupon_rate(value: Any) -> Any:
+    """Zero/negative coupon rates mean "not disclosed", not a zero coupon."""
+    if value is None or value == "":
+        return None
+    try:
+        return None if Decimal(str(value)) <= 0 else value
+    except Exception:
+        return value
+
+
 def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict[str, Any]]:
     """Нормализует список облигаций из JSON API к плоскому виду."""
     out: list[dict[str, Any]] = []
@@ -59,7 +69,9 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
                 "currency": str(it.get("currency") or currency).upper(),
                 "isin": it.get("isin"),
                 "nominal": it.get("nominal"),
-                "coupon_rate": _first_not_none(it.get("coupon_rate"), it.get("coupon")),
+                "coupon_rate": _sane_coupon_rate(
+                    _first_not_none(it.get("coupon_rate"), it.get("coupon"))
+                ),
                 "coupon_frequency": _first_not_none(
                     it.get("coupon_frequency"), it.get("frequency")
                 ),
@@ -103,7 +115,9 @@ def parse_bond_payload(
         issuer_logo=payload.get("issuer_logo"),
         currency=str(payload.get("currency", "USD")).upper(),
         nominal=payload.get("nominal"),
-        coupon_rate=_first_not_none(payload.get("coupon_rate"), payload.get("coupon")),
+        coupon_rate=_sane_coupon_rate(
+            _first_not_none(payload.get("coupon_rate"), payload.get("coupon"))
+        ),
         coupon_frequency=_first_not_none(payload.get("coupon_frequency"), payload.get("frequency")),
         maturity_date=_coerce_date(
             _first_not_none(payload.get("maturity_date"), payload.get("maturity"))

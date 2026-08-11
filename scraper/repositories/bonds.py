@@ -109,12 +109,33 @@ def _bond_to_orm(bond: Bond) -> dict:
     }
 
 
-async def upsert_bond(session: AsyncSession, bond: Bond) -> None:
+async def upsert_bond(
+    session: AsyncSession, bond: Bond, *, merge_missing: bool = True
+) -> None:
+    """Upsert a bond, by default preserving DB values the fresh payload lacks.
+
+    Detail payloads are often partial (a section failed to parse, or a
+    field is absent in the feed, e.g. ``coupon_rate`` not disclosed for
+    indexed bonds). Without merging, ``None`` fields would wipe previously
+    known values on every run. Pass ``merge_missing=False`` for a full
+    overwrite (used by sources that always send complete records).
+    """
+    values = _bond_to_orm(bond)
+    if merge_missing:
+        existing = (
+            await session.execute(
+                select(BondORM).where(BondORM.internal_id == bond.internal_id)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            for key, val in values.items():
+                if val is None:
+                    values[key] = getattr(existing, key)
     await upsert_row(
         session,
         BondORM,
         index_elements=["internal_id"],
-        values=_bond_to_orm(bond),
+        values=values,
     )
 
 

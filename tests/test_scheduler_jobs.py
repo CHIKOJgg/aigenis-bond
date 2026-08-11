@@ -291,7 +291,7 @@ def test_build_scheduler_with_optional_imports_missing(monkeypatch):
 
     scheduler = build_scheduler()
     ids = [j.id for j in scheduler.get_jobs()]
-    assert "scrape_all_6h" in ids
+    assert "scrape_daily" in ids
     assert "scrape_history_daily" in ids
 
 
@@ -309,7 +309,10 @@ def test_build_scheduler_stock_disabled(monkeypatch):
         monkeypatch.setitem(sys.modules, mod, None)
 
     def fake_settings():
-        return SimpleNamespace(stock=SimpleNamespace(enabled=False))
+        return SimpleNamespace(
+            aigenis=SimpleNamespace(scrape_all_cron="0 2 * * *"),
+            stock=SimpleNamespace(enabled=False),
+        )
 
     monkeypatch.setattr("scraper.scheduler.get_settings", fake_settings)
     scheduler = build_scheduler()

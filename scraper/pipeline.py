@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -233,7 +234,11 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
                 updates["quantity"] = enrichment.quantity
             if bond_orm.issue_volume is None and enrichment.issue_volume is not None:
                 updates["issue_volume"] = enrichment.issue_volume
-            if bond_orm.coupon_rate is None and enrichment.coupon_rate is not None:
+            # coupon_rate 0/negative in the DB means "feed did not disclose it"
+            # (see _sane_coupon_rate) — fill it from the calculator XLSX.
+            if (
+                bond_orm.coupon_rate is None or float(bond_orm.coupon_rate) <= 0
+            ) and enrichment.coupon_rate is not None:
                 updates["coupon_rate"] = enrichment.coupon_rate
             if bond_orm.start_date is None and enrichment.start_date is not None:
                 updates["start_date"] = enrichment.start_date
@@ -245,13 +250,15 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
                 updates["indexation_currency"] = enrichment.indexation_currency
 
             if enrichment.coupon_periods and not bond_orm.coupon_schedule:
-                schedule: dict[str, list[str]] = {}
-                for p in enrichment.coupon_periods:
-                    year = p["start"][:4] if isinstance(p["start"], str) else ""
-                    if year:
-                        schedule.setdefault(year, []).append(p["start"])
+                schedule = _periods_to_schedule(enrichment.coupon_periods)
                 if schedule:
                     updates["coupon_schedule"] = schedule
+            if (
+                bond_orm.coupon_frequency is None or bond_orm.coupon_frequency <= 0
+            ) and enrichment.coupon_periods:
+                freq = _periods_to_frequency(enrichment.coupon_periods)
+                if freq:
+                    updates["coupon_frequency"] = freq
 
             if updates:
                 for key, val in updates.items():
@@ -267,21 +274,81 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
                 register_xlsx_names({bond_orm.internal_id: readable})
                 await update_bond_name(session, bond_orm.internal_id, readable)
 
-        # Apply indexed bond names from XLSX
-        for iid, enrichment in (xlsx_data.indexed_bonds or {}).items():
-            if enrichment.name:
-                from scraper.repositories.bonds import register_xlsx_names, update_bond_name
+        # Apply indexed bond enrichment from the indexed calculator XLSX.
+        # The feed does not disclose coupon data for «Оп*» issues (coupon_rate
+        # arrives as 0.0), so the XLSX is the source of truth for their coupon
+        # rate, nominal, schedule and frequency.
+        for op_key, enrichment in (xlsx_data.indexed_bonds or {}).items():
+            if not enrichment.name:
+                continue
+            from scraper.repositories.bonds import register_xlsx_names, update_bond_name
 
-                # Find bond by internal_id like "Оп17" or issue_number
-                for bond_orm in all_bonds:
-                    if (
-                        bond_orm.internal_id.lower().replace("-", "").replace(" ", "")
-                        == iid.lower()
-                    ):
-                        readable = enrichment.name.strip()
-                        register_xlsx_names({bond_orm.internal_id: readable})
-                        await update_bond_name(session, bond_orm.internal_id, readable)
-                        break
+            normalized_key = op_key.strip().lower().replace("-", "").replace(" ", "")
+            for bond_orm in all_bonds:
+                # Match by internal_id ("op-17" == "op17") or by issue name
+                # («Айгенис Оп17» == "op17").
+                iid_norm = (
+                    bond_orm.internal_id.lower().replace("-", "").replace(" ", "")
+                    if bond_orm.internal_id
+                    else ""
+                )
+                name_match = re.search(r"Оп(\d+)", bond_orm.name or "", re.IGNORECASE)
+                is_op_key = name_match is not None and (
+                    f"оп{name_match.group(1)}" == normalized_key
+                )
+                if not (iid_norm == normalized_key or is_op_key):
+                    continue
+
+                updates = {}
+                if bond_orm.nominal is None and enrichment.face_value is not None:
+                    updates["nominal"] = enrichment.face_value
+                if bond_orm.quantity is None and enrichment.quantity is not None:
+                    updates["quantity"] = enrichment.quantity
+                if bond_orm.issue_volume is None and enrichment.issue_volume is not None:
+                    updates["issue_volume"] = enrichment.issue_volume
+                if (
+                    bond_orm.coupon_rate is None or float(bond_orm.coupon_rate) <= 0
+                ):
+                    # Current-period coupon amount (indexed rate) is the most
+                    # truthful estimate; fall back to the XLSX static rate.
+                    rate = _current_period_coupon_rate(
+                        enrichment.coupon_periods,
+                        bond_orm.nominal or enrichment.face_value,
+                    )
+                    if rate is None:
+                        rate = enrichment.coupon_rate
+                    if rate is not None and rate > 0:
+                        updates["coupon_rate"] = rate
+                if bond_orm.start_date is None and enrichment.start_date is not None:
+                    updates["start_date"] = enrichment.start_date
+                if bond_orm.end_date is None and enrichment.maturity_date is not None:
+                    updates["end_date"] = enrichment.maturity_date
+                if bond_orm.term_days is None and enrichment.term_days is not None:
+                    updates["term_days"] = enrichment.term_days
+                if enrichment.indexation_currency:
+                    updates["indexation_currency"] = enrichment.indexation_currency
+
+                if enrichment.coupon_periods and not bond_orm.coupon_schedule:
+                    schedule = _periods_to_schedule(enrichment.coupon_periods)
+                    if schedule:
+                        updates["coupon_schedule"] = schedule
+                if (
+                    bond_orm.coupon_frequency is None or bond_orm.coupon_frequency <= 0
+                ) and enrichment.coupon_periods:
+                    freq = _periods_to_frequency(enrichment.coupon_periods)
+                    if freq:
+                        updates["coupon_frequency"] = freq
+
+                if updates:
+                    for key, val in updates.items():
+                        setattr(bond_orm, key, val)
+                    enriched += 1
+
+                if enrichment.name and enrichment.name != bond_orm.name:
+                    readable = enrichment.name.strip()
+                    register_xlsx_names({bond_orm.internal_id: readable})
+                    await update_bond_name(session, bond_orm.internal_id, readable)
+                break
 
         await session.flush()
 
@@ -474,6 +541,109 @@ def _build_coupon_schedule(coupons: list[dict[str, Any]]) -> dict[str, list[str]
     for y in sched:
         sched[y].sort()
     return sched
+
+
+def _periods_to_schedule(periods: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """Group XLSX coupon periods (start dates) into a year -> [iso dates] map."""
+    sched: dict[str, list[str]] = {}
+    for p in periods:
+        start = p.get("start")
+        if not start:
+            continue
+        year = str(start)[:4]
+        if year.isdigit():
+            sched.setdefault(year, []).append(str(start))
+    for y in sched:
+        sched[y].sort()
+    return sched
+
+
+def _periods_to_frequency(periods: list[dict[str, Any]]) -> int | None:
+    """Derive coupon payments per year from the XLSX period table.
+
+    Counts how many periods start within 366 days of the first period start.
+    """
+    starts: list[date] = []
+    for p in periods:
+        s = p.get("start")
+        if not s:
+            continue
+        try:
+            starts.append(date.fromisoformat(str(s)))
+        except ValueError:
+            continue
+    if not starts:
+        return None
+    first = min(starts)
+    window = first + timedelta(days=366)
+    freq = sum(1 for s in starts if first <= s < window)
+    return min(freq, 12) if freq >= 1 else None
+
+
+def _current_period_coupon_rate(
+    periods: list[dict[str, Any]], nominal: Any
+) -> Decimal | None:
+    """Annual coupon rate in percent points for the period running today.
+
+    Indexed bonds («Оп*») have a coupon whose rate is not disclosed in the
+    feed; the XLSX calculator lists the absolute coupon payment per period.
+    Rate = amount / nominal * 365/days * 100 for the current period.
+    """
+    if not periods or nominal is None:
+        return None
+    try:
+        nom = Decimal(str(nominal))
+    except Exception:
+        return None
+    if nom <= 0:
+        return None
+    today = date.today()
+    current = None
+    for p in periods:
+        start_s, end_s = p.get("start"), p.get("end")
+        if not start_s or not end_s:
+            continue
+        try:
+            start, end = date.fromisoformat(str(start_s)), date.fromisoformat(str(end_s))
+        except ValueError:
+            continue
+        if start <= today <= end:
+            current = p
+            break
+    if current is None and periods:
+        # Fall back to the first period with an amount (XLSX may be stale).
+        current = next((p for p in periods if p.get("amount")), None)
+    if current is None:
+        return None
+    amount = current.get("amount")
+    if amount is None:
+        return None
+    try:
+        amt = Decimal(str(amount))
+    except Exception:
+        return None
+    days = _period_days(current)
+    if days <= 0 or amt <= 0:
+        return None
+    rate = amt / nom * Decimal("365") / Decimal(days) * Decimal("100")
+    if not (Decimal("0.1") <= rate <= Decimal("100")):
+        return None
+    return rate
+
+
+def _period_days(period: dict[str, Any]) -> int:
+    days = period.get("days")
+    try:
+        if days and int(days) > 0:
+            return int(days)
+    except (ValueError, TypeError):
+        pass
+    try:
+        start = date.fromisoformat(str(period.get("start")))
+        end = date.fromisoformat(str(period.get("end")))
+        return (end - start).days or 365
+    except (ValueError, TypeError):
+        return 365
 
 
 _stock_consecutive_failures = 0

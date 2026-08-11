@@ -332,6 +332,30 @@ class TestParseBondBlock:
         assert p["income_method"] == "7% годовых, 1 раз в квартал"
         assert p["coupon_description"] == "просто текст"
 
+    def test_zero_yield_column_is_not_coupon_rate(self):
+        # «Доходность» в шапке — это доходность, а не ставка купона. 0,00%
+        # неторгуемой бумаги не превращает её в «нулевой купон» и не блокирует
+        # реальную ставку из описания «Способ выплат».
+        html = _block_html()
+        html = html.replace(
+            '<span class="text">7,5%</span>',
+            '<span class="text">0,00%</span>',
+        )
+        html = html.replace("<p>12,5% годовых, 2 раза в год</p>", "<p>—</p>")
+        block = BeautifulSoup(html, "lxml").select_one(".wp-block-aigenis-bounds")
+        p = _parse_aigenis_bond_block(block, "ALL")
+        assert p["coupon_rate"] == "7"
+        assert p["coupon_frequency"] == 4
+
+    def test_positive_yield_column_kept_when_no_coupon_section(self):
+        # Положительная доходность из шапки по-прежнему используется как
+        # coupon_rate, если секция «Ставка купона» не отдала значение.
+        html = _block_html()
+        html = html.replace("<p>12,5% годовых, 2 раза в год</p>", "<p>—</p>")
+        block = BeautifulSoup(html, "lxml").select_one(".wp-block-aigenis-bounds")
+        p = _parse_aigenis_bond_block(block, "ALL")
+        assert p["coupon_rate"] == "7.5"
+
     def test_internal_id_filled_from_content(self):
         block = BeautifulSoup(
             _block_html(**{"data-code": "Айгенис 51", "data-reg": ""}), "lxml"
