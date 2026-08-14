@@ -47,4 +47,5 @@ async def _score_for_bond(b: Bond):
         status=b.status,
         issuer=b.issuer,
         price=b.price,
+        nominal=b.nominal,
     )

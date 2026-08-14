@@ -86,7 +86,7 @@ class TestVerifiedInflation:
 class TestVerifiedLiquidity:
     def test_full_liquidity(self):
         s = _liquidity_component(
-            has_price=True, status="active", days_to_maturity=100, price=100.0, nominal=100.0
+            has_price=True, status="active", days_to_maturity=100, price_pct=100.0
         )
         assert s == 16.0  # 5(has_price)+4(active)+3(<365)+2(<180)+2(price/nominal 85-115%)
 
@@ -105,20 +105,20 @@ class TestVerifiedCoupon:
 class TestVerifiedVolatility:
     def test_normal_zero(self):
         assert (
-            _volatility_component(ytm_pct=10, price=100, nominal=100, status="active", coupon_pct=5)
+            _volatility_component(ytm_pct=10, price_pct=100.0, status="active", coupon_pct=5)
             == 0.0
         )
 
     def test_extreme_ytm(self):
         assert (
-            _volatility_component(ytm_pct=70, price=100, nominal=100, status="active", coupon_pct=5)
+            _volatility_component(ytm_pct=70, price_pct=100.0, status="active", coupon_pct=5)
             == -7.0
         )
 
     def test_risky_status(self):
         assert (
             _volatility_component(
-                ytm_pct=10, price=100, nominal=100, status="defaulted", coupon_pct=5
+                ytm_pct=10, price_pct=100.0, status="defaulted", coupon_pct=5
             )
             <= -5.0
         )
@@ -245,7 +245,7 @@ VERIFIED_PROFILES = [
         100.0,
         {"B", "A"},
     ),
-    ("USD bank systemic 4yr", 12.0, "USD", 2030, "Сбербанк", "active", 7.0, 100.0, 100.0, {"B"}),
+    ("USD bank systemic 4yr", 12.0, "USD", 2030, "Сбербанк", "active", 7.0, 100.0, 100.0, {"B", "C"}),
     # --- C-тир: средние ---
     (
         "BYN gov bond 4yr",

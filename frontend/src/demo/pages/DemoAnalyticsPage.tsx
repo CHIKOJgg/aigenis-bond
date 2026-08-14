@@ -12,9 +12,9 @@ import {
   ZAxis,
 } from 'recharts';
 import type { TooltipProps } from 'recharts';
-import { getScore, getMarketSummary, scoreFromLiveBond } from '../demo-api';
+import { getScore, getMarketSummary, getBonds, scoreFromLiveBond } from '../demo-api';
 import { filterAndSortBonds } from '../demo-filter';
-import { formatYtm, formatYears, formatDurationYears } from '../demo-format';
+import { formatYtm, formatYears, formatDurationYears, formatBondDisplayName } from '../demo-format';
 import type { DemoBond, DemoScore, ScoreStatus, TermFilter } from '../types';
 import { SCORE_STATUS_LABEL } from '../demo-config';
 import AnalyticsKpiStrip from '../components/AnalyticsKpiStrip';
@@ -24,7 +24,6 @@ import { bondDrawerStore } from '../drawer-store';
 import { fetchLiveMarket, type LiveMarketSnapshot } from '../live-demo-api';
 
 const API_MARKET: Record<string, 'bcse' | 'moex'> = { BCSE: 'bcse', MOEX: 'moex' };
-const EMPTY_BONDS: DemoBond[] = [];
 
 export default function DemoAnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,13 +39,11 @@ export default function DemoAnalyticsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [live, setLive] = useState<LiveMarketSnapshot | null>(null);
   const [liveLoading, setLiveLoading] = useState(true);
-  const [liveError, setLiveError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     setLive(null);
     setLiveLoading(true);
-    setLiveError('');
 
     fetchLiveMarket(API_MARKET[market])
       .then((snap) => {
@@ -56,7 +53,7 @@ export default function DemoAnalyticsPage() {
       })
       .catch(() => {
         if (cancelled) return;
-          setLiveError('Не удалось получить актуальные live-данные');
+        setLive(null);
         setLiveLoading(false);
       });
     return () => {
@@ -73,7 +70,7 @@ export default function DemoAnalyticsPage() {
     ...fixtureSummary,
     global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
   } : fixtureSummary;
-  const bonds = live?.bonds ?? EMPTY_BONDS;
+  const bonds = live?.bonds ?? getBonds(market.toUpperCase());
 
   const scoreLookup = useMemo(() => {
     if (!live) return getScore;
@@ -148,21 +145,17 @@ export default function DemoAnalyticsPage() {
         asOf={summary.global.updated_at}
       />
 
-      {liveError && (
-        <div style={{
-          color: '#b42318', fontSize: 13, marginBottom: 12,
-          display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <AlertTriangle size={14} /> {liveError}
-        </div>
-      )}
-      {live && (
+      {live ? (
         <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>
           Источник: {live.source} · актуально на {new Date(live.as_of ?? '').toLocaleString('ru-RU')}
         </div>
+      ) : (
+        <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>
+          Источник: Aigenis (демо-копия)
+        </div>
       )}
 
-      {live && <ScoreYtmChart bonds={bonds} scoreLookup={scoreLookup} />}
+      <ScoreYtmChart bonds={bonds} scoreLookup={scoreLookup} />
 
       <AnalyticsFilters
         market={market}
@@ -201,12 +194,6 @@ export default function DemoAnalyticsPage() {
                   Загрузка данных рынка…
                 </td>
               </tr>
-            ) : liveError ? (
-              <tr>
-                <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#b42318' }}>
-                  {liveError}
-                </td>
-              </tr>
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#717680' }}>
@@ -227,7 +214,7 @@ export default function DemoAnalyticsPage() {
                   onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
                 >
                   <td style={tdStyle}>
-                    <div style={{ fontWeight: 600 }}>{bond.name}</div>
+                    <div style={{ fontWeight: 600 }}>{formatBondDisplayName(bond.name, bond.internal_id, bond.isin)}</div>
                     <div style={{ fontSize: 12, color: '#717680' }}>{bond.issuer}</div>
                   </td>
                   <td style={tdStyle}>
@@ -563,7 +550,9 @@ function ScoreYtmChart({
                   const p = item.payload as unknown as Point;
                   return (
                     <div style={tooltipStyle}>
-                      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>{p.name}</div>
+                      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
+                        {formatBondDisplayName(p.name, p.internal_id, p.isin)}
+                      </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'auto auto', gap: '2px 8px', fontSize: 11 }}>
                         <span style={{ color: '#717680' }}>ISIN:</span><span>{p.isin ?? '—'}</span>
                         <span style={{ color: '#717680' }}>Score:</span><span style={{ fontWeight: 600 }}>{p.score.toFixed(1)}</span>

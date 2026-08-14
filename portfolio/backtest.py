@@ -238,14 +238,14 @@ def run_backtest(
         if days_since >= rebalance_days:
             last_rebalance = current_date
 
-            # Score available bonds using data known at this date.
+            # Score available bonds using data known at this date. A bond with
+            # no historical price at the decision date is never scored with its
+            # current catalog price — that would leak future information.
             scored = []
             for b in bonds:
                 snap = _snapshot_on_or_before(price_rows, b.internal_id, current_date)
                 if snap is not None:
                     score = _score_bond_for_strategy(b, strategy, price=snap[0], ytm=snap[1])
-                elif b.price and b.price > 0:
-                    score = _score_bond_for_strategy(b, strategy)
                 else:
                     continue
                 scored.append((b.internal_id, score))

@@ -10,6 +10,7 @@ coupon schedule.
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import date
 from math import isfinite
@@ -23,15 +24,11 @@ def to_price_pct(price: Any, nominal: Any) -> float | None:
 
     The DB contract is percent-of-face for every market: MOEX and BCSE quote
     percentages natively and the Aigenis client converts absolute settlement
-    units at ingestion (``_to_price_pct``). So a value in the realistic bond
-    range (0.5%-500%) passes through untouched — converting it would corrupt
-    percent quotes on small-nominal issues (e.g. price 100.0 on a 200-nominal
-    bond must stay 100.0, not become 50.0).
+    units at ingestion (``_to_price_pct``).
 
-    Only values that cannot be bond quotes in percent are treated as absolute
-    settlement units and converted: prices above 500 (e.g. 10 039.58 for a
-    10 000-nominal issue) or below 0.5 (penny absolute quotes).  Returns None
-    for missing/non-positive prices.
+    Only values that cannot be bond quotes in percent (e.g. prices > 500 or
+    penny quotes < 0.5, or absolute prices near large nominals >= 2000) are
+    treated as absolute settlement units and converted to percent of face.
     """
     if price is None:
         return None
@@ -41,15 +38,15 @@ def to_price_pct(price: Any, nominal: Any) -> float | None:
         return None
     if not isfinite(p) or p <= 0:
         return None
-    if 0.5 <= p <= 500:
-        return p
+
     if nominal is not None:
         try:
             nom = float(nominal)
         except (TypeError, ValueError):
             nom = 0.0
-        if nom > 0:
+        if nom > 0 and (p > 500 or p < 0.5 or (nom >= 2000 and p > 150 and abs(p - nom) < abs(p - 100))):
             return p / nom * 100.0
+
     return p
 
 
@@ -62,9 +59,8 @@ def ytm_from_price(
 ) -> float | None:
     """Approximate YTM (in percent) from a price quoted as % of face value.
 
-    Newton-Raphson on the present-value equation.  Returns None when the
-    equation cannot be solved (no maturity, non-positive price, etc.), so
-    callers can honestly show "insufficient data" instead of a fake yield.
+    Newton-Raphson on the present-value equation supporting fractional first period.
+    Returns None when the equation cannot be solved.
     """
     if not isfinite(price_pct) or price_pct <= 0:
         return None
@@ -78,37 +74,60 @@ def ytm_from_price(
     years = (maturity - ref).days / 365.25
     if years <= 0:
         return None
-    # The equation is homogeneous in face, so fix face=100 to match price_pct.
     face = 100.0
     c = face * coupon_rate_pct / 100.0 / coupon_frequency
-    # Round the period count instead of truncating: ``(maturity - ref).days /
-    # 365.25`` lands just below exact integer years (e.g. 4.9993 for 5y), and
-    # ``int()`` would silently drop the final coupon+redemption period and
-    # overstate the yield of below-par bonds by tens of bps.
-    n = max(1, round(years * coupon_frequency))
-    if n <= 0:
-        return None
+    freq = coupon_frequency
+
+    # Total period count N = years * freq.
+    # n is total coupon payments remaining, w is fraction of period to next payment (0 < w <= 1).
+    total_periods = years * freq
+    rounded_periods = round(total_periods)
+    if abs(total_periods - rounded_periods) < 0.02:
+        n = max(1, int(rounded_periods))
+        w = 1.0
+    else:
+        n = max(1, math.ceil(total_periods))
+        w = total_periods - (n - 1)
+        if w <= 0 or w > 1.0:
+            w = 1.0
+
     y = (coupon_rate_pct / 100.0) * (face / price_pct)
-    if y <= -0.99:
-        return None
+    if not isfinite(y) or y <= -0.99:
+        y = 0.05
+
     for _ in range(50):
-        pv_coupons = sum(c / (1 + y / coupon_frequency) ** i for i in range(1, n + 1))
-        pv_face = face / (1 + y / coupon_frequency) ** n
+        base = 1 + y / freq
+        if base <= 1e-4:
+            return None
+
+        # Present value of coupons and face with fractional first period w
+        pv_coupons = sum(c / (base ** (i - 1 + w)) for i in range(1, n + 1))
+        pv_face = face / (base ** (n - 1 + w))
         px = pv_coupons + pv_face
+
+        # Derivative with respect to y
         dpx = -sum(
-            i * c / (coupon_frequency * (1 + y / coupon_frequency) ** (i + 1))
+            (i - 1 + w) * c / (freq * (base ** (i + w)))
             for i in range(1, n + 1)
         )
-        dpx -= n * face / (coupon_frequency * (1 + y / coupon_frequency) ** (n + 1))
-        if dpx == 0:
+        dpx -= (n - 1 + w) * face / (freq * (base ** (n + w)))
+
+        if dpx == 0 or not isfinite(dpx):
             break
-        diff = px - price_pct
+
+        # px is the dirty price. Convert it to clean price by subtracting accrued interest
+        accrued = (1.0 - w) * c if w < 1.0 else 0.0
+        px_clean = px - accrued
+
+        diff = px_clean - price_pct
         if abs(diff) < 1e-6:
             return y * 100.0
         y -= diff / dpx
         if y <= -0.99:
             return None
-    return y * 100.0 if y > -0.99 else None
+
+    return y * 100.0 if isfinite(y) and y > -0.99 else None
+
 
 
 def sanity_tolerance_pp() -> float:

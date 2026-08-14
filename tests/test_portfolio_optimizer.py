@@ -105,3 +105,61 @@ def test_metrics_helpers():
     # With a single score, VaR is 0 (needs >= 2 samples).
     single = [scores[0]]
     assert _var_95(single) == 0.0
+
+
+def test_weighted_stats_uses_weights():
+    from portfolio.optimizer import _weighted_stats
+
+    bonds = [_bond("A", ytm=15.0), _bond("B", ytm=5.0)]
+    bonds_by_id = {b.internal_id: b for b in bonds}
+    scores = [_score(15.0), _score(5.0)]
+    scores[0].internal_id = "A"
+    scores[1].internal_id = "B"
+
+    # Weight 90% in A (15%), 10% in B (5%) -> expected return = 0.9 * 15 + 0.1 * 5 = 14.0
+    weights = {"A": 0.9, "B": 0.1}
+    exp, vol, _, mdd, var95 = _weighted_stats(scores, weights, bonds_by_id)
+    assert abs(exp - 14.0) < 1e-4
+
+
+def test_dollarization_strategy_prioritizes_usd_and_indexed_bonds():
+    byn_bond = _bond("BYN_01", ytm=14.0, currency="BYN")
+    usd_bond = _bond("USD_01", ytm=7.5, currency="USD")
+    op49_bond = _bond("AIG_OP49", ytm=7.7, currency="BYN")
+    op49_bond.name = "ЗАО Айгенис ОП-49 (USD)"
+    op49_bond.indexation_currency = "USD"
+
+    bonds = [byn_bond, usd_bond, op49_bond]
+    ranked = rank_bonds(bonds, strategy="Dollarization")
+    top_ids = [r.internal_id for r in ranked if r.score > 0]
+    assert "USD_01" in top_ids
+    assert "AIG_OP49" in top_ids
+    assert top_ids[0] in ("USD_01", "AIG_OP49")
+
+
+def test_metals_strategy_prioritizes_metal_bonds():
+    byn_bond = _bond("BYN_01", ytm=14.0, currency="BYN")
+    gold_bond = _bond("AIG_OP35", ytm=10.5, currency="BYN")
+    gold_bond.name = "ЗАО Айгенис ОП-35 (Золото / GOLD, 1g)"
+    gold_bond.indexation_currency = "XAU"
+
+    silver_bond = _bond("AIG_OP43", ytm=9.8, currency="BYN")
+    silver_bond.name = "ЗАО Айгенис ОП-43 (Серебро / Silver, 100g)"
+    silver_bond.indexation_currency = "XAG"
+
+    plat_bond = _bond("AIG_OP42", ytm=8.5, currency="BYN")
+    plat_bond.name = "ЗАО Айгенис ОП-42 (Платина / Platinum, 1g)"
+    plat_bond.indexation_currency = "XPT"
+
+    bonds = [byn_bond, plat_bond, silver_bond, gold_bond]
+    ranked = rank_bonds(bonds, strategy="Metals++")
+    top_ids = [r.internal_id for r in ranked if r.score > 0]
+    assert top_ids == ["AIG_OP35", "AIG_OP43", "AIG_OP42"]
+    # Gold-anchor: Gold score (58) > Silver (27) > Platinum (15)
+    scores = {r.internal_id: r.score for r in ranked}
+    assert scores["AIG_OP35"] == 58.0
+    assert scores["AIG_OP43"] == 27.0
+    assert scores["AIG_OP42"] == 15.0
+
+
+

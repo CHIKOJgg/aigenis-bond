@@ -295,5 +295,266 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-06T09:42:00+03:00"
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op49",
+    "isin": "BY5000214902",
+    "name": "ЗАО \"Айгенис\" ОП-49 (USD / Индексируемые)",
+    "issuer": "ЗАО \"Айгенис\"",
+    "issuer_logo": null,
+    "currency": "USD",
+    "nominal": 100.0,
+    "coupon_rate": 7.5,
+    "coupon_frequency": 4,
+    "maturity_date": "2028-11-25",
+    "price": 100.0,
+    "yield_to_maturity": 7.71,
+    "amortization": "none",
+    "offer_date": null,
+    "start_date": "2024-11-25",
+    "end_date": "2028-11-25",
+    "registration_number": "BY-AIG-OP49-2024",
+    "issue_volume": 5000000.0,
+    "issue_number": 49,
+    "quantity": 50000,
+    "income_method": "coupon",
+    "in_stock": true,
+    "guarantor": null,
+    "maturity_term_text": "4 года",
+    "coupon_description": "Фиксированный купон 7.5% USD годовых, ежеквартально",
+    "coupon_schedule": {
+      "2026-11-25": [
+        "1.88 USD"
+      ],
+      "2027-02-25": [
+        "1.88 USD"
+      ],
+      "2027-05-25": [
+        "1.88 USD"
+      ],
+      "2027-08-25": [
+        "1.88 USD"
+      ],
+      "2028-11-25": [
+        "101.88 USD"
+      ]
+    },
+    "indexation_currency": "USD",
+    "exchange_rate_on_start": null,
+    "term_days": 834,
+    "market": "bcse",
+    "status": "active",
+    "is_government": false,
+    "fetched_at": "2026-08-06T09:42:00+03:00"
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op50",
+    "isin": "BY5000215008",
+    "name": "ЗАО \"Айгенис\" ОП-50 (USD / Валютная оговорка)",
+    "issuer": "ЗАО \"Айгенис\"",
+    "issuer_logo": null,
+    "currency": "USD",
+    "nominal": 100.0,
+    "coupon_rate": 8.0,
+    "coupon_frequency": 4,
+    "maturity_date": "2029-05-15",
+    "price": 99.5,
+    "yield_to_maturity": 8.25,
+    "amortization": "none",
+    "offer_date": null,
+    "start_date": "2024-05-15",
+    "end_date": "2029-05-15",
+    "registration_number": "BY-AIG-OP50-2024",
+    "issue_volume": 5000000.0,
+    "issue_number": 50,
+    "quantity": 50000,
+    "income_method": "coupon",
+    "in_stock": true,
+    "guarantor": null,
+    "maturity_term_text": "5 лет",
+    "coupon_description": "Фиксированный купон 8.0% USD годовых, ежеквартально",
+    "coupon_schedule": {
+      "2026-11-15": [
+        "2.00 USD"
+      ],
+      "2027-02-15": [
+        "2.00 USD"
+      ],
+      "2027-05-15": [
+        "2.00 USD"
+      ],
+      "2029-05-15": [
+        "102.00 USD"
+      ]
+    },
+    "indexation_currency": "USD",
+    "exchange_rate_on_start": null,
+    "term_days": 1005,
+    "market": "bcse",
+    "status": "active",
+    "is_government": false,
+    "fetched_at": "2026-08-06T09:42:00+03:00"
+  },
+  {
+    "internal_id": "demo-bond-minfin-usd-0310",
+    "isin": "BY0000000310",
+    "name": "Минфин РБ ВГДО 310 (USD)",
+    "issuer": "Министерство финансов Республики Беларусь",
+    "issuer_logo": null,
+    "currency": "USD",
+    "nominal": 1000.0,
+    "coupon_rate": 5.5,
+    "coupon_frequency": 2,
+    "maturity_date": "2028-04-25",
+    "price": 100.0,
+    "yield_to_maturity": 5.5,
+    "amortization": "none",
+    "offer_date": null,
+    "start_date": "2023-04-25",
+    "end_date": "2028-04-25",
+    "registration_number": "BY-0310-2023",
+    "issue_volume": 50000000.0,
+    "issue_number": 310,
+    "quantity": 50000,
+    "income_method": "coupon",
+    "in_stock": true,
+    "guarantor": "Правительство РБ",
+    "maturity_term_text": "5 лет",
+    "coupon_description": "Государственные валютные облигации (ВГДО), купон 5.5% USD",
+    "coupon_schedule": {
+      "2027-04-25": [
+        "27.50 USD"
+      ],
+      "2027-10-25": [
+        "27.50 USD"
+      ],
+      "2028-04-25": [
+        "1027.50 USD"
+      ]
+    },
+    "indexation_currency": "USD",
+    "exchange_rate_on_start": null,
+    "term_days": 620,
+    "market": "bcse",
+    "status": "active",
+    "is_government": true,
+    "fetched_at": "2026-08-06T09:42:00+03:00"
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op35-gold",
+    "isin": "BY5000213508",
+    "name": "ЗАО \"Айгенис\" ОП-35 (Золото / GOLD, 1g)",
+    "issuer": "ЗАО \"Айгенис\"",
+    "issuer_logo": null,
+    "currency": "BYN",
+    "nominal": 313.61,
+    "coupon_rate": 0.001,
+    "coupon_frequency": 1,
+    "maturity_date": "2030-03-27",
+    "price": 135.46,
+    "yield_to_maturity": 10.5,
+    "amortization": "none",
+    "offer_date": null,
+    "start_date": "2025-04-02",
+    "end_date": "2030-03-27",
+    "registration_number": "5-200-02-5178",
+    "issue_volume": 3136100.0,
+    "issue_number": 35,
+    "quantity": 10000,
+    "income_method": "indexed",
+    "in_stock": true,
+    "guarantor": null,
+    "maturity_term_text": "3.6 года",
+    "coupon_description": "Бескупонная индексируемая облигация. Номинал привязан к стоимости 1 грамма Золота (GOLD, 1g). Базовая цена: 313.61 BYN, текущая цена: 424.82 BYN.",
+    "coupon_schedule": {
+      "2030-03-27": [
+        "424.82 BYN"
+      ]
+    },
+    "indexation_currency": "XAU",
+    "exchange_rate_on_start": 313.61,
+    "term_days": 1321,
+    "market": "bcse",
+    "status": "active",
+    "is_government": false,
+    "fetched_at": "2026-08-14T09:30:00+03:00"
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op43-silver",
+    "isin": "BY5000214308",
+    "name": "ЗАО \"Айгенис\" ОП-43 (Серебро / Silver, 100g)",
+    "issuer": "ЗАО \"Айгенис\"",
+    "issuer_logo": null,
+    "currency": "BYN",
+    "nominal": 471.0,
+    "coupon_rate": 0.001,
+    "coupon_frequency": 1,
+    "maturity_date": "2030-10-07",
+    "price": 132.27,
+    "yield_to_maturity": 9.8,
+    "amortization": "none",
+    "offer_date": null,
+    "start_date": "2025-10-08",
+    "end_date": "2030-10-07",
+    "registration_number": "BCSE-00446-P01",
+    "issue_volume": 4710000.0,
+    "issue_number": 43,
+    "quantity": 10000,
+    "income_method": "indexed",
+    "in_stock": true,
+    "guarantor": null,
+    "maturity_term_text": "4.15 года",
+    "coupon_description": "Бескупонная индексируемая облигация. Номинал привязан к стоимости 100 грамм Серебра (Silver, 100g). Базовая цена: 471.00 BYN, текущая цена: 623.00 BYN.",
+    "coupon_schedule": {
+      "2030-10-07": [
+        "623.00 BYN"
+      ]
+    },
+    "indexation_currency": "XAG",
+    "exchange_rate_on_start": 471.0,
+    "term_days": 1515,
+    "market": "bcse",
+    "status": "active",
+    "is_government": false,
+    "fetched_at": "2026-08-14T09:30:00+03:00"
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op42-platinum",
+    "isin": "BY5000214209",
+    "name": "ЗАО \"Айгенис\" ОП-42 (Платина / Platinum, 1g)",
+    "issuer": "ЗАО \"Айгенис\"",
+    "issuer_logo": null,
+    "currency": "BYN",
+    "nominal": 157.21,
+    "coupon_rate": 0.001,
+    "coupon_frequency": 1,
+    "maturity_date": "2030-10-07",
+    "price": 109.66,
+    "yield_to_maturity": 8.5,
+    "amortization": "none",
+    "offer_date": null,
+    "start_date": "2025-10-08",
+    "end_date": "2030-10-07",
+    "registration_number": "BCSE-00445-P01",
+    "issue_volume": 1572100.0,
+    "issue_number": 42,
+    "quantity": 10000,
+    "income_method": "indexed",
+    "in_stock": true,
+    "guarantor": null,
+    "maturity_term_text": "4.15 года",
+    "coupon_description": "Бескупонная индексируемая облигация. Номинал привязан к стоимости 1 грамма Платины (Platinum, 1g). Базовая цена: 157.21 BYN, текущая цена: 172.40 BYN.",
+    "coupon_schedule": {
+      "2030-10-07": [
+        "172.40 BYN"
+      ]
+    },
+    "indexation_currency": "XPT",
+    "exchange_rate_on_start": 157.21,
+    "term_days": 1515,
+    "market": "bcse",
+    "status": "active",
+    "is_government": false,
+    "fetched_at": "2026-08-14T09:30:00+03:00"
   }
 ]

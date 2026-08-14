@@ -564,5 +564,137 @@
       "Кредитный риск эмитента в норме."
     ],
     "weaknesses": []
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op49",
+    "status": "buy",
+    "verdict": "Привлекательна",
+    "summary": "Выпуск номинирован в USD с регулярными квартальными купонами 7.5% годовых. Полная защита от девальвации BYN.",
+    "factors": [
+      {
+        "label": "Валюта USD",
+        "direction": "positive",
+        "plainText": "Номинал и купоны привязаны к доллару США.",
+        "importance": "high"
+      },
+      {
+        "label": "Купонный доход",
+        "direction": "positive",
+        "plainText": "Квартальный купон 7.5% USD — высокая доходность для валютного рынка.",
+        "importance": "high"
+      },
+      {
+        "label": "Ликвидность",
+        "direction": "positive",
+        "plainText": "Активное обращение на Белорусской валютно-фондовой бирже (BCSE).",
+        "importance": "medium"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op50",
+    "status": "buy",
+    "verdict": "Привлекательна",
+    "summary": "Валютная оговорка USD с доходностью 8.0% годовых. Отличный инструмент для долгосрочной защиты капитала.",
+    "factors": [
+      {
+        "label": "Валюта USD",
+        "direction": "positive",
+        "plainText": "Защита от валютного риска и ослабления локальной валюты.",
+        "importance": "high"
+      },
+      {
+        "label": "Доходность 8.0%",
+        "direction": "positive",
+        "plainText": "Премия к банковским валютным депозитам более 5.5 процентных пунктов.",
+        "importance": "high"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-minfin-usd-0310",
+    "status": "buy",
+    "verdict": "Привлекательна",
+    "summary": "Государственные облигации Министерства финансов РБ в долларах США (ВГДО 310) с суверенной гарантией.",
+    "factors": [
+      {
+        "label": "Суверенная надежность",
+        "direction": "positive",
+        "plainText": "100% государственная гарантия Минфина РБ.",
+        "importance": "high"
+      },
+      {
+        "label": "Валюта USD",
+        "direction": "positive",
+        "plainText": "Прямые выплаты в долларах США.",
+        "importance": "high"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op35-gold",
+    "status": "buy",
+    "verdict": "Привлекательна (Якорный защитный актив)",
+    "summary": "Золотая облигация (ОП-35): номинал привязан к 1 г Золота (GOLD, 1g). Бескупонная структура, доход формируется за счет роста стоимости драгметалла и девальвационной защиты BYN.",
+    "factors": [
+      {
+        "label": "Якорный актив (GOLD, 1g)",
+        "direction": "positive",
+        "plainText": "Прямое следование за мировыми ценами на физическое золото.",
+        "importance": "high"
+      },
+      {
+        "label": "Защита от девальвации",
+        "direction": "positive",
+        "plainText": "Рост цены с 313.61 BYN до 424.82 BYN (+35.4% прироста капитала).",
+        "importance": "high"
+      },
+      {
+        "label": "Бескупонная модель",
+        "direction": "neutral",
+        "plainText": "Купон 0.001% — капитализация всей прибыли в тело облигации.",
+        "importance": "medium"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op43-silver",
+    "status": "buy",
+    "verdict": "Привлекательна (Драйвер сырьевого роста)",
+    "summary": "Серебряная облигация (ОП-43): номинал привязан к 100 г Серебра (Silver, 100g). Высокая бета к сырьевым циклам и промышленному потреблению.",
+    "factors": [
+      {
+        "label": "Слиток Серебра (100g)",
+        "direction": "positive",
+        "plainText": "Индексация к 100 граммам банковского серебра по курсу Нацбанка.",
+        "importance": "high"
+      },
+      {
+        "label": "Прирост стоимости",
+        "direction": "positive",
+        "plainText": "Текущая биржевая цена 623.00 BYN при базовом номинале 471.00 BYN (+32.2%).",
+        "importance": "high"
+      }
+    ]
+  },
+  {
+    "internal_id": "demo-bond-aigenis-op42-platinum",
+    "status": "neutral",
+    "verdict": "Умеренно интересна (Промышленный диверсификатор)",
+    "summary": "Платиновая облигация (ОП-42): номинал привязан к 1 г Платины (Platinum, 1g). Редкий драгметалл с низкой корреляцией к золоту.",
+    "factors": [
+      {
+        "label": "Платина (1g)",
+        "direction": "positive",
+        "plainText": "Привязка к стоимости 1 грамма платины (BCSE-00445-P01).",
+        "importance": "high"
+      },
+      {
+        "label": "Доступная цена лота",
+        "direction": "positive",
+        "plainText": "Цена за 1 штуку 172.40 BYN обеспечивает высокую гибкость входа.",
+        "importance": "medium"
+      }
+    ]
   }
 ]

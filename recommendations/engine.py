@@ -86,8 +86,8 @@ def recommend_bonds(
             continue
 
         risks: list[str] = []
-        if pred.predicted_return_pct is not None and pred.predicted_return_pct < 0:
-            risks.append(f"прогноз снижения доходности: {pred.predicted_return_pct:.2f}%")
+        if pred.predicted_return_pct is not None and pred.predicted_return_pct >= 0.5:
+            risks.append(f"прогноз роста доходности: {pred.predicted_return_pct:.2f}% — риск снижения цены")
         if feature.score_duration_component < 0:
             risks.append("длительная дюрация — процентный риск")
         if not feature.is_gov_issuer and not feature.is_active:
@@ -193,9 +193,9 @@ def recommend_for_issuer(
             coupon_rate=bond.get("coupon_rate"),
         )
         risks: list[str] = []
-        if pred.predicted_return_pct is not None and pred.predicted_return_pct < 0:
+        if pred.predicted_return_pct is not None and pred.predicted_return_pct >= 0.5:
             risks.append(
-                f"{bond.get('name') or bond['internal_id']}: прогноз снижения доходности {pred.predicted_return_pct:.2f}%"
+                f"{bond.get('name') or bond['internal_id']}: прогноз роста доходности {pred.predicted_return_pct:.2f}% — риск снижения цены"
             )
         if feature.score_duration_component < 0:
             risks.append(

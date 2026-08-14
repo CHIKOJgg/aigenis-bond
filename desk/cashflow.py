@@ -31,9 +31,19 @@ def year_fraction(d1: date, d2: date, convention: str = "ACT/ACT") -> float:
         return (d2 - d1).days / 360.0
     if convention == "ACT/365":
         return (d2 - d1).days / 365.0
-    # ACT/ACT: actual days over the (leap-aware) length of the start year.
-    days_in_year = 366 if _is_leap(d1.year) else 365
-    return (d2 - d1).days / days_in_year
+    # ACT/ACT: ISDA year-split convention for actual days over calendar year lengths.
+    if d1.year == d2.year:
+        diy = 366 if _is_leap(d1.year) else 365
+        return (d2 - d1).days / diy
+    diy1 = 366 if _is_leap(d1.year) else 365
+    d1_end = date(d1.year, 12, 31)
+    total = ((d1_end - d1).days + 1) / diy1
+    for _y in range(d1.year + 1, d2.year):
+        total += 1.0
+    diy2 = 366 if _is_leap(d2.year) else 365
+    d2_start = date(d2.year, 1, 1)
+    total += (d2 - d2_start).days / diy2
+    return total
 
 
 def _add_months(d: date, months: int) -> date:
@@ -44,11 +54,11 @@ def _add_months(d: date, months: int) -> date:
 
 
 def coupon_dates(issue_date: date, maturity_date: date, frequency: int) -> list[date]:
-    """All coupon payment dates from ``issue_date`` through ``maturity_date``."""
+    """All coupon period dates from ``issue_date`` through ``maturity_date``."""
     freq = frequency if frequency in (1, 2, 4, 12) else 2
     step = 12 // freq
-    dates: list[date] = []
-    cur = issue_date
+    dates: list[date] = [issue_date]
+    cur = _add_months(issue_date, step)
     while cur < maturity_date:
         dates.append(cur)
         cur = _add_months(cur, step)
@@ -73,6 +83,7 @@ def accrued_interest(
         or coupon_rate_pct <= 0
         or issue_date is None
         or maturity_date is None
+        or asof < issue_date
         or asof >= maturity_date
     ):
         return 0.0
@@ -127,7 +138,7 @@ def pricing_cashflows(
                 cf_per_period + (nominal if d == maturity else 0.0),
             )
             for d in schedule
-            if d > asof
+            if d > asof and d != issue_date
         ]
         if not flows:
             flows = [(year_fraction(asof, maturity, convention), nominal)]

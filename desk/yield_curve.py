@@ -42,6 +42,8 @@ def fit_nelson_siegel(points: list[CurvePoint]) -> NelsonSiegelParams:
     [0.1, 20] (it decays factors by tenor, so extreme values collapse the curve
     into a constant) and the betas are bounded to plausible rate ranges.
     """
+    if not points:
+        return NelsonSiegelParams(beta0=0.0, beta1=0.0, beta2=0.0, tau=1.5)
     if len(points) < 3:
         # A 1-2 point curve carries no shape information: report the average
         # as a flat curve (beta0 = mean) instead of a degenerate zero curve,

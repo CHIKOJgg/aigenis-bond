@@ -36,7 +36,7 @@ export default function PositionSizeControl({ bond, allocationPct, onChange, onL
   // Amount per bond in portfolio currency: nominal (face value) x price
   // (percent of face). The demo treats face values as BYN-equivalent.
   const unitAmount = bond?.nominal != null && bond.price
-    ? bond.nominal * bond.price / 100
+    ? (bond.nominal * bond.price / 100) + (bond.accrued_interest ?? 0)
     : null;
 
   // Keep the derived position in sync when the selected bond changes (its
@@ -211,7 +211,7 @@ export default function PositionSizeControl({ bond, allocationPct, onChange, onL
           </div>
           {unitAmount && (
             <div style={{ fontSize: 12, color: '#717680', marginTop: 6 }}>
-              ≈ {fmt(unitAmount)} {bond?.currency ?? 'BYN'} за штуку (номинал {fmt(bond?.nominal ?? 0)} × цена {bond?.price}%)
+              ≈ {fmt(unitAmount)} {bond?.currency ?? 'BYN'} за штуку (номинал {fmt(bond?.nominal ?? 0)} × цена {bond?.price}%{bond?.accrued_interest ? ` + НКД ${fmt(bond.accrued_interest)}` : ''})
             </div>
           )}
           {!unitAmount && (

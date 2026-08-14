@@ -61,6 +61,12 @@ class RVSignal(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     internal_id: str
+    name: str | None = None
+    issuer: str | None = None
+    isin: str | None = None
+    price: float | None = None
+    nominal: float | None = None
+    accrued_interest: float | None = None
     peer_currency: str
     peer_set: list[str] = Field(default_factory=list)
     z_score: float
@@ -126,6 +132,7 @@ class StressScenario(BaseModel):
     kind: StressKind
     name: str
     description: str
+    simple_description: str | None = None
     rate_shocks: dict[str, float] = Field(default_factory=dict)
     fx_shock_pct: float = 0.0
     credit_spread_shock_bps: float = 0.0

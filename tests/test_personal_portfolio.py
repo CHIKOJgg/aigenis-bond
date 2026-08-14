@@ -126,7 +126,8 @@ def test_personal_portfolio_flow():
             body = resp.json()
             assert body["mode"] == "portfolio"
             assert body["positions_count"] == 2
-            assert body["total_invested"] == 8000.0
+            # 5000 USD * 3.3 + 3000 BYN = 19500 BYN
+            assert body["total_invested"] == 19500.0
             assert len(body["holdings"]) == 2
             assert body["strategy"]  # personalized, non-empty
 

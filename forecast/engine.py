@@ -20,6 +20,8 @@ _MC_SEED = 42  # deterministic across runs so charts don't flicker
 
 
 def _monthly_return(annual_pct: float) -> Decimal:
+    if annual_pct <= -100:
+        raise ValueError("annual return must be greater than -100%")
     return Decimal(str((1 + annual_pct / 100) ** (1 / 12) - 1))
 
 

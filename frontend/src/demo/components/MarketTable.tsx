@@ -1,6 +1,6 @@
 import { getBonds, scoreFromLiveBond } from '../demo-api';
 import BondScoreBadge from './BondScoreBadge';
-import { formatPrice, formatYtm } from '../demo-format';
+import { formatPrice, formatYtm, formatBondDisplayName } from '../demo-format';
 import type { DemoScore } from '../types';
 import { DistressedChip } from '../pages/DemoAnalyticsPage';
 
@@ -70,7 +70,7 @@ export default function MarketTable({ market, bonds: liveBonds, loading, onSelec
                 onMouseLeave={(e) => { if (onSelect) e.currentTarget.style.background = ''; }}
               >
                 <td style={tdStyle}>
-                    <div style={{ fontWeight: 600 }}>{bond.name}</div>
+                    <div style={{ fontWeight: 600 }}>{formatBondDisplayName(bond.name, bond.internal_id, bond.isin)}</div>
                     <div style={{ fontSize: 12, color: '#717680' }}>{bond.isin || bond.internal_id}</div>
                     {bond.issuer_risk && (
                       <div style={{ fontSize: 11, color: '#516c79', marginTop: 3 }}>
@@ -78,7 +78,7 @@ export default function MarketTable({ market, bonds: liveBonds, loading, onSelec
                       </div>
                     )}
                 </td>
-                <td style={tdStyle}>{formatPrice(bond.price)}</td>
+                <td style={tdStyle}>{formatPrice(bond.price, bond.currency, bond.nominal, bond.accrued_interest)}</td>
                 <td style={tdStyle}>
                   <div>{formatYtm(bond.yield_to_maturity)}</div>
                   {bond.distressed && <DistressedChip />}

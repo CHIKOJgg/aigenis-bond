@@ -288,7 +288,7 @@ def test_portfolio_income_endpoint():
             assert resp.status_code == 200
             body = resp.json()
             assert body["mode"] == "portfolio"
-            assert body["annual_income"] == 1000.0
+            assert body["annual_income"] == 3300.0
             assert body["yield_on_cost"] == 10.0
             assert body["next_payment"] is not None
             assert body["monthly_calendar"]

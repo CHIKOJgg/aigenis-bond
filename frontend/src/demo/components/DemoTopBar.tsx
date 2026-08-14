@@ -40,14 +40,14 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
     }
     const t = window.setTimeout(async () => {
       try {
-        const data = await fetchLiveSearch(term);
+        const data = await fetchLiveSearch(term, market);
         setSuggestions(data.bonds.slice(0, SUGGESTION_LIMIT));
       } catch {
         setSuggestions([]);
       }
     }, SUGGESTION_DEBOUNCE);
     return () => window.clearTimeout(t);
-  }, [q]);
+  }, [q, market]);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -61,7 +61,7 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
     const term = q.trim();
     if (!term) return;
     setOpen(false);
-    navigate(`/demo/search?q=${encodeURIComponent(term)}&market=ALL`);
+    navigate(`/demo/search?q=${encodeURIComponent(term)}&market=${market}`);
   };
 
   const pick = (bond: DemoBond) => {

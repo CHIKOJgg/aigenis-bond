@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import date
 from statistics import fmean, pstdev
 
+from desk.cashflow import accrued_interest
 from desk.models import RVSignal, YieldCurve
 
 
@@ -33,7 +34,7 @@ def relative_value_signals(
 ) -> list[RVSignal]:
     """Сгенерировать rich/cheap сигналы внутри валюты по tenor-бакетам."""
     asof = asof or date.today()
-    groups: dict[tuple[str, str], list[tuple[str, float]]] = {}
+    groups: dict[tuple[str, str], list[dict]] = {}
     today = asof
 
     for b in bonds:
@@ -43,39 +44,65 @@ def relative_value_signals(
         if years <= 0:
             continue
         key = (str(b.currency), _bucket_by_tenor(years))
-        groups.setdefault(key, []).append((b.internal_id, float(b.yield_to_maturity)))
+        groups.setdefault(key, []).append({
+            "id": b.internal_id,
+            "name": getattr(b, "name", None) or b.internal_id,
+            "issuer": getattr(b, "issuer", None),
+            "isin": getattr(b, "isin", None),
+            "price": float(b.price) if getattr(b, "price", None) is not None else None,
+            "nominal": float(b.nominal) if getattr(b, "nominal", None) is not None else 1000.0,
+            "ytm": float(b.yield_to_maturity),
+            "accrued_interest": round(
+                accrued_interest(
+                    coupon_rate_pct=float(b.coupon_rate) if getattr(b, "coupon_rate", None) is not None else 0.0,
+                    coupon_frequency=int(b.coupon_frequency) if getattr(b, "coupon_frequency", None) is not None else 2,
+                    issue_date=getattr(b, "start_date", None) or getattr(b, "issue_date", None),
+                    maturity_date=b.maturity_date,
+                    asof=today,
+                    face=float(b.nominal) if getattr(b, "nominal", None) is not None else 100.0,
+                ),
+                2,
+            ),
+        })
 
     signals: list[RVSignal] = []
-    for (currency, tenor_bucket), items in groups.items():
+    for (currency, _tenor_bucket), items in groups.items():
         if len(items) < 3:
             continue
-        ytm_values = [v for _, v in items]
+        ytm_values = [item["ytm"] for item in items]
         fair_avg, _ = _bucket_zscore(ytm_values, fmean(ytm_values))
         sd = pstdev(ytm_values) or 1e-6
-        for iid, value in items:
+        for item in items:
+            value = item["ytm"]
             z = (value - fair_avg) / sd
             spread = value - fair_avg
             if z >= z_threshold:
-                # Higher yield than peers => the bond is CHEAP => buy.
                 side = "buy"
                 rationale = (
-                    f"Z={z:+.2f}: дешевле peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                    f"Дешевле аналогов на {abs(spread):.1f}% (Z={z:+.2f}). "
+                    f"Привлекательная доходность {value:.1f}% при справедливом уровне {fair_avg:.1f}%."
                 )
             elif z <= -z_threshold:
-                # Lower yield than peers => the bond is RICH/expensive => sell.
                 side = "sell"
                 rationale = (
-                    f"Z={z:+.2f}: богаче peer-группы {tenor_bucket} {currency} на {spread:.2f}%"
+                    f"Переоценена на {abs(spread):.1f}% относительно рынка (Z={z:+.2f}). "
+                    f"Доходность {value:.1f}% ниже средней {fair_avg:.1f}% — рекомендуется фиксация."
                 )
             else:
                 side = "hold"
-                rationale = f"Z={z:+.2f}: fair value"
+                rationale = f"Цена соответствует справедливой рыночной оценке (Z={z:+.2f})."
 
             signals.append(
                 RVSignal(
-                    internal_id=iid,
+                    internal_id=item["id"],
+                    name=item["name"],
+                    issuer=item["issuer"],
+                    isin=item["isin"],
+                    price=item["price"],
+                    nominal=item["nominal"],
+                    accrued_interest=item["accrued_interest"],
                     peer_currency=currency,
-                    peer_set=[j for j, _ in items if j != iid],
+                    peer_set=[j["id"] for j in items if j["id"] != item["id"]],
                     z_score=round(z, 4),
                     spread_pct=round(spread, 4),
                     fair_spread_pct=round(fair_avg, 4),

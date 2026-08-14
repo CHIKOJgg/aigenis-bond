@@ -118,6 +118,7 @@ def compute_pnl(
     bonds_by_id: dict[str, Bond],
     *,
     coupon_data: dict[str, Decimal] | None = None,
+    fx_rates: dict[str, float] | None = None,
 ) -> PortfolioPnL:
     """Compute full P&L from transaction history and current positions.
 
@@ -152,7 +153,7 @@ def compute_pnl(
         total_invested = Decimal("0")
 
         for tx in sorted(txs, key=lambda t: t.executed_at):
-            price = tx.price or Decimal("100")
+            price = tx.price if tx.price is not None else Decimal("100")
             if tx.side == "buy":
                 face = tx.amount * Decimal("100") / price
                 buys.append((face, price))
@@ -179,7 +180,18 @@ def compute_pnl(
         # Unrealized P&L for the remaining position (money at market price).
         pos = pos_by_id.get(iid)
         bond = bonds_by_id.get(iid)
-        current_price_val = bond.price if bond and bond.price and bond.price > 0 else Decimal("0")
+
+        has_price = False
+        is_defaulted = False
+        current_price_val = Decimal("0")
+        if bond:
+            is_defaulted = getattr(bond, "status", None) in {"defaulted", "delisted"}
+            if getattr(bond, "price", None) is not None:
+                has_price = True
+                current_price_val = Decimal(str(bond.price))
+                if current_price_val < 0:
+                    current_price_val = Decimal("0")
+
         unrealized = Decimal("0")
         current_value = Decimal("0")
 
@@ -189,28 +201,42 @@ def compute_pnl(
                 # the lots, money value = face * price / 100. (The /100 factor
                 # is required — amount is money, price is % of face.)
                 remaining_face = sum(lot_face for lot_face, _ in buys)
-                current_value = (
-                    remaining_face * current_price_val / Decimal("100")
-                    if current_price_val > 0
-                    else Decimal("0")
-                )
                 cost_basis = total_invested
+                if is_defaulted or (has_price and current_price_val == 0):
+                    current_value = Decimal("0")
+                elif has_price and current_price_val > 0:
+                    current_value = remaining_face * current_price_val / Decimal("100")
+                else:
+                    current_value = cost_basis
             else:
                 # No transaction history: only the invested money is known.
                 # Mark it at market with a par entry assumption (documented).
-                if current_price_val > 0:
-                    current_value = pos.amount * current_price_val / Decimal("100")
                 cost_basis = pos.amount
                 total_invested = pos.amount
+                if is_defaulted or (has_price and current_price_val == 0):
+                    current_value = Decimal("0")
+                elif has_price and current_price_val > 0:
+                    current_value = pos.amount * current_price_val / Decimal("100")
+                else:
+                    current_value = cost_basis
             unrealized = current_value - cost_basis
 
-        coupon_inc = coupon_data.get(iid, Decimal("0")) if coupon_data else Decimal("0")
+        coupon_inc = Decimal("0")
+        if coupon_data:
+            raw = coupon_data.get(iid)
+            if raw is not None:
+                coupon_inc = Decimal(str(raw))
 
-        result.total_invested += total_invested
-        result.total_realized += realized
-        result.total_unrealized += unrealized
-        result.total_coupon_income += coupon_inc
-        result.total_value += current_value
+        rate = Decimal("1.0")
+        if fx_rates and bond and getattr(bond, "currency", None):
+            curr = bond.currency.upper()
+            rate = Decimal(str(fx_rates.get(curr, 1.0)))
+
+        result.total_invested += total_invested * rate
+        result.total_realized += realized * rate
+        result.total_unrealized += unrealized * rate
+        result.total_coupon_income += coupon_inc * rate
+        result.total_value += current_value * rate
 
         result.per_bond.append(
             PositionPnL(
@@ -227,7 +253,12 @@ def compute_pnl(
     # Compute weights
     for p in result.per_bond:
         if result.total_value > 0:
-            p.weight = p.current_value / result.total_value
+            bond = bonds_by_id.get(p.internal_id)
+            rate = Decimal("1.0")
+            if fx_rates and bond and getattr(bond, "currency", None):
+                curr = bond.currency.upper()
+                rate = Decimal(str(fx_rates.get(curr, 1.0)))
+            p.weight = (p.current_value * rate) / result.total_value
 
     return result
 

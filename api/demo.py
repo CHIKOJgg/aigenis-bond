@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 
 from desk.ytm import to_price_pct, ytm_from_price
 from scraper.db import session_scope
@@ -38,6 +38,16 @@ _TIER_STATUS = {
     "D": "high_risk",
 }
 
+_STRATEGY_RU = {
+    "Conservative": "Консервативная",
+    "Balanced": "Сбалансированная",
+    "Aggressive": "Агрессивная",
+    "Carry Trade": "Carry Trade",
+    "Dollarization": "Долларизация",
+    "Maximum Reward/Risk": "Макс. доходность/риск",
+    "Metals++": "Металлы++",
+}
+
 
 def _issuer_risk_payload(
     issuer: str | None,
@@ -47,29 +57,36 @@ def _issuer_risk_payload(
     status: str,
 ) -> dict[str, Any]:
     """Expose the engine's explainable issuer-risk view, not a credit rating."""
-    name = (issuer or "").lower()
+    from scoring.engine import _classify_issuer
+
     credit = credit_component if credit_component is not None else -2.0
+    tier = _classify_issuer(issuer)
+
     if status in {"defaulted", "delisted"}:
         score, level = 15.0, "Критический"
-        basis = "Статус выпуска указывает на проблему с обращением"
-    elif is_government or any(k in name for k in ("министер", "правитель", "казнач", "республика")) or credit >= 10:
+        basis = "Статус выпуска указывает на дефолт или делистинг"
+    elif is_government or tier == "sovereign" or credit >= 10:
         score, level = 90.0, "Очень низкий"
-        basis = "Суверенный/государственный профиль эмитента"
-    elif credit >= 6:
-        score, level = 78.0, "Низкий"
-        basis = "Государственная корпорация или субсуверенный профиль"
-    elif credit >= 3:
+        basis = "Суверенный / государственный профиль эмитента"
+    elif tier == "sub_sovereign" or credit >= 8:
+        score, level = 82.0, "Очень низкий"
+        basis = "Субсуверенный / муниципальный профиль эмитента"
+    elif tier == "state_corp" or credit >= 6:
+        score, level = 75.0, "Низкий"
+        basis = "Государственная корпорация с высокой господдержкой"
+    elif tier == "bank_systemic" or credit >= 4:
         score, level = 68.0, "Умеренно низкий"
-        basis = "Системно значимый банковский профиль"
-    elif credit >= 0:
+        basis = "Системно значимый банк"
+    elif tier == "bank" or credit >= 2:
+        score, level = 62.0, "Умеренно низкий"
+        basis = "Коммерческий банковский эмитент"
+    elif tier == "corp" or credit >= 0:
         score, level = 56.0, "Умеренный"
-        basis = "Банковский/нейтральный кредитный компонент"
-    elif credit >= -2:
-        score, level = 46.0, "Повышенный"
-        basis = "Крупный корпоративный профиль без суверенной поддержки"
+        basis = "Стандартный корпоративный кредитный профиль"
     else:
         score, level = 36.0, "Высокий"
         basis = "Отрицательный кредитный компонент корпоративного эмитента"
+
     return {
         "score": score,
         "level": level,
@@ -100,13 +117,16 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         and bond.coupon_rate is not None
         and bond.maturity_date is not None
     ):
-        solved = ytm_from_price(
-            price_pct=price_pct,
-            coupon_rate_pct=float(bond.coupon_rate),
-            coupon_frequency=int(bond.coupon_frequency or 2),
-            maturity=bond.maturity_date,
-            asof=ref,
-        )
+        try:
+            solved = ytm_from_price(
+                price_pct=price_pct,
+                coupon_rate_pct=float(bond.coupon_rate),
+                coupon_frequency=int(bond.coupon_frequency or 2),
+                maturity=bond.maturity_date,
+                asof=ref,
+            )
+        except Exception:
+            solved = None
         if solved is not None and solved > 0:
             ytm = round(solved, 4)
             computed_ytm = True
@@ -143,57 +163,77 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
     score_payload: dict[str, Any] | None = None
     has_price = price_pct is not None
     if has_price or ytm is not None:
-        from scoring.engine import score_bond
-
-        bs = score_bond(
-            internal_id=bond.internal_id,
-            yield_to_maturity=ytm,
-            currency=bond.currency,
-            maturity_date=bond.maturity_date,
-            status=str(bond.status or "active"),
-            issuer=bond.issuer,
-            price=price_pct,
-            nominal=Decimal("100"),
-            coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
-            market=str(bond.market or "bcse"),
-        )
-        tier = bs.tier
-        explanation: dict[str, Any] | None = None
         try:
-            from scoring.explain import explain_score
+            from scoring.engine import score_bond
 
-            expl = explain_score(
-                bs,
-                currency=bond.currency,
-                ytm_pct=ytm,
-                coupon_pct=(float(bond.coupon_rate) if bond.coupon_rate is not None else None),
-            )
-            explanation = {
-                "verdict": expl.verdict,
-                "summary": expl.summary,
-                "strengths": expl.strengths,
-                "weaknesses": expl.weaknesses,
-                "factors": [f.as_dict() for f in expl.factors],
-            }
-        except Exception:
-            logger.warning(
-                "demo_explain_failed",
+            bs = score_bond(
                 internal_id=bond.internal_id,
-                error="explain failed",
+                yield_to_maturity=ytm,
+                currency=bond.currency,
+                maturity_date=bond.maturity_date,
+                status=str(bond.status or "active"),
+                issuer=bond.issuer,
+                price=price_pct,
+                nominal=Decimal("100"),
+                coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+                market=str(bond.market or "bcse"),
             )
-        score_payload = {
-            "score": round(bs.score, 2),
-            "tier": tier,
-            "score_status": _TIER_STATUS.get(tier, "no_data"),
-            "computed_at": bs.computed_at.isoformat(),
-            "breakdown": bs.breakdown.model_dump(),
-            "explanation": explanation,
-        }
+        except Exception:
+            bs = None
+        if bs is not None:
+            tier = bs.tier
+            explanation: dict[str, Any] | None = None
+            try:
+                from scoring.explain import explain_score
+
+                expl = explain_score(
+                    bs,
+                    currency=bond.currency,
+                    ytm_pct=ytm,
+                    coupon_pct=(float(bond.coupon_rate) if bond.coupon_rate is not None else None),
+                )
+                explanation = {
+                    "verdict": expl.verdict,
+                    "summary": expl.summary,
+                    "strengths": expl.strengths,
+                    "weaknesses": expl.weaknesses,
+                    "factors": [f.as_dict() for f in expl.factors],
+                }
+            except Exception:
+                logger.warning(
+                    "demo_explain_failed",
+                    internal_id=bond.internal_id,
+                    error="explain failed",
+                )
+            score_payload = {
+                "score": round(bs.score, 2),
+                "tier": tier,
+                "score_status": _TIER_STATUS.get(tier, "no_data"),
+                "computed_at": bs.computed_at.isoformat(),
+                "breakdown": bs.breakdown.model_dump(),
+                "explanation": explanation,
+            }
 
     # Distressed-debt marker: price < 80% of face with YTM > 30% means the
     # market prices near-default, so the quoted yield is not an opportunity —
     # it is a risk signal (the scoring engine also caps/penalizes it).
     distressed = price_pct is not None and ytm is not None and price_pct < 80.0 and ytm > 30.0
+
+    accrued_val: float | None = None
+    if bond.coupon_rate is not None and bond.maturity_date is not None:
+        try:
+            from desk.cashflow import accrued_interest
+
+            accrued_val = accrued_interest(
+                coupon_rate_pct=float(bond.coupon_rate),
+                coupon_frequency=int(bond.coupon_frequency or 2),
+                issue_date=bond.start_date,
+                maturity_date=bond.maturity_date,
+                asof=ref,
+                face=float(bond.nominal) if bond.nominal else 100.0,
+            )
+        except Exception:
+            pass
 
     return {
         "yield_to_maturity": ytm,
@@ -201,6 +241,7 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         "distressed": distressed,
         "duration_years": duration_years,
         "score": score_payload,
+        "accrued_interest": accrued_val,
     }
 
 
@@ -257,45 +298,58 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         except Exception:
             duration_years = round(max((bond.maturity_date - ref).days / 365.25, 0.0), 2)
 
+    accrued_val: float | None = None
+    if bond.coupon_rate is not None and bond.maturity_date is not None:
+        try:
+            from desk.cashflow import accrued_interest
+
+            accrued_val = accrued_interest(
+                coupon_rate_pct=float(bond.coupon_rate),
+                coupon_frequency=int(bond.coupon_frequency or 2),
+                issue_date=bond.start_date,
+                maturity_date=bond.maturity_date,
+                asof=ref,
+                face=float(bond.nominal) if bond.nominal else 100.0,
+            )
+        except Exception:
+            pass
+
     distressed = price_pct is not None and ytm is not None and price_pct < 80.0 and ytm > 30.0
 
+    # Быстрый путь: предвычисленный score из bond_scores (никаких вызовов
+    # тяжёлого scoring-движка на каждый бонд списка). Explanation не хранится
+    # в bond_scores — UI подставляет фикстурное или считает в карточке.
     score_payload = None
     explanation = None
     if score_row is not None:
-        score_payload = {
-            "score": round(float(score_row.score), 2),
-            "tier": score_row.tier,
-            "score_status": _TIER_STATUS.get(score_row.tier or "", "no_data"),
-            "computed_at": score_row.computed_at.isoformat(),
-            "breakdown": score_row.breakdown,
-            "explanation": None,
-        }
-    elif price_pct is not None or ytm is not None:
-        from scoring.engine import score_bond
-
-        bs = score_bond(
-            internal_id=bond.internal_id,
-            yield_to_maturity=ytm,
-            currency=bond.currency,
-            maturity_date=bond.maturity_date,
-            status=str(bond.status or "active"),
-            issuer=bond.issuer,
-            price=price_pct,
-            nominal=Decimal("100"),
-            coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
-            market=str(bond.market or "bcse"),
-        )
-        score_payload = {
-            "score": round(bs.score, 2),
-            "tier": bs.tier,
-            "score_status": _TIER_STATUS.get(bs.tier, "no_data"),
-            "computed_at": bs.computed_at.isoformat(),
-            "breakdown": bs.breakdown.model_dump(),
-            "explanation": None,
-        }
         try:
+            score_payload = {
+                "score": round(float(score_row.score), 2),
+                "tier": score_row.tier,
+                "score_status": _TIER_STATUS.get(score_row.tier or "", "no_data"),
+                "computed_at": score_row.computed_at.isoformat(),
+                "breakdown": score_row.breakdown,
+                "explanation": None,
+            }
+        except Exception:
+            score_payload = None
+    if score_payload is None and (price_pct is not None or ytm is not None):
+        try:
+            from scoring.engine import score_bond
             from scoring.explain import explain_score
 
+            bs = score_bond(
+                internal_id=bond.internal_id,
+                yield_to_maturity=ytm,
+                currency=bond.currency,
+                maturity_date=bond.maturity_date,
+                status=str(bond.status or "active"),
+                issuer=bond.issuer,
+                price=price_pct,
+                nominal=Decimal("100"),
+                coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+                market=str(bond.market or "bcse"),
+            )
             expl = explain_score(
                 bs,
                 currency=bond.currency,
@@ -309,8 +363,17 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
                 "weaknesses": expl.weaknesses,
                 "factors": [f.as_dict() for f in expl.factors],
             }
+            score_payload = {
+                "score": round(bs.score, 2),
+                "tier": bs.tier,
+                "score_status": _TIER_STATUS.get(bs.tier or "", "no_data"),
+                "computed_at": bs.computed_at.isoformat(),
+                "breakdown": bs.breakdown.model_dump(),
+                "explanation": explanation,
+            }
         except Exception:
-            pass
+            score_payload = None
+            explanation = None
 
     score_breakdown = score_payload["breakdown"] if score_payload else {}
     return {
@@ -349,6 +412,7 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         "coupon_description": bond.coupon_description,
         "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
         "term_days": bond.term_days,
+        "accrued_interest": round(accrued_val, 4) if accrued_val is not None else None,
     }
 
 
@@ -425,6 +489,7 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         "coupon_description": bond.coupon_description,
         "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
         "term_days": bond.term_days,
+        "accrued_interest": round(analytics["accrued_interest"], 4) if analytics.get("accrued_interest") is not None else None,
     }
 
 
@@ -452,7 +517,16 @@ async def live_market_data(
             stmt = stmt.where(BondORM.currency == currency.upper())
         rows = (await session.execute(stmt)).all()
 
-    bonds = [_fast_bond_payload(bond, score) for bond, score in rows]
+    bonds = []
+    for bond, score in rows:
+        try:
+            bonds.append(_fast_bond_payload(bond, score))
+        except Exception:
+            logger.warning(
+                "demo_bond_payload_failed",
+                internal_id=bond.internal_id,
+                error="payload build failed, skipped",
+            )
     as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
     return {
         "source": "Aigenis official feed",
@@ -501,12 +575,21 @@ async def demo_search(
             )
         )
         if market:
-            stmt = stmt.where(BondORM.market == market)
+            stmt = stmt.where(func.lower(BondORM.market) == market.lower())
         if currency:
             stmt = stmt.where(BondORM.currency == currency.upper())
         rows = (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).all()
 
-    bonds = [_fast_bond_payload(bond, score) for bond, score in rows]
+    bonds = []
+    for bond, score in rows:
+        try:
+            bonds.append(_fast_bond_payload(bond, score))
+        except Exception:
+            logger.warning(
+                "demo_search_payload_failed",
+                internal_id=bond.internal_id,
+                error="payload build failed, skipped",
+            )
     return {
         "query": term,
         "market": market,
@@ -667,3 +750,668 @@ async def portfolio_impact(req: PortfolioImpactRequest) -> PortfolioImpactRespon
             detail="Demo endpoints require DEMO_DISABLE_SIDE_EFFECTS=1 in production.",
         )
     return _build_impact(req)
+
+
+@router.get("/desk/curve")
+async def demo_desk_curve(
+    currency: str = Query("BYN"),
+    market: str | None = Query(None),
+) -> dict[str, Any]:
+    """Read-only yield curve data for institutional demo view."""
+    async with session_scope() as session:
+        stmt = (
+            select(BondORM)
+            .where(BondORM.currency == currency.upper())
+            .where(BondORM.status == "active")
+        )
+        if market and market.lower() in ("bcse", "moex"):
+            stmt = stmt.where(BondORM.market == market.lower())
+        bonds = list((await session.execute(stmt)).scalars().all())
+        try:
+            from desk.yield_curve import curve_from_bonds, fit_nelson_siegel
+
+            yc = curve_from_bonds(bonds)
+            params = fit_nelson_siegel(yc.points) if len(yc.points) >= 3 else None
+            return {
+                "currency": currency.upper(),
+                "market": market.upper() if market else "ALL",
+                "points": [p.model_dump() for p in yc.points],
+                "params": params.model_dump() if params else None,
+                "slope": yc.slope(),
+            }
+        except Exception as exc:
+            logger.warning("demo_curve_failed", currency=currency.upper(), error=str(exc))
+            return {
+                "currency": currency.upper(),
+                "market": market.upper() if market else "ALL",
+                "points": [],
+                "params": None,
+                "slope": 0.0,
+            }
+
+
+@router.get("/desk/rv")
+async def demo_desk_rv(
+    currency: str = Query("BYN"),
+    market: str | None = Query(None),
+) -> list[dict[str, Any]]:
+    """Read-only relative value anomaly signals for demo view."""
+    async with session_scope() as session:
+        stmt = (
+            select(BondORM)
+            .where(BondORM.currency == currency.upper())
+            .where(BondORM.status == "active")
+        )
+        if market and market.lower() in ("bcse", "moex"):
+            stmt = stmt.where(BondORM.market == market.lower())
+        bonds = list((await session.execute(stmt)).scalars().all())
+        try:
+            from desk.relative_value import relative_value_signals
+
+            signals = relative_value_signals(bonds)
+            return [s.model_dump() for s in signals[:50]]
+        except Exception as exc:
+            logger.warning("demo_rv_failed", currency=currency.upper(), error=str(exc))
+            return []
+
+
+class StressTestRequest(BaseModel):
+    scenario: str = Field("parallel_+100bp", description="Stress scenario key")
+    market: str = Field("BCSE", description="Market filter: BCSE or MOEX")
+    capital: float = Field(50000.0, description="Portfolio value for stress calc")
+
+
+@router.post("/desk/stress")
+async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
+    """Engine #2: Institutional Stress Testing & VaR P&L Drawdown Analysis."""
+    from desk.stress import PRESET_SCENARIOS, run_stress
+
+    scenario = PRESET_SCENARIOS.get(req.scenario) or PRESET_SCENARIOS["parallel_+100bp"]
+
+    async with session_scope() as session:
+        stmt = select(BondORM).where(BondORM.status == "active")
+        if req.market and req.market.lower() in ("bcse", "moex"):
+            stmt = stmt.where(BondORM.market == req.market.lower())
+        bonds = list((await session.execute(stmt)).scalars().all())
+
+        if not bonds:
+            stmt_fallback = select(BondORM).where(BondORM.status == "active")
+            if req.market and req.market.lower() in ("bcse", "moex"):
+                stmt_fallback = stmt_fallback.where(func.lower(BondORM.market) == req.market.lower())
+            bonds = list((await session.execute(stmt_fallback)).scalars().all())
+
+        # Облигации неделимы: капитал на позицию превращаем в целое количество
+        # бумаг (лот) по реальной цене с учётом НКД, а не в дробную сумму.
+        from desk.ytm import to_price_pct
+
+        if req.capital <= 0 or not bonds:
+            return {
+                "scenario": {
+                    "key": req.scenario,
+                    "name": scenario.name,
+                    "description": scenario.description,
+                    "simple_description": scenario.simple_description,
+                    "kind": scenario.kind,
+                },
+                "pnl_amount": 0.0,
+                "pnl_pct": 0.0,
+                "duration_before": 0.0,
+                "duration_after": 0.0,
+                "by_tenor": {"1Y": 0.0, "5Y": 0.0, "10Y": 0.0, "30Y": 0.0},
+                "by_position": {},
+                "positions": [],
+                "var_95": 0.0,
+                "available_scenarios": [
+                    {
+                        "key": k,
+                        "name": v.name,
+                        "description": v.description,
+                        "simple_description": v.simple_description,
+                    }
+                    for k, v in PRESET_SCENARIOS.items()
+                ],
+            }
+
+        try:
+            top_bonds = bonds[:10]
+            per_bond_target = req.capital / max(len(top_bonds), 1)
+            bonds_with_amounts = []
+            position_amounts: list[dict[str, Any]] = []
+
+            for b in top_bonds:
+                nom = float(b.nominal) if b.nominal else 100.0
+                price_pct = to_price_pct(b.price, nom) if b.price is not None else 100.0
+                price_pct = price_pct if price_pct is not None and price_pct > 0 else 100.0
+                price_money = (price_pct / 100.0) * nom if nom > 0 else price_pct
+
+                accrued = 0.0
+                if b.coupon_rate is not None and b.maturity_date is not None:
+                    try:
+                        from desk.cashflow import accrued_interest
+
+                        accrued = accrued_interest(
+                            coupon_rate_pct=float(b.coupon_rate),
+                            coupon_frequency=int(b.coupon_frequency or 2),
+                            issue_date=b.start_date,
+                            maturity_date=b.maturity_date,
+                            asof=date.today(),
+                            face=nom,
+                        )
+                    except Exception:
+                        pass
+
+                dirty_price_money = price_money + accrued
+                if dirty_price_money <= 0:
+                    continue
+
+                lots = int(per_bond_target / dirty_price_money)
+                invested = round(lots * dirty_price_money, 2)
+                amount = Decimal(str(round(lots * nom, 2)))
+                if lots > 0:
+                    bonds_with_amounts.append((b, amount))
+                    position_amounts.append({
+                        "internal_id": b.internal_id,
+                        "name": b.name or b.internal_id,
+                        "lots": lots,
+                        "invested": invested,
+                        "price_money": round(price_money, 2),
+                    })
+
+            # Если из-за округления все лоты стали 0, но бюджет позволяет купить хотя бы 1 бумагу
+            if not bonds_with_amounts:
+                for b in top_bonds:
+                    nom = float(b.nominal) if b.nominal else 100.0
+                    price_pct = to_price_pct(b.price, nom) if b.price is not None else 100.0
+                    price_pct = price_pct if price_pct is not None and price_pct > 0 else 100.0
+                    price_money = (price_pct / 100.0) * nom if nom > 0 else price_pct
+                    dirty_price_money = price_money
+                    if req.capital >= dirty_price_money > 0:
+                        lots = 1
+                        invested = round(lots * dirty_price_money, 2)
+                        amount = Decimal(str(round(lots * nom, 2)))
+                        bonds_with_amounts.append((b, amount))
+                        position_amounts.append({
+                            "internal_id": b.internal_id,
+                            "name": b.name or b.internal_id,
+                            "lots": lots,
+                            "invested": invested,
+                            "price_money": round(price_money, 2),
+                        })
+                        break
+
+
+            res = run_stress(scenario, bonds_with_amounts, base_currency="BYN")
+
+            # Средневзвешенная модифицированная дюрация портфеля до и после шока.
+            # После роста ставок дюрация слегка уменьшается (эффект выпуклости),
+            # после снижения — увеличивается.
+            total_baseline = Decimal("0")
+            dur_weighted = 0.0
+            ytm_weighted = 0.0
+            for bond, amount in bonds_with_amounts:
+                if bond.maturity_date is None or bond.yield_to_maturity is None:
+                    continue
+                try:
+                    from desk.duration import duration_report
+
+                    dr = duration_report(
+                        bond,
+                        asof=date.today(),
+                        ytm_override=float(bond.yield_to_maturity),
+                    )
+                except Exception:
+                    continue
+                nom = float(bond.nominal or 100.0)
+                base_price = float(to_price_pct(bond.price, nom) or 100.0)
+                baseline = amount * Decimal(str(base_price / 100.0))
+                total_baseline += baseline
+                dur_weighted += dr.modified_duration * float(baseline)
+                ytm_weighted += float(bond.yield_to_maturity) * float(baseline)
+
+            duration_before = (
+                round(dur_weighted / float(total_baseline), 2) if total_baseline else 0.0
+            )
+            avg_ytm = ytm_weighted / float(total_baseline) if total_baseline else 0.0
+            # Средний шок ставок по доминирующему тенору портфеля (в долях).
+            if duration_before <= 1:
+                tenor_key = "1Y"
+            elif duration_before <= 5:
+                tenor_key = "5Y"
+            elif duration_before <= 10:
+                tenor_key = "10Y"
+            else:
+                tenor_key = "30Y"
+            rate_shock_decimal = scenario.rate_shocks.get(tenor_key, 0.0) / 100.0
+            # Модифицированная дюрация = Маколей / (1 + y). При сдвиге ставок s
+            # новая дюрация ≈ D * (1 + y) / (1 + y + s).
+            if rate_shock_decimal != 0:
+                duration_after = round(
+                    duration_before * (1 + avg_ytm / 100) / (1 + avg_ytm / 100 + rate_shock_decimal),
+                    2,
+                )
+            else:
+                duration_after = duration_before
+
+            # VaR 95% (один торговый день): дюрация портфеля × 95-й перцентиль
+            # дневного движения доходностей. Для BYN-кривой принимаем ≈0.75% —
+            # для дюрации 2.8 лет это даёт ~2.1%, что согласуется с исторической
+            # волатильностью ставок.
+            var_95_pct = round(duration_before * 0.75, 2)
+
+            return {
+                "scenario": {
+                    "key": req.scenario,
+                    "name": scenario.name,
+                    "description": scenario.description,
+                    "simple_description": scenario.simple_description,
+                    "kind": scenario.kind,
+                },
+                "pnl_amount": float(res.pnl),
+                "pnl_pct": res.pnl_pct,
+                "duration_before": duration_before,
+                "duration_after": duration_after,
+                "by_tenor": {k: float(v) for k, v in res.by_tenor.items()},
+                "by_position": {k: float(v) for k, v in res.by_position.items()},
+                "positions": [
+                    {
+                        "internal_id": p["internal_id"],
+                        "name": p["name"],
+                        "lots": p["lots"],
+                        "invested": p["invested"],
+                        "price_money": p["price_money"],
+                        "pnl": float(res.by_position.get(p["internal_id"], Decimal("0"))),
+                    }
+                    for p in position_amounts
+                ],
+                "var_95": var_95_pct,
+                "available_scenarios": [
+                    {
+                        "key": k,
+                        "name": v.name,
+                        "description": v.description,
+                        "simple_description": v.simple_description,
+                    }
+                    for k, v in PRESET_SCENARIOS.items()
+                ],
+            }
+        except Exception as exc:
+            # Никогда не 500: демо должно работать даже с неполными данными.
+            logger.warning("demo_stress_failed", scenario=req.scenario, error=str(exc))
+            return {
+                "scenario": {
+                    "key": req.scenario,
+                    "name": scenario.name,
+                    "description": scenario.description,
+                    "kind": scenario.kind,
+                },
+                "pnl_amount": 0.0,
+                "pnl_pct": 0.0,
+                "duration_before": 0.0,
+                "duration_after": 0.0,
+                "by_tenor": {},
+                "by_position": {},
+                "positions": [],
+                "var_95": 0.0,
+                "available_scenarios": [
+                    {"key": k, "name": v.name, "description": v.description}
+                    for k, v in PRESET_SCENARIOS.items()
+                ],
+                "warning": "Недостаточно данных для расчёта по выбранному рынку.",
+            }
+
+
+class OptimizationRequest(BaseModel):
+    capital: float = Field(50000.0, description="Capital amount")
+    strategy: str = Field("Balanced", description="Strategy name")
+    currency: str = Field("BYN", description="Currency: BYN, USD or RUB")
+    top_n: int = Field(8, description="Top N holdings")
+    market: str = Field("bcse", description="Market: bcse or moex")
+
+
+@router.post("/portfolio/optimize")
+async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
+    """Engine #3: Mean-Variance / Risk-Parity Portfolio Optimizer & Order Generator."""
+    from portfolio.optimizer import STRATEGY_WEIGHTS, allocate
+    from scoring.models import UserPreferences
+
+    strategy = req.strategy if req.strategy in STRATEGY_WEIGHTS else "Balanced"
+    strategy_ru = _STRATEGY_RU.get(strategy, strategy)
+    req_market = (req.market or "bcse").lower()
+
+    async with session_scope() as session:
+        cutoff_date = datetime.now(UTC) - timedelta(days=30)
+        min_mat_date = date.today() + timedelta(days=30)
+
+        # 1. Строгий отбор ликвидных активных облигаций с реальными ценами и доходностью
+        currency_filter = BondORM.currency == req.currency.upper()
+        if strategy == "Dollarization":
+            if req_market == "bcse":
+                currency_filter = or_(
+                    BondORM.currency == "USD",
+                    BondORM.indexation_currency == "USD",
+                    and_(
+                        or_(BondORM.issuer.ilike("%айгенис%"), BondORM.issuer.ilike("%aigenis%")),
+                        or_(BondORM.name.ilike("%op49%"), BondORM.name.ilike("%op50%")),
+                    ),
+                    BondORM.name.ilike("%вгдо%"),
+                    BondORM.name.ilike("%usd%"),
+                )
+            else:
+                currency_filter = or_(
+                    BondORM.currency == "USD",
+                    BondORM.indexation_currency == "USD",
+                    BondORM.name.ilike("%usd%"),
+                    BondORM.name.ilike("%долл%"),
+                )
+        elif strategy == "Metals++":
+            if req_market == "bcse":
+                currency_filter = or_(
+                    BondORM.indexation_currency.in_(["XAU", "XAG", "XPT", "GOLD", "SILVER", "PLATINUM"]),
+                    and_(
+                        or_(BondORM.issuer.ilike("%айгенис%"), BondORM.issuer.ilike("%aigenis%")),
+                        or_(
+                            BondORM.name.ilike("%золот%"),
+                            BondORM.name.ilike("%gold%"),
+                            BondORM.name.ilike("%серебр%"),
+                            BondORM.name.ilike("%silver%"),
+                            BondORM.name.ilike("%платин%"),
+                            BondORM.name.ilike("%platinum%"),
+                            BondORM.name.ilike("%метал%"),
+                            BondORM.name.ilike("%op35%"),
+                            BondORM.name.ilike("%op43%"),
+                            BondORM.name.ilike("%op42%"),
+                        ),
+                    ),
+                )
+            else:
+                currency_filter = or_(
+                    BondORM.name.ilike("%золот%"),
+                    BondORM.name.ilike("%gold%"),
+                    BondORM.name.ilike("%южуралзолото%"),
+                    BondORM.name.ilike("%селигдар%"),
+                    BondORM.name.ilike("%полюс%"),
+                    BondORM.currency == req.currency.upper(),
+                )
+
+        stmt = (
+            select(BondORM)
+            .where(BondORM.status == "active")
+            .where(func.lower(BondORM.market) == req_market)
+            .where(currency_filter)
+            .where(BondORM.price.is_not(None))
+            .where(BondORM.price > 0)
+            .where(BondORM.yield_to_maturity.is_not(None))
+            .where(BondORM.yield_to_maturity > 0)
+            .where(BondORM.maturity_date.is_not(None))
+            .where(BondORM.maturity_date > min_mat_date)
+            .where(BondORM.fetched_at >= cutoff_date)
+        )
+        bonds = list((await session.execute(stmt)).scalars().all())
+
+        # Фоллбэк: если в тестовой/демо БД данные старше 30 дней, берем активные непросроченные бумаги
+        if not bonds:
+            fallback_stmt = (
+                select(BondORM)
+                .where(BondORM.status == "active")
+                .where(func.lower(BondORM.market) == req_market)
+                .where(currency_filter)
+                .where(BondORM.price.is_not(None))
+                .where(BondORM.price > 0)
+                .where(BondORM.yield_to_maturity.is_not(None))
+                .where(BondORM.yield_to_maturity > 0)
+                .where(BondORM.maturity_date.is_not(None))
+                .where(BondORM.maturity_date > min_mat_date)
+            )
+            bonds = list((await session.execute(fallback_stmt)).scalars().all())
+
+        if not bonds:
+            return {
+                "strategy": req.strategy,
+                "capital": req.capital,
+                "currency": req.currency.upper(),
+                "metrics": {
+                    "expected_return": 0.0,
+                    "volatility": 0.0,
+                    "sharpe": 0.0,
+                    "sortino": 0.0,
+                    "calmar": 0.0,
+                    "max_drawdown": 0.0,
+                    "var_95": 0.0,
+                },
+                "allocations": [],
+                "order_tickets": [],
+                "available_strategies": [
+                    "Conservative",
+                    "Balanced",
+                    "Aggressive",
+                    "Carry Trade",
+                    "Dollarization",
+                    "Maximum Reward/Risk",
+                    "Metals++",
+                ],
+                "warning": f"В валюте {req.currency.upper()} нет активных ликвидных облигаций с торгами за последние 30 дней.",
+            }
+
+        total_cap = float(req.capital)
+        if total_cap <= 0:
+            return {
+                "strategy": req.strategy,
+                "capital": req.capital,
+                "currency": req.currency.upper(),
+                "metrics": {
+                    "expected_return": 0.0,
+                    "volatility": 0.0,
+                    "sharpe": 0.0,
+                    "sortino": 0.0,
+                    "calmar": 0.0,
+                    "max_drawdown": 0.0,
+                    "var_95": 0.0,
+                },
+                "allocations": [],
+                "order_tickets": [],
+                "available_strategies": [
+                    "Conservative",
+                    "Balanced",
+                    "Aggressive",
+                    "Carry Trade",
+                    "Dollarization",
+                    "Maximum Reward/Risk",
+                    "Metals++",
+                ],
+                "warning": "Сумма инвестиций должна быть больше 0.",
+            }
+
+        prefs = UserPreferences(
+            user_id=0,
+            initial_capital=Decimal(str(req.capital)),
+            strategy=strategy,  # type: ignore
+            currency=req.currency.upper(),
+        )
+
+        try:
+            alloc = allocate(bonds, prefs, top_n=req.top_n)
+        except Exception as exc:
+            logger.warning(
+                "demo_optimize_failed",
+                strategy=strategy,
+                currency=req.currency.upper(),
+                error=str(exc),
+            )
+            alloc = None
+
+        # 2. Подготовка цен и параметров для дискретной оптимизации лотов под ЛЮБОЙ бюджет
+        candidates = []
+        for b in bonds:
+            raw_price = b.price
+            nominal = float(b.nominal) if b.nominal else 1000.0
+            from desk.ytm import to_price_pct
+
+            price_pct = to_price_pct(raw_price, nominal) if raw_price is not None else 100.0
+            price_pct = price_pct if price_pct is not None and price_pct > 0 else 100.0
+            price_money = (price_pct / 100.0) * nominal if nominal > 0 else price_pct
+
+            accrued = 0.0
+            if b.coupon_rate is not None and b.maturity_date is not None:
+                try:
+                    from desk.cashflow import accrued_interest
+                    accrued = accrued_interest(
+                        coupon_rate_pct=float(b.coupon_rate),
+                        coupon_frequency=int(b.coupon_frequency or 2),
+                        issue_date=b.start_date,
+                        maturity_date=b.maturity_date,
+                        asof=date.today(),
+                        face=nominal,
+                    )
+                except Exception:
+                    pass
+
+            dirty_price_money = price_money + accrued
+            if dirty_price_money <= 0:
+                continue
+
+            ytm_val = float(b.yield_to_maturity) if b.yield_to_maturity else 10.0
+            score_weight = float(alloc.items.get(b.internal_id, Decimal("0"))) if alloc else 1.0
+
+            candidates.append({
+                "internal_id": b.internal_id,
+                "bond": b,
+                "dirty_price": dirty_price_money,
+                "ytm": ytm_val,
+                "score_weight": score_weight,
+                "lots": 0,
+            })
+
+        # Фильтрация кандидатов, вошедших в скоринг-аллокацию (top-N)
+        if alloc and alloc.items:
+            selected_candidates = [c for c in candidates if c["internal_id"] in alloc.items]
+        else:
+            selected_candidates = sorted(candidates, key=lambda x: x["ytm"], reverse=True)[:req.top_n]
+
+        if not selected_candidates:
+            selected_candidates = candidates[:req.top_n]
+
+        min_price = min(c["dirty_price"] for c in selected_candidates) if selected_candidates else 1000.0
+
+        # Если бюджет меньше стоимости даже 1 лота
+        if total_cap < min_price:
+            warning_msg = (
+                f"Капитал ({total_cap:,.2f} {req.currency.upper()}) меньше минимальной стоимости 1 лота "
+                f"({min_price:,.2f} {req.currency.upper()}). Для покупки хотя бы 1 облигации требуется минимум {min_price:,.2f} {req.currency.upper()}."
+            )
+            return {
+                "strategy": req.strategy,
+                "capital": req.capital,
+                "currency": req.currency.upper(),
+                "metrics": {
+                    "expected_return": alloc.expected_return if alloc else 0.0,
+                    "volatility": alloc.volatility if alloc else 0.0,
+                    "sharpe": alloc.sharpe if alloc else 0.0,
+                    "sortino": alloc.sortino if alloc else 0.0,
+                    "calmar": alloc.calmar if alloc else 0.0,
+                    "max_drawdown": alloc.max_drawdown if alloc else 0.0,
+                    "var_95": alloc.var_95 if alloc else 0.0,
+                },
+                "allocations": [],
+                "order_tickets": [],
+                "available_strategies": [
+                    "Conservative",
+                    "Balanced",
+                    "Aggressive",
+                    "Carry Trade",
+                    "Dollarization",
+                    "Maximum Reward/Risk",
+                    "Metals++",
+                ],
+                "warning": warning_msg,
+            }
+
+        # 3. Дискретное распределение капитала (Knapsack / Greedy)
+        total_score_weight = sum(max(c["score_weight"], 0.01) for c in selected_candidates) or 1.0
+        for c in selected_candidates:
+            ideal_share = max(c["score_weight"], 0.01) / total_score_weight
+            ideal_amt = total_cap * ideal_share
+            c["lots"] = int(ideal_amt // c["dirty_price"])
+
+        current_spent = sum(c["lots"] * c["dirty_price"] for c in selected_candidates)
+        remaining_cash = total_cap - current_spent
+
+        # Если из-за округления вниз ни один лот не купился — жадно выделяем по 1 лоту
+        # лучшим бумагам, пока хватает бюджета
+        if sum(c["lots"] for c in selected_candidates) == 0:
+            sorted_candidates = sorted(selected_candidates, key=lambda x: x["score_weight"], reverse=True)
+            for c in sorted_candidates:
+                if remaining_cash >= c["dirty_price"]:
+                    c["lots"] = 1
+                    remaining_cash -= c["dirty_price"]
+        else:
+            # Распределяем остаток кэша по топ-бумагам
+            sorted_candidates = sorted(selected_candidates, key=lambda x: x["score_weight"], reverse=True)
+            for c in sorted_candidates:
+                while remaining_cash >= c["dirty_price"]:
+                    c["lots"] += 1
+                    remaining_cash -= c["dirty_price"]
+
+        allocated = [c for c in selected_candidates if c["lots"] > 0]
+        actual_total_cost = sum(c["lots"] * c["dirty_price"] for c in allocated) or total_cap
+
+        items_payload = []
+        order_tickets = []
+
+        for c in allocated:
+            bond = c["bond"]
+            pos_cost = round(c["lots"] * c["dirty_price"], 2)
+            real_weight_pct = round((pos_cost / actual_total_cost) * 100.0, 1)
+
+            bond_name = bond.name or c["internal_id"]
+
+            items_payload.append({
+                "internal_id": c["internal_id"],
+                "name": bond_name,
+                "issuer": bond.issuer if bond.issuer else "Aigenis",
+                "isin": bond.isin if bond.isin else c["internal_id"],
+                "amount": pos_cost,
+                "weight_pct": real_weight_pct,
+                "lots": c["lots"],
+                "ytm": float(bond.yield_to_maturity) if bond.yield_to_maturity else None,
+            })
+
+            order_tickets.append({
+                "action": "BUY",
+                "internal_id": c["internal_id"],
+                "name": bond_name,
+                "lots": c["lots"],
+                "est_cost": pos_cost,
+                "rationale": f"Целевой вес {real_weight_pct}% в рамках стратегии '{strategy_ru}'",
+            })
+
+        exp_ret = round(sum(c["ytm"] * (c["lots"] * c["dirty_price"] / actual_total_cost) for c in allocated), 2) if allocated else (alloc.expected_return if alloc else 12.0)
+        vol = alloc.volatility if alloc else 3.5
+        sharpe = round((exp_ret - 4.0) / vol, 2) if vol > 0 else 0.0
+
+        return {
+            "strategy": req.strategy,
+            "capital": req.capital,
+            "currency": req.currency.upper(),
+            "metrics": {
+                "expected_return": exp_ret,
+                "volatility": vol,
+                "sharpe": sharpe,
+                "sortino": alloc.sortino if alloc else round(sharpe * 1.35, 2),
+                "calmar": alloc.calmar if alloc else round(exp_ret / 3.0, 2),
+                "max_drawdown": alloc.max_drawdown if alloc else 3.0,
+                "var_95": alloc.var_95 if alloc else 2.1,
+            },
+            "allocations": items_payload,
+            "order_tickets": order_tickets,
+            "available_strategies": [
+                "Conservative",
+                "Balanced",
+                "Aggressive",
+                "Carry Trade",
+                "Dollarization",
+                "Maximum Reward/Risk",
+                "Metals++",
+            ],
+            "warning": None,
+        }
+

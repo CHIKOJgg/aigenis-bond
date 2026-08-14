@@ -30,6 +30,9 @@ export interface DemoBond {
   breakdown?: ScoreBreakdown | null;
   explanation?: LiveExplanation | null;
   issuer_risk?: IssuerRisk | null;
+  accrued_interest?: number | null;
+  indexation_currency?: string | null;
+  exchange_rate_on_start?: number | null;
 }
 
 export interface IssuerRisk {

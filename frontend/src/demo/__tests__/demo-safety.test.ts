@@ -80,7 +80,7 @@ describe('demo side-effect guard', () => {
     const fetchUrls = Array.from(source.matchAll(/fetch\([^)]*\)/g)).map((m) => m[0]);
     expect(fetchUrls.length).toBeGreaterThan(0);
     for (const url of fetchUrls) {
-      expect(url).toMatch(/\/api\/v1\/demo\/(market-data|search|bond\/)/);
+      expect(url).toMatch(/\/api\/v1\/demo\/(market-data|search|bond\/|desk\/|portfolio\/)/);
     }
     expect(source).not.toMatch(/localStorage|sessionStorage/);
     expect(source).not.toMatch(/payment|checkout|yookassa|stripe/i);

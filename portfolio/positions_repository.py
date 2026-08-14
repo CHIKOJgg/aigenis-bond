@@ -50,8 +50,22 @@ async def list_positions(session: AsyncSession, user_id: int) -> list[PortfolioP
     return list(result.scalars().all())
 
 
-def total_value(positions: list[PortfolioPositionORM]) -> Decimal:
-    return sum((p.amount for p in positions), start=Decimal("0"))
+def total_value(
+    positions: list[PortfolioPositionORM],
+    bonds_by_id: dict[str, object] | None = None,
+    fx_rates: dict[str, float] | None = None,
+) -> Decimal:
+    if not bonds_by_id or not fx_rates:
+        return sum((p.amount for p in positions), start=Decimal("0"))
+
+    total = Decimal("0")
+    for p in positions:
+        bond = bonds_by_id.get(p.internal_id)
+        curr = getattr(bond, "currency", "")
+        curr = curr.upper() if curr else ""
+        rate = Decimal(str(fx_rates.get(curr, 1.0)))
+        total += p.amount * rate
+    return total
 
 
 async def save_rebalance_plan(session: AsyncSession, user_id: int, plan: RebalancePlan) -> int:

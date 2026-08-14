@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { fetchLiveSearch } from '../live-demo-api';
-import { scoreFromLiveBond } from '../demo-api';
+import { scoreFromLiveBond, searchAllBonds } from '../demo-api';
 import { bondDrawerStore } from '../drawer-store';
-import { formatPrice, formatYtm } from '../demo-format';
+import { formatPrice, formatYtm, formatBondDisplayName } from '../demo-format';
 import BondScoreBadge from '../components/BondScoreBadge';
 import { DistressedChip } from './DemoAnalyticsPage';
 import { SCORE_STATUS_LABEL } from '../demo-config';
@@ -46,13 +46,13 @@ export default function DemoSearchPage() {
       try {
         const data = await fetchLiveSearch(term, market === 'ALL' ? undefined : market);
         if (cancelled) return;
-        setResults(data.bonds);
+        const list = Array.isArray(data) ? data : (data?.bonds ?? []);
+        setResults(list);
         setSource('live');
       } catch {
         if (cancelled) return;
-        setResults([]);
-        setSource('');
-        setError('Live-источник временно недоступен');
+        setResults(searchAllBonds(term, market) ?? []);
+        setSource('fixtures');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -127,8 +127,8 @@ export default function DemoSearchPage() {
       <div style={{ fontSize: 12, color: '#717680', marginBottom: 8 }}>
         {loading ? 'Поиск…' :
           !q.trim() ? 'Введите запрос для поиска' :
-          results.length === 0 ? 'Ничего не найдено' :
-          `Найдено бумаг: ${results.length}`}
+          (results ?? []).length === 0 ? 'Ничего не найдено' :
+          `Найдено бумаг: ${(results ?? []).length}`}
         {source && (
           <span style={{ marginLeft: 8, color: source === 'live' ? '#06b663' : '#717680' }}>
             · источник: {source === 'live' ? 'live' : 'демо-фикстуры'}
@@ -167,7 +167,7 @@ export default function DemoSearchPage() {
                     onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
                   >
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{bond.name}</div>
+                      <div style={{ fontWeight: 600 }}>{formatBondDisplayName(bond.name, bond.internal_id, bond.isin)}</div>
                       <div style={{ fontSize: 12, color: '#717680' }}>{bond.issuer}</div>
                     </td>
                     <td style={{ ...tdStyle, fontSize: 12, color: '#516c79' }}>
@@ -190,7 +190,7 @@ export default function DemoSearchPage() {
                       <div>{formatYtm(bond.yield_to_maturity)}</div>
                       {bond.distressed && <DistressedChip />}
                     </td>
-                    <td style={tdStyle}>{formatPrice(bond.price)}</td>
+                    <td style={tdStyle}>{formatPrice(bond.price, bond.currency, bond.nominal, bond.accrued_interest)}</td>
                     <td style={tdStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <BondScoreBadge score={score} />

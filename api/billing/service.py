@@ -133,6 +133,9 @@ async def create_payment(
     user: UserORM, plan: str, success_url: str, referral_code: str | None = None
 ) -> dict | None:
     """Create a YooKassa payment for subscription and return payment info."""
+    if not is_yookassa_configured():
+        logger.error("yookassa_not_configured")
+        return None
     plan_config = PLANS.get(plan)
     if not plan_config:
         logger.error("unknown_plan", plan=plan)
@@ -277,7 +280,8 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     # to prevent double-granting subscription days under concurrent webhook calls.
     lock = _webhook_locks.setdefault(payment_id, asyncio.Lock())
     if len(_webhook_locks) > _WEBHOOK_LOCK_MAX_KEYS:
-        _webhook_locks.clear()
+        for k in [k for k, item_lock in _webhook_locks.items() if not item_lock.locked() and k != payment_id]:
+            _webhook_locks.pop(k, None)
     async with lock:
         if plan not in PLANS:
             logger.warning("payment_unknown_plan", plan=plan, payment_id=payment_id)
@@ -490,6 +494,12 @@ async def _handle_refund_succeeded(obj: dict, _metadata: dict) -> None:
     # collide with payment ids; a redelivered refund.succeeded must be skipped,
     # while a *different* refund for the same payment is a new event).
     refund_id = str(obj.get("id") or "").strip()
+
+    # A refund without an id cannot be deduplicated against redeliveries, so it
+    # is rejected outright — same posture as missing payment ids.
+    if not refund_id:
+        logger.warning("refund_missing_id", payment_id=payment_id)
+        return
 
     # Only a FULL refund revokes access; partial refunds (e.g. a discount
     # adjustment) must not cut an active subscription.

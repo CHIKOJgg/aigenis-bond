@@ -1,10 +1,13 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { BarChart3, TrendingUp, Search } from 'lucide-react';
+import { BarChart3, TrendingUp, Search, LineChart, Zap, Target } from 'lucide-react';
 import { DEMO_PERSONA } from '../demo-config';
 
 const NAV_ITEMS = [
   { path: '/demo/trading', label: 'Торги', icon: <TrendingUp size={18} /> },
   { path: '/demo/analytics', label: 'Аналитика', icon: <BarChart3 size={18} /> },
+  { path: '/demo/desk', label: 'Desk (Кривые)', icon: <LineChart size={18} /> },
+  { path: '/demo/stress', label: 'Стресс-тесты', icon: <Zap size={18} /> },
+  { path: '/demo/optimizer', label: 'Робо-Оптимизатор', icon: <Target size={18} /> },
   { path: '/demo/search', label: 'Поиск', icon: <Search size={18} /> },
 ];
 
@@ -39,7 +42,7 @@ export default function DemoSidebar() {
           return (
             <button
               key={item.path}
-              onClick={() => navigate(item.path)}
+              onClick={() => navigate(`${item.path}${location.search}`)}
               style={{
                 display: 'flex',
                 alignItems: 'center',

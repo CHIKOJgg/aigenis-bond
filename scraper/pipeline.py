@@ -419,6 +419,24 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                         select(BondORM).where(BondORM.internal_id == b.internal_id)
                     )
                 ).scalar_one_or_none()
+                ytm_val = b.yield_to_maturity
+                if (ytm_val is None or float(ytm_val) <= 0) and b.price is not None and b.coupon_rate is not None and b.maturity_date is not None:
+                    try:
+                        from desk.ytm import to_price_pct, ytm_from_price
+                        price_pct = to_price_pct(b.price, b.nominal)
+                        if price_pct is not None:
+                            solved = ytm_from_price(
+                                price_pct=price_pct,
+                                coupon_rate_pct=float(b.coupon_rate),
+                                coupon_frequency=int(b.coupon_frequency or 2),
+                                maturity=b.maturity_date,
+                                asof=date.today(),
+                            )
+                            if solved is not None and solved > 0:
+                                ytm_val = Decimal(str(round(solved, 4)))
+                    except Exception:
+                        pass
+
                 if existing is None:
                     session.add(
                         BondORM(
@@ -431,7 +449,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                             coupon_frequency=b.coupon_frequency,
                             maturity_date=b.maturity_date,
                             price=b.price,
-                            yield_to_maturity=b.yield_to_maturity,
+                            yield_to_maturity=ytm_val,
                             isin=b.isin,
                             market=b.market or "bcse",
                             status=b.status,
@@ -450,7 +468,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                     existing.coupon_frequency = b.coupon_frequency or existing.coupon_frequency
                     existing.maturity_date = b.maturity_date or existing.maturity_date
                     existing.price = b.price if b.price is not None else existing.price
-                    existing.yield_to_maturity = b.yield_to_maturity
+                    existing.yield_to_maturity = ytm_val or existing.yield_to_maturity
                     existing.isin = b.isin or existing.isin
                     existing.market = b.market or existing.market
                     existing.status = b.status or existing.status

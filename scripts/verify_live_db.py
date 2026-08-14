@@ -69,6 +69,7 @@ def _check(row: dict, asof: date, tol: float) -> list[dict]:
             "range": [PRICE_PCT_MIN, PRICE_PCT_MAX],
         })
 
+    mat: date | None = None
     if row["maturity_date"] is None:
         issues.append({"field": "maturity_date", "issue": "missing", "value": None})
     else:

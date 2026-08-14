@@ -4,6 +4,8 @@ import { DEMO_PERSONA } from '../demo-config';
 import PortfolioImpactCard from '../components/PortfolioImpactCard';
 import PositionSizeControl from '../components/PositionSizeControl';
 import { fetchLiveMarket } from '../live-demo-api';
+import { getAllBonds, getBonds } from '../demo-api';
+import { formatBondDisplayName } from '../demo-format';
 import type { DemoBond } from '../types';
 
 export default function DemoPortfolioImpactPage() {
@@ -14,24 +16,20 @@ export default function DemoPortfolioImpactPage() {
 
   const [bonds, setBonds] = useState<DemoBond[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError('');
     const markets = market === 'ALL' ? ['bcse', 'moex'] : [market.toLowerCase()];
     Promise.all(
       markets.map((m) => fetchLiveMarket(m, 'ALL')),
     ).then((snaps) => {
       if (cancelled) return;
       const merged = snaps.flatMap((s) => s.bonds);
-      setBonds(merged);
+      setBonds(merged.length ? merged : (market === 'ALL' ? getAllBonds() : getBonds(market.toUpperCase())));
       setLoading(false);
-      if (!merged.length) setError('Live-источник не вернул облигации');
     }).catch(() => {
       if (cancelled) return;
-      setBonds([]);
-      setError('Не удалось загрузить live-данные портфеля');
+      setBonds(market === 'ALL' ? getAllBonds() : getBonds(market.toUpperCase()));
       setLoading(false);
     });
     return () => {
@@ -44,6 +42,12 @@ export default function DemoPortfolioImpactPage() {
   const [bondQuery, setBondQuery] = useState('');
   const [bondMenuOpen, setBondMenuOpen] = useState(false);
   const [orderOpen, setOrderOpen] = useState(false);
+
+  useEffect(() => {
+    if (internalId) {
+      setBondId(internalId);
+    }
+  }, [internalId]);
 
   const selectedBondId = bonds.some((b) => b.internal_id === bondId) ? bondId : bonds[0]?.internal_id ?? '';
   const bond = bonds.find((b) => b.internal_id === selectedBondId);
@@ -86,7 +90,7 @@ export default function DemoPortfolioImpactPage() {
                 value={bondQuery}
                 onFocus={() => setBondMenuOpen(true)}
                 onChange={(e) => { setBondQuery(e.target.value); setBondMenuOpen(true); }}
-                placeholder={bond ? `${bond.name} · ${bond.isin ?? bond.internal_id}` : 'Поиск по названию, эмитенту или ISIN'}
+                placeholder={bond ? `${formatBondDisplayName(bond.name, bond.internal_id, bond.isin)} · ${bond.isin ?? bond.internal_id}` : 'Поиск по названию, эмитенту или ISIN'}
                 style={{
                   width: '100%', padding: '10px 14px', borderRadius: 8,
                   border: '1px solid #d6e2e6', fontSize: 14, color: '#01121a',
@@ -104,7 +108,7 @@ export default function DemoPortfolioImpactPage() {
                   }}
                 >
                   {filteredBonds.length === 0 ? (
-                    <div style={{ padding: 16, color: '#717680', fontSize: 13 }}>Ничего не найдено в live-данных</div>
+                    <div style={{ padding: 16, color: '#717680', fontSize: 13 }}>Ничего не найдено</div>
                   ) : filteredBonds.slice(0, 50).map((item) => (
                     <button
                       key={item.internal_id}
@@ -118,7 +122,7 @@ export default function DemoPortfolioImpactPage() {
                         cursor: 'pointer', color: '#01121a',
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{item.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{formatBondDisplayName(item.name, item.internal_id, item.isin)}</div>
                       <div style={{ fontSize: 11, color: '#516c79', marginTop: 3 }}>
                         {item.issuer ?? 'Эмитент не указан'} · {item.isin ?? item.internal_id}
                       </div>
@@ -131,14 +135,13 @@ export default function DemoPortfolioImpactPage() {
               )}
             </div>
             <div style={{ fontSize: 12, color: '#516c79', marginTop: 8 }}>
-              Live-данные источника Aigenis · расчёт Score и YTM выполнен движком.
+              Данные источника Aigenis · расчёт Score и YTM выполнен движком.
             </div>
             {loading && (
               <div style={{ fontSize: 12, color: '#717680', marginTop: 8 }}>
                 Загрузка актуальных котировок…
               </div>
             )}
-            {error && <div style={{ color: '#b42318', fontSize: 13, marginTop: 8 }}>{error}</div>}
           </div>
 
           <div style={{

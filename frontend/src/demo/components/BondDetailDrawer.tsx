@@ -1,6 +1,6 @@
 import { X, TrendingUp, AlertTriangle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { getScore, getExplanation, getAllBonds } from '../demo-api';
+import { getScore, getExplanation, getAllBonds, scoreFromLiveBond } from '../demo-api';
 import { SCORE_STATUS_LABEL, SCORE_STATUS_DESC } from '../demo-config';
 import {
   formatYtm,
@@ -8,6 +8,7 @@ import {
   formatDurationYears,
   formatPrice,
   formatPoints,
+  formatBondDisplayName,
 } from '../demo-format';
 import ScoreExplanation from './ScoreExplanation';
 import type {
@@ -54,7 +55,7 @@ export default function BondDetailDrawer({
   onPortfolioImpact,
 }: Props) {
   const bond = liveBond ?? getAllBonds().find((b) => b.internal_id === bondId);
-  const score = liveScore ?? getScore(bondId);
+  const score = liveScore ?? (liveBond ? scoreFromLiveBond(liveBond) : getScore(bondId));
   const fixtureExplanation = getExplanation(bondId);
   const liveExplanation: LiveExplanation | null =
     (liveBond ?? detail)?.explanation ?? null;
@@ -77,6 +78,8 @@ export default function BondDetailDrawer({
   const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    const originalStyle = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     closeBtnRef.current?.focus();
     const panel = panelRef.current;
     const handler = (e: KeyboardEvent) => {
@@ -100,7 +103,10 @@ export default function BondDetailDrawer({
       }
     };
     document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
+    return () => {
+      document.body.style.overflow = originalStyle;
+      document.removeEventListener('keydown', handler);
+    };
   }, [onClose]);
 
   if (!bond) return null;
@@ -141,18 +147,29 @@ export default function BondDetailDrawer({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '20px 24px', borderBottom: '1px solid #eef3f5',
         }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{bond.name}</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+            {formatBondDisplayName(bond.name, bond.internal_id, bond.isin)}
+          </h2>
           <button ref={closeBtnRef} onClick={onClose} aria-label="Закрыть" style={iconBtnStyle}>
             <X size={20} />
           </button>
         </div>
 
         <div style={{ padding: '24px', flex: 1 }}>
-          <div style={{ fontSize: 13, color: '#717680', marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+          <div style={{ fontSize: 13, color: '#717680', marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center' }}>
             {bond.isin && <span>ISIN: {bond.isin}</span>}
             <span>Эмитент: {bond.issuer}</span>
             <span>Валюта: {bond.currency}</span>
             <span>Рынок: {bond.market?.toUpperCase()}</span>
+            {(['XAU', 'XAG', 'XPT'].includes(bond.currency?.toUpperCase() ?? '') ||
+              (score?.breakdown?.metal_component ?? 0) > 0 ||
+              /золот|gold|металл|серебр/i.test(bond.name)) && (
+              <span style={{
+                padding: '2px 8px', borderRadius: 6, background: '#fef3c7', color: '#92400e', fontWeight: 600, fontSize: 11,
+              }}>
+                Драгметалл (Золото)
+              </span>
+            )}
           </div>
 
           {bond.distressed && (
@@ -213,6 +230,22 @@ export default function BondDetailDrawer({
                   {summary}
                 </div>
               )}
+              <button
+                onClick={onPortfolioImpact}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  width: '100%', padding: '11px 16px', borderRadius: 8,
+                  border: 'none', background: 'linear-gradient(135deg, #0B526B 0%, #177292 100%)',
+                  color: '#ffffff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  marginTop: 14, boxShadow: '0 2px 8px rgba(11,82,107,0.2)',
+                  transition: 'transform 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; }}
+              >
+                <TrendingUp size={16} />
+                Рассчитать влияние на портфель
+              </button>
             </div>
           ) : (
             <div style={{
@@ -241,13 +274,8 @@ export default function BondDetailDrawer({
               <div style={{ fontSize: 12, color: '#516c79', lineHeight: 1.45, marginTop: 6 }}>
                 {bond.issuer_risk.basis}
               </div>
-              <div style={{ fontSize: 11, color: '#717680', marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <span>credit_component: <strong>{bond.issuer_risk.credit_component.toFixed(2)}</strong></span>
-                <span>·</span>
-                <span>{bond.issuer_risk.method}</span>
-              </div>
               <div style={{ fontSize: 11, color: '#717680', marginTop: 6 }}>
-                Показатель движка, не внешний кредитный рейтинг.
+                Оценка сформирована на основе типа эмитента и государственного статуса.
               </div>
             </div>
           )}
@@ -301,13 +329,13 @@ export default function BondDetailDrawer({
                 />
               )}
               {bond.coupon_rate != null && (
-                <KeyValue label="Купон" value={formatYtm(bond.coupon_rate)} />
+                <KeyValue label="Купон" value={bond.coupon_rate === 0 ? '0.0% (дисконтная бумага)' : formatYtm(bond.coupon_rate)} />
               )}
               {bond.coupon_frequency != null && (
                 <KeyValue label="Выплаты" value={`${bond.coupon_frequency} раза в год`} />
               )}
               {bond.price != null && (
-                <KeyValue label="Цена" value={formatPrice(bond.price)} />
+                <KeyValue label="Цена (последняя сделка)" value={formatPrice(bond.price, bond.currency, bond.nominal, bond.accrued_interest)} />
               )}
               {bond.nominal != null && (
                 <KeyValue label="Номинал" value={`${Number(bond.nominal.toFixed(0)).toLocaleString('ru-RU')} ${bond.currency}`} />
@@ -362,7 +390,9 @@ const BREAKDOWN_LABELS: Array<[keyof import('../types').ScoreBreakdown, string]>
 ];
 
 function ScoreBreakdownBars({ breakdown }: { breakdown: import('../types').ScoreBreakdown }) {
-  const rows = BREAKDOWN_LABELS.map(([key, label]) => ({ key, label, value: breakdown[key] }));
+  const allRows = BREAKDOWN_LABELS.map(([key, label]) => ({ key, label, value: breakdown[key] }));
+  const activeRows = allRows.filter((r) => r.value !== 0);
+  const rows = activeRows.length > 0 ? activeRows : allRows;
   const maxAbs = Math.max(...rows.map((r) => Math.abs(r.value)), 0.0001);
   return (
     <div style={{

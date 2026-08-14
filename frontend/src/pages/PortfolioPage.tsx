@@ -171,7 +171,16 @@ function MyPositionsSection({ onSubscribe }: { onSubscribe?: () => void }) {
           </div>
           <div className="bg-white rounded-xl border border-[#d6e2e6] p-3">
             <p className="text-xs text-[#516c79]">{t('portfolio.nextPayment')}</p>
-            <p className="text-lg font-bold font-mono">{income.next_payment ? new Date(income.next_payment).toLocaleDateString() : '—'}</p>
+            <p className="text-lg font-bold font-mono">
+              {(() => {
+                if (!income.next_payment) return '—';
+                const dateStr = typeof income.next_payment === 'object' && income.next_payment !== null && 'date' in income.next_payment
+                  ? String((income.next_payment as { date: string }).date)
+                  : String(income.next_payment);
+                const d = new Date(dateStr);
+                return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+              })()}
+            </p>
           </div>
         </div>
       )}

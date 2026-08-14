@@ -244,8 +244,11 @@ def test_run_stress_fx_shock_hits_non_base_currency():
     assert fx.by_position["B"] < fx.by_position["A"]
 
 
-def test_run_all_presets_returns_seven_scenarios():
+def test_run_all_presets_returns_all_scenarios():
     bond = _rv_bond("A", 8.0, maturity="2030-01-01")
     results = run_all_presets([(bond, Decimal("1000"))], base_currency="USD")
-    assert len(results) == 7
+    assert len(results) == len(PRESET_SCENARIOS)
     assert set(results) == set(PRESET_SCENARIOS)
+    for res in results.values():
+        assert res.scenario.simple_description is not None
+

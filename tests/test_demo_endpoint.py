@@ -230,3 +230,205 @@ def test_portfolio_impact_blocks_in_production() -> None:
     finally:
         os.environ.pop("AIGENIS_ENV", None)
         os.environ["DEMO_DISABLE_SIDE_EFFECTS"] = "1"
+
+
+def test_demo_desk_curve_endpoint() -> None:
+    resp = client.get("/api/v1/demo/desk/curve?currency=BYN&market=bcse")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["currency"] == "BYN"
+    assert "points" in body
+    assert "slope" in body
+
+
+def test_demo_desk_rv_endpoint() -> None:
+    resp = client.get("/api/v1/demo/desk/rv?currency=BYN&market=bcse")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body, list)
+
+
+def test_demo_desk_stress_endpoint() -> None:
+    resp = client.post(
+        "/api/v1/demo/desk/stress",
+        json={
+            "scenario": "parallel_+100bp",
+            "market": "BCSE",
+            "capital": 50000.0,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "scenario" in body
+    assert "pnl_amount" in body
+    assert "pnl_pct" in body
+    assert "by_position" in body
+    assert "positions" in body
+
+
+def test_demo_portfolio_optimize_endpoint() -> None:
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 50000.0,
+            "strategy": "Balanced",
+            "currency": "BYN",
+            "top_n": 5,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "metrics" in body
+    assert "expected_return" in body["metrics"]
+    assert "allocations" in body
+    assert "order_tickets" in body
+
+
+def test_demo_search_special_characters_and_sql_injection() -> None:
+    # Regex characters, SQL injection string, unicode, emojis
+    for query in ["Газпром", ".*+?^${}()|[]\\", "' OR 1=1 --", "🚀💎", "   "]:
+        resp = client.get(f"/api/v1/demo/search?q={query}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "bonds" in body
+        assert isinstance(body["bonds"], list)
+
+
+def test_demo_desk_curve_exotic_currency_and_market() -> None:
+    for cur in ["USD", "EUR", "RUB", "CNY", "XYZ"]:
+        resp = client.get(f"/api/v1/demo/desk/curve?currency={cur}&market=unknown_market")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "points" in body
+        assert "slope" in body
+
+
+def test_demo_desk_stress_boundary_capitals() -> None:
+    for cap in [0.0, 100.0, 1_000_000_000.0]:
+        resp = client.post(
+            "/api/v1/demo/desk/stress",
+            json={
+                "scenario": "parallel_+100bp",
+                "market": "BCSE",
+                "capital": cap,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "pnl_amount" in body
+        assert "positions" in body
+
+
+def test_demo_portfolio_optimize_unknown_strategy() -> None:
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 50000.0,
+            "strategy": "HyperGrowthNonExistent",
+            "currency": "BYN",
+            "top_n": 10,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "metrics" in body
+    assert "allocations" in body
+
+
+def test_demo_portfolio_optimize_small_capital_and_budget_constraints() -> None:
+    # Test very small capital (e.g. 4 BYN / 4 USD)
+    resp_tiny = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 4.0,
+            "strategy": "Carry Trade",
+            "currency": "USD",
+            "top_n": 8,
+        },
+    )
+    assert resp_tiny.status_code == 200
+    body_tiny = resp_tiny.json()
+    assert "allocations" in body_tiny
+    assert "order_tickets" in body_tiny
+    # When capital is too small for 1 lot, it should not buy $15,000 worth of bonds!
+    total_spent_tiny = sum(item["amount"] for item in body_tiny["allocations"])
+    assert total_spent_tiny <= 4.0 or len(body_tiny["allocations"]) == 0
+
+    # Test medium capital (e.g. 4,000 USD)
+    resp_med = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 4000.0,
+            "strategy": "Carry Trade",
+            "currency": "USD",
+            "top_n": 8,
+        },
+    )
+    assert resp_med.status_code == 200
+    body_med = resp_med.json()
+    assert "allocations" in body_med
+    if body_med["allocations"]:
+        total_spent_med = sum(item["amount"] for item in body_med["allocations"])
+        assert total_spent_med <= 4000.0
+        # Check weights sum approximately to 100%
+        total_weight = sum(item["weight_pct"] for item in body_med["allocations"])
+        assert 98.0 <= total_weight <= 102.0
+
+
+def test_demo_portfolio_optimize_carry_trade_all_currencies() -> None:
+    for cur in ["BYN", "USD", "RUB"]:
+        resp = client.post(
+            "/api/v1/demo/portfolio/optimize",
+            json={
+                "capital": 25000.0,
+                "strategy": "Carry Trade",
+                "currency": cur,
+                "top_n": 6,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["strategy"] == "Carry Trade"
+        if body["allocations"]:
+            total_spent = sum(item["amount"] for item in body["allocations"])
+            assert total_spent <= 25000.0
+
+
+def test_demo_portfolio_optimize_market_isolation_bcse_and_moex() -> None:
+    # 1. BCSE Dollarization: only BCSE / Belarusian bonds, no MOEX bonds
+    resp_bcse_usd = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 50000.0,
+            "strategy": "Dollarization",
+            "currency": "BYN",
+            "market": "bcse",
+            "top_n": 8,
+        },
+    )
+    assert resp_bcse_usd.status_code == 200
+    body_bcse = resp_bcse_usd.json()
+    for alloc in body_bcse.get("allocations", []):
+        assert "moex" not in alloc["internal_id"].lower()
+
+    # 2. BCSE Metals++: only authentic Aigenis metal bonds
+    resp_bcse_metals = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 50000.0,
+            "strategy": "Metals++",
+            "currency": "BYN",
+            "market": "bcse",
+            "top_n": 8,
+        },
+    )
+    assert resp_bcse_metals.status_code == 200
+    body_metals = resp_bcse_metals.json()
+    for alloc in body_metals.get("allocations", []):
+        assert "moex" not in alloc["internal_id"].lower()
+        assert "южурал" not in alloc["name"].lower()
+        assert "селигдар" not in alloc["name"].lower()
+
+
+
+

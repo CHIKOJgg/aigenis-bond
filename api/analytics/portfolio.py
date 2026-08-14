@@ -156,6 +156,23 @@ def _build_forecast(
     ]
 
 
+async def _get_fx_rates(session) -> dict[str, float]:
+    from notifications.fx_repository import latest_fx
+    rates = {"BYN": 1.0}
+    for pair, curr in [("USD/BYN", "USD"), ("EUR/BYN", "EUR"), ("RUB/BYN", "RUB")]:
+        fx = await latest_fx(session, pair)
+        if fx:
+            rates[curr] = float(fx.rate)
+        else:
+            if curr == "USD":
+                rates[curr] = 3.3
+            elif curr == "EUR":
+                rates[curr] = 3.6
+            elif curr == "RUB":
+                rates[curr] = 0.035
+    return rates
+
+
 @router.get("/positions", dependencies=[Depends(RequireFeature("access_portfolio"))])
 async def api_list_positions(user_id: int = Depends(require_user_id)):
     uid = user_id
@@ -218,10 +235,12 @@ async def api_portfolio_plan(user_id: int = Depends(require_user_id)):
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
         positions = await list_positions(session, uid)
+        fx_rates = await _get_fx_rates(session)
     if not positions:
         return {"mode": "empty", "max_drift_observed": 0.0, "estimated_cost": 0.0, "actions": []}
     bonds = await _all_bonds()
-    total = total_value(positions) or prefs.initial_capital
+    bonds_by_id = {b.internal_id: b for b in bonds}
+    total = total_value(positions, bonds_by_id, fx_rates) or prefs.initial_capital
     plan = build_plan(bonds=bonds, prefs=prefs, current_positions=positions, current_total=total)
     if plan is None:
         return {
@@ -289,7 +308,9 @@ async def api_portfolio_income(
                 "price": b.price if b else None,
             }
         )
-    result = portfolio_income(holdings, horizon_months=horizon_months)
+    async with session_scope() as session:
+        fx_rates = await _get_fx_rates(session)
+    result = portfolio_income(holdings, horizon_months=horizon_months, fx_rates=fx_rates)
     result["mode"] = "portfolio"
     return result
 
@@ -306,6 +327,7 @@ async def api_portfolio(user_id: int = Depends(require_user_id)):
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
         positions = await list_positions(session, uid)
+        fx_rates = await _get_fx_rates(session)
     bonds = await _all_bonds()
     bonds_by_id = {b.internal_id: b for b in bonds}
 
@@ -327,7 +349,7 @@ async def api_portfolio(user_id: int = Depends(require_user_id)):
 
     held = [b for b in bonds if b.internal_id in {p.internal_id for p in positions}]
     alloc = allocate(held, prefs, top_n=max(len(held), 1))
-    total = total_value(positions)
+    total = total_value(positions, bonds_by_id, fx_rates)
     holdings = []
     for p in positions:
         b = bonds_by_id.get(p.internal_id)
@@ -479,17 +501,20 @@ async def api_build_plan(
     bonds = await _all_bonds()
     async with session_scope() as session:
         prefs = await get_preferences(session, uid)
+        fx_rates = await _get_fx_rates(session)
+
+    bonds_by_id = {b.internal_id: b for b in bonds}
 
     if req.positions:
         current = [
             type("Pos", (), {"internal_id": p["internal_id"], "amount": Decimal(str(p["amount"]))})
             for p in req.positions
         ]
-        total = sum((p.amount for p in current), start=Decimal("0"))
+        total = total_value(current, bonds_by_id, fx_rates)
     else:
         async with session_scope() as session:
             current = await list_positions(session, uid)
-        total = total_value(current) or prefs.initial_capital
+        total = total_value(current, bonds_by_id, fx_rates) or prefs.initial_capital
 
     if not current:
         return {"mode": "empty", "max_drift_observed": 0.0, "estimated_cost": 0.0, "actions": []}

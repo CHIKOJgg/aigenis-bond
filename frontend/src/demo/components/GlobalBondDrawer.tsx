@@ -3,9 +3,12 @@ import { fetchLiveBond } from '../live-demo-api';
 import { bondDrawerStore, useOpenBond } from '../drawer-store';
 import {
   scoreFromLiveBond,
+  getAllBonds,
+  getScore,
+  getExplanation,
 } from '../demo-api';
 import BondDetailDrawer from './BondDetailDrawer';
-import type { LiveBondDetail, DemoBond, DemoScore } from '../types';
+import type { LiveBondDetail, LiveExplanation, DemoBond, DemoScore } from '../types';
 
 interface State {
   bond: DemoBond | null;
@@ -38,7 +41,33 @@ export default function GlobalBondDrawer() {
         setState({ bond: detail, score, detail, loading: false, error: false });
       } catch {
         if (cancelled) return;
-        setState({ bond: null, score: undefined, detail: null, loading: false, error: true });
+        const fallbackBond = getAllBonds().find((b) => b.internal_id === bondId);
+        if (fallbackBond) {
+          const fallbackScore = getScore(bondId);
+          const fallbackExpl = getExplanation(bondId);
+          const detailExpl: LiveExplanation | undefined = fallbackExpl ? {
+            verdict: fallbackExpl.verdict ?? '',
+            summary: fallbackExpl.summary ?? '',
+            strengths: fallbackExpl.strengths ?? [],
+            weaknesses: fallbackExpl.weaknesses ?? [],
+            factors: (fallbackExpl.factors || []).map((f) => ({
+              component: f.label,
+              label: f.label,
+              points: 0,
+              impact: f.direction,
+              detail: f.plainText,
+            })),
+          } : undefined;
+          setState({
+            bond: fallbackBond,
+            score: fallbackScore,
+            detail: { ...fallbackBond, explanation: detailExpl, history: [], coupon_schedule: null },
+            loading: false,
+            error: false,
+          });
+        } else {
+          setState({ bond: null, score: undefined, detail: null, loading: false, error: true });
+        }
       } finally {
         if (!cancelled) clearTimeout(timeout);
       }

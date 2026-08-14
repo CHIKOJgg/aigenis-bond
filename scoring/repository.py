@@ -64,14 +64,35 @@ async def count_scores(session: AsyncSession) -> int:
 
 async def recompute_all(session: AsyncSession) -> int:
     """Пересчитать Score для всех облигаций в БД."""
+    from datetime import date
+
+    from desk.ytm import to_price_pct, ytm_from_price
+
     result = await session.execute(select(BondORM))
     bonds = list(result.scalars().all())
     scores: list[BondScore] = []
     for b in bonds:
+        ytm = float(b.yield_to_maturity) if b.yield_to_maturity is not None and float(b.yield_to_maturity) > 0 else None
+        if ytm is None and b.price is not None and b.coupon_rate is not None and b.maturity_date is not None:
+            try:
+                price_pct = to_price_pct(b.price, b.nominal)
+                if price_pct is not None:
+                    solved = ytm_from_price(
+                        price_pct=price_pct,
+                        coupon_rate_pct=float(b.coupon_rate),
+                        coupon_frequency=int(b.coupon_frequency or 2),
+                        maturity=b.maturity_date,
+                        asof=date.today(),
+                    )
+                    if solved is not None and solved > 0:
+                        ytm = round(solved, 4)
+                        b.yield_to_maturity = Decimal(str(ytm))
+            except Exception:
+                pass
         scores.append(
             score_bond(
                 internal_id=b.internal_id,
-                yield_to_maturity=b.yield_to_maturity,
+                yield_to_maturity=ytm,
                 currency=b.currency,
                 maturity_date=b.maturity_date,
                 status=b.status,
@@ -83,6 +104,7 @@ async def recompute_all(session: AsyncSession) -> int:
             )
         )
     await upsert_scores_batch(session, scores)
+    await session.commit()
     return len(scores)
 
 

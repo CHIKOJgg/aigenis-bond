@@ -144,6 +144,7 @@ def portfolio_income(
     *,
     from_date: date | None = None,
     horizon_months: int = 12,
+    fx_rates: dict[str, float] | None = None,
 ) -> dict:
     """Aggregate a coupon-income calendar across holdings.
 
@@ -160,16 +161,25 @@ def portfolio_income(
     all_coupons: list[CashFlow] = []
     per_bond: list[dict] = []
 
+    currency_map: dict[str, str] = {}
     for h in holdings:
         amount = Decimal(str(h["amount"]))
         coupon_rate = h.get("coupon_rate")
         coupon_rate = Decimal(str(coupon_rate)) if coupon_rate is not None else None
         price = h.get("price")
         price = Decimal(str(price)) if price is not None else None
-        total_invested += amount
+
+        currency_map[str(h["internal_id"])] = str(h.get("currency", "")).upper()
+
+        rate = Decimal("1.0")
+        if fx_rates:
+            curr = str(h.get("currency", "")).upper()
+            rate = Decimal(str(fx_rates.get(curr, 1.0)))
+
+        total_invested += amount * rate
 
         ann = annual_income(amount_invested=amount, coupon_rate=coupon_rate, price=price)
-        total_annual += ann
+        total_annual += ann * rate
 
         flows = bond_cashflows(
             internal_id=str(h["internal_id"]),
@@ -202,17 +212,21 @@ def portfolio_income(
     all_coupons.sort(key=lambda f: f.date)
     next_payment = all_coupons[0].as_dict() if all_coupons else None
 
-    horizon_income = sum(
-        (f.amount for f in all_coupons if from_date < f.date <= horizon_end),
-        start=Decimal("0.00"),
-    )
+    horizon_income = Decimal("0.00")
+    for f in all_coupons:
+        if from_date < f.date <= horizon_end:
+            curr = currency_map.get(f.internal_id, "")
+            rate = Decimal(str(fx_rates.get(curr, 1.0))) if fx_rates else Decimal("1.0")
+            horizon_income += f.amount * rate
 
     calendar_map: dict[str, Decimal] = {}
     for f in all_coupons:
         if f.date > horizon_end:
             continue
+        curr = currency_map.get(f.internal_id, "")
+        rate = Decimal(str(fx_rates.get(curr, 1.0))) if fx_rates else Decimal("1.0")
         key = f"{f.date.year}-{f.date.month:02d}"
-        calendar_map[key] = calendar_map.get(key, Decimal("0.00")) + f.amount
+        calendar_map[key] = calendar_map.get(key, Decimal("0.00")) + f.amount * rate
     monthly_calendar = [
         {"month": k, "amount": float(v.quantize(_Q))} for k, v in sorted(calendar_map.items())
     ]

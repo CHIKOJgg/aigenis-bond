@@ -42,11 +42,21 @@ def _version_from_path(path: str | None) -> str | None:
 
 
 def _decide(score: float, predicted_return: float | None) -> Decision:
+    """Map a score + regressor forecast to a decision.
+
+    ``predicted_return`` = predicted YTM − current YTM. A negative value means
+    the yield is expected to fall (price to rise) — the same sign convention as
+    the classifier labels in :func:`_outcome_label`, so the regressor-only and
+    classifier paths agree: yield falling → buy, yield rising sharply → wait.
+    """
     if score < 40:
         return "avoid"
-    if predicted_return is not None and predicted_return < 0:
-        return "wait"
-    if score >= 75 and (predicted_return is None or predicted_return >= 2):
+    if predicted_return is not None:
+        if predicted_return <= -0.25:
+            return "buy"
+        if predicted_return >= 0.5:
+            return "wait"
+    if score >= 75:
         return "buy"
     return "hold"
 

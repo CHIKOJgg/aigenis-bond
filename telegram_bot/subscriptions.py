@@ -219,24 +219,26 @@ async def set_tier_by_telegram(
         user.subscription_tier = tier
         if is_paid(tier) and duration_days:
             base = _as_aware(user.subscription_expires_at)
-            # Extend from the later of "now" or an existing unexpired window,
-            # regardless of which channel (Stars/YooKassa) established it.
-            start = base if base and base > _now() else _now()
-            new_expiry = start + timedelta(days=duration_days)
+            now = _now()
             # The channel that governs the LATER expiry owns the record: a
             # Stars purchase must not overwrite a YooKassa-paid window that
-            # still runs past the new one — otherwise a Stars refund would
-            # revoke YooKassa-paid days. Keep both the channel AND the expiry
-            # of the longer window intact.
+            # still runs past the new purchase window — otherwise a Stars
+            # refund would revoke YooKassa-paid days. When the existing
+            # window outlasts now + duration_days, keep the existing channel
+            # and its expiry intact (only the tier and charge are updated).
             if (
                 user.payment_channel
                 and user.payment_channel != "stars"
-                and (base is None or base >= new_expiry)
+                and base is not None
+                and base > now + timedelta(days=duration_days)
             ):
                 pass  # keep the existing (longer) channel and its expiry
             else:
+                # Extend from the later of "now" or an existing unexpired
+                # window, regardless of which channel established it.
+                start = base if base and base > now else now
                 user.payment_channel = "stars"
-                user.subscription_expires_at = new_expiry
+                user.subscription_expires_at = start + timedelta(days=duration_days)
         elif not is_paid(tier):
             user.subscription_expires_at = None
             user.payment_channel = None

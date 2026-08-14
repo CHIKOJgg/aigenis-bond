@@ -33,7 +33,7 @@ export default function BondCalculator() {
     const pd = Number(periodDays) || 1;
     const accrued = (F * c) / f * (Number(accruedDays) / pd);
     const dirty = clean + accrued;
-    const currentYield = cf * f / clean;
+    const currentYield = clean > 0 ? (cf * f) / clean : 0;
     return { clean, dirty, accrued, currentYield };
   }, [face, coupon, freq, ytm, years, accruedDays, periodDays]);
 

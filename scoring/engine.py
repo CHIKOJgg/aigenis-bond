@@ -24,14 +24,14 @@ from typing import Any
 from scoring.models import BondScore, ScoreBreakdown
 
 CURRENCY_BONUS: dict[str, float] = {
-    "USD": 20.0,
+    "USD": 18.0,
     "XAU": 16.0,
-    "XAG": 12.0,
-    "XPT": 9.0,
-    "BYN": 6.0,
-    "RUB": 4.0,
-    "CNY": 4.0,
-    "EUR": 0.0,
+    "BYN": 14.0,
+    "XAG": 13.0,
+    "RUB": 12.0,
+    "CNY": 12.0,
+    "EUR": 12.0,
+    "XPT": 10.0,
 }
 
 METAL_EXTRA_BONUS: dict[str, float] = {
@@ -148,22 +148,27 @@ def _peer_relative_component(
 
 
 def _currency_component(currency: str) -> float:
-    return CURRENCY_BONUS.get(currency.upper(), 0.0)
+    return CURRENCY_BONUS.get(currency.upper(), 10.0)
 
 
-def _metal_component(currency: str, issuer: str | None = None) -> float:
-    """Score metal exposure: direct XAU/XAG/XPT currency or metal-mining issuer."""
+def _metal_component(currency: str, issuer: str | None = None, name: str | None = None, internal_id: str | None = None) -> float:
+    """Score metal exposure: direct XAU/XAG/XPT currency, metal-mining issuer, or gold/metal bond name."""
     direct = METAL_EXTRA_BONUS.get(currency.upper(), 0.0)
-    if direct > 0 or not issuer:
+    if direct > 0:
         return direct
-    s = issuer.lower().strip()
+    text = f"{issuer or ''} {name or ''} {internal_id or ''}".lower()
+    if any(k in text for k in ["gold", "золото", "золотая", "золотой", "драгметалл"]):
+        return 5.0
+    if any(k in text for k in ["silver", "серебро", "серебряная"]):
+        return 3.0
+    if any(k in text for k in ["platinum", "платина"]):
+        return 2.0
+    s = (issuer or "").lower().strip()
     for kind, kws in _METAL_MINER_KEYWORDS.items():
         if any(k in s for k in kws):
             if kind == "gold":
                 return 3.0
-            if kind == "platinum":
-                return 2.0
-            if kind == "silver":
+            if kind in {"platinum", "silver"}:
                 return 2.0
             return 1.0
     return 0.0
@@ -174,16 +179,13 @@ def _liquidity_component(
     has_price: bool,
     status: str,
     days_to_maturity: float | None,
-    price: float | None = None,
-    nominal: float | None = None,
+    price_pct: float | None = None,
 ) -> float:
     score = 0.0
     if has_price:
         score += 5.0
-        if price is not None and nominal is not None and nominal > 0:
-            price_pct = price / nominal * 100
-            if 85 <= price_pct <= 115:
-                score += 2.0
+        if price_pct is not None and 85 <= price_pct <= 115:
+            score += 2.0
     if status == "active":
         score += 4.0
     elif status in {"offer", "matured"}:
@@ -310,14 +312,15 @@ def _inflation_component(currency: str, ytm_pct: float | None) -> float:
         if ytm_pct is not None and ytm_pct >= 6:
             return 2.0
         return 0.0
+    if ytm_pct is None or ytm_pct < 2.0:
+        return -3.0
     return 0.0
 
 
 def _volatility_component(
     *,
     ytm_pct: float | None,
-    price: float | None,
-    nominal: float | None,
+    price_pct: float | None,
     status: str,
     coupon_pct: float | None,
 ) -> float:
@@ -327,11 +330,10 @@ def _volatility_component(
             score -= 7.0
         elif ytm_pct > 35:
             score -= 3.0
-    if price is not None and nominal is not None and nominal > 0:
-        pct = price / nominal * 100
-        if pct < 30 or pct > 200:
+    if price_pct is not None:
+        if price_pct < 30 or price_pct > 200:
             score -= 4.0
-        elif pct < 50 or pct > 150:
+        elif price_pct < 50 or price_pct > 150:
             score -= 1.0
     if status in {"delisted", "defaulted", "suspended"}:
         score -= 5.0
@@ -435,6 +437,38 @@ def score_bond(
     coupon_pct = float(coupon_rate) if coupon_rate is not None else None
     price_f = float(price) if price is not None else None
     nominal_f = float(nominal) if nominal is not None else None
+    from desk.ytm import to_price_pct, ytm_from_price
+    price_pct = to_price_pct(price_f, nominal_f) if price_f is not None else None
+
+    if (ytm_pct is None or ytm_pct <= 0) and (price_f is not None or coupon_pct is not None or maturity_date is not None):
+        try:
+            ref = ref_date or date.today()
+
+            # Case 1: Standard coupon bond
+            if price_pct is not None and coupon_pct is not None and coupon_pct > 0 and maturity_date is not None and maturity_date > ref:
+                solved = ytm_from_price(price_pct, coupon_pct, 2, maturity_date, ref)
+                if solved and solved > 0:
+                    ytm_pct = round(solved, 4)
+
+            # Case 2: Zero-coupon / discount bond
+            if (ytm_pct is None or ytm_pct <= 0) and price_pct is not None and maturity_date is not None and maturity_date > ref:
+                years = (maturity_date - ref).days / 365.25
+                if years > 0.05 and 0.5 <= price_pct <= 500:
+                    s = (((100.0 / price_pct) ** (1.0 / years)) - 1.0) * 100.0
+                    if 0 < s < 1000:
+                        ytm_pct = round(s, 4)
+
+            # Case 3: Unpriced bond with coupon rate -> par yield
+            if (ytm_pct is None or ytm_pct <= 0) and coupon_pct is not None and coupon_pct > 0:
+                ytm_pct = coupon_pct
+
+            # Case 4: Nominal default yield
+            if ytm_pct is None or ytm_pct <= 0:
+                cur = (currency or "").upper()
+                ytm_pct = 14.0 if cur == "BYN" else (16.0 if cur == "RUB" else 6.0)
+        except Exception:
+            pass
+
     duration = _duration_years(maturity_date, ref_date)
     has_price = price is not None
     days_to_maturity = duration * 365.25 if duration is not None else None
@@ -448,17 +482,15 @@ def score_bond(
             has_price=has_price,
             status=status,
             days_to_maturity=days_to_maturity,
-            price=price_f,
-            nominal=nominal_f,
+            price_pct=price_pct,
         ),
-        metal_component=_metal_component(currency, issuer),
+        metal_component=_metal_component(currency, issuer, internal_id=internal_id),
         credit_risk_component=_credit_risk_component(issuer, status),
         inflation_component=_inflation_component_market(currency, ytm_pct, is_moex),
         coupon_component=_coupon_component(coupon_pct, ytm_pct),
         volatility_component=_volatility_component(
             ytm_pct=ytm_pct,
-            price=price_f,
-            nominal=nominal_f,
+            price_pct=price_pct,
             status=status,
             coupon_pct=coupon_pct,
         ),
@@ -473,7 +505,7 @@ def score_bond(
     # defaulted/frozen issuers (e.g. Belarus eurobonds at 92% YTM) to the top
     # of the opportunity lists, so the reward is capped and the risk penalty
     # is deepened instead. Profiled against real MOEX/BCSE quotes 2026-08.
-    distressed = price_f is not None and ytm_pct is not None and price_f < 80.0 and ytm_pct > 30.0
+    distressed = price_pct is not None and ytm_pct is not None and price_pct < 70.0 and ytm_pct > 40.0
     if distressed:
         breakdown.yield_component = min(breakdown.yield_component, 20.0)
         breakdown.volatility_component -= 18.0

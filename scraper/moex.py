@@ -370,7 +370,7 @@ class MoexClient:
                 for board in boards:
                     url = (
                         f"{MOEX_ISS_BASE}/history/engines/stock/markets/bonds/boards/{board}"
-                        f"/securities/{secid}/candles.json?iss.meta=off&interval=24"
+                        f"/securities/{secid}.json?iss.meta=off"
                     )
                     try:
                         resp = await client.get(url)
@@ -378,11 +378,11 @@ class MoexClient:
                         payload = resp.json()
                     except Exception:
                         continue
-                    candles = _parse_iss_rows(payload, "history")
-                    for c in candles:
-                        d = _to_date(c.get("TRADEDATE"))
-                        close = _to_dec(c.get("CLOSE"))
-                        ytm = _to_dec(c.get("YIELDCLOSE"))
+                    rows = _parse_iss_rows(payload, "history")
+                    for c in rows:
+                        d = _to_date(c.get("TRADEDATE") or c.get("begin"))
+                        close = _to_dec(c.get("CLOSE") or c.get("LEGALCLOSEPRICE") or c.get("CLOSEPRICE"))
+                        ytm = _to_dec(c.get("YIELDCLOSE") or c.get("YIELD") or c.get("WAPREC"))
                         if d and (close is not None or ytm is not None):
                             try:
                                 history.append(

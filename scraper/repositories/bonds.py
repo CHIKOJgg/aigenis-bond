@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from scraper.db import upsert_row
@@ -154,13 +154,16 @@ async def upsert_bonds_batch(session: AsyncSession, bonds: Iterable[Bond]) -> in
 
 
 async def update_bond_name(session: AsyncSession, internal_id: str, name: str) -> None:
-    """Обновить поле name для облигации (используется при обогащении из XLSX)."""
-    await upsert_row(
-        session,
-        BondORM,
-        index_elements=["internal_id"],
-        values={"internal_id": internal_id, "name": name},
-        set_columns=["name"],
+    """Обновить поле name для облигации (используется при обогащении из XLSX).
+
+    Update-only: никогда не создаёт строку частично. INSERT с одним полем
+    нарушал NOT NULL на обязательных колонках (currency и др.), когда бонд
+    ещё не был вставлен полным пайплайном (или шёл параллельный прогон).
+    """
+    await session.execute(
+        update(BondORM)
+        .where(BondORM.internal_id == internal_id)
+        .values(name=name)
     )
 
 

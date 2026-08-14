@@ -396,7 +396,7 @@ export interface PortfolioIncome {
   total_invested: number;
   annual_income: number;
   yield_on_cost: number;
-  next_payment: string | null;
+  next_payment: { date: string; amount: number; kind: string; internal_id: string } | string | null;
   monthly_calendar: unknown[];
   per_bond: unknown[];
 }

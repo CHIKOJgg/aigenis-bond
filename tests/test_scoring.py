@@ -23,19 +23,19 @@ from scoring.models import BondScore
 
 
 def test_currency_component_known_values():
-    assert _currency_component("USD") == 20.0
+    assert _currency_component("USD") == 18.0
     assert _currency_component("XAU") == 16.0
-    assert _currency_component("XAG") == 12.0
-    assert _currency_component("XPT") == 9.0
-    assert _currency_component("BYN") == 6.0
-    assert _currency_component("RUB") == 4.0
-    assert _currency_component("CNY") == 4.0
-    assert _currency_component("EUR") == 0.0
-    assert _currency_component("ZZZ") == 0.0
+    assert _currency_component("XAG") == 13.0
+    assert _currency_component("XPT") == 10.0
+    assert _currency_component("BYN") == 14.0
+    assert _currency_component("RUB") == 12.0
+    assert _currency_component("CNY") == 12.0
+    assert _currency_component("EUR") == 12.0
+    assert _currency_component("ZZZ") == 10.0
 
 
 def test_currency_component_case_insensitive():
-    assert _currency_component("usd") == 20.0
+    assert _currency_component("usd") == 18.0
 
 
 def test_yield_component_bounds():
@@ -89,10 +89,10 @@ def test_liquidity_component_combinations():
 
 def test_liquidity_component_price_nominal():
     good = _liquidity_component(
-        has_price=True, status="active", days_to_maturity=200, price=100.0, nominal=100.0
+        has_price=True, status="active", days_to_maturity=200, price_pct=100.0
     )
     bad = _liquidity_component(
-        has_price=True, status="active", days_to_maturity=200, price=20.0, nominal=100.0
+        has_price=True, status="active", days_to_maturity=200, price_pct=20.0
     )
     assert good > bad
 
@@ -144,15 +144,15 @@ def test_inflation_component():
 
 def test_volatility_component_penalties():
     extreme = _volatility_component(
-        ytm_pct=80, price=None, nominal=None, status="active", coupon_pct=5.0
+        ytm_pct=80, price_pct=None, status="active", coupon_pct=5.0
     )
     assert extreme < 0
     normal = _volatility_component(
-        ytm_pct=10, price=100.0, nominal=100.0, status="active", coupon_pct=5.0
+        ytm_pct=10, price_pct=100.0, status="active", coupon_pct=5.0
     )
     assert normal == 0.0
     extreme_price = _volatility_component(
-        ytm_pct=10, price=10.0, nominal=100.0, status="active", coupon_pct=5.0
+        ytm_pct=10, price_pct=10.0, status="active", coupon_pct=5.0
     )
     assert extreme_price < 0
 
@@ -215,7 +215,7 @@ def test_distressed_bond_yield_reward_is_capped():
         maturity_date=date(2027, 6, 29),
         status="active",
         issuer="Republic of Belarus",
-        price=71.0,
+        price=69.0,
         nominal=100.0,
         coupon_rate=7.625,
     )
@@ -336,7 +336,7 @@ def test_rub_scoring():
         nominal=100.0,
         coupon_rate=10.0,
     )
-    assert s.breakdown.currency_component == 4.0
+    assert s.breakdown.currency_component == 12.0
     assert s.breakdown.inflation_component == 4.0
     assert s.score > 0
 
@@ -353,7 +353,7 @@ def test_cny_scoring():
         nominal=100.0,
         coupon_rate=5.0,
     )
-    assert s.breakdown.currency_component == 4.0
+    assert s.breakdown.currency_component == 12.0
     assert s.breakdown.inflation_component == 2.0
 
 
@@ -448,7 +448,7 @@ def test_volatility_component_price_band():
 
     assert (
         _volatility_component(
-            ytm_pct=None, price=40.0, nominal=100.0, status="active", coupon_pct=None
+            ytm_pct=None, price_pct=40.0, status="active", coupon_pct=None
         )
         == -1.0
     )
@@ -472,3 +472,25 @@ def test_efficiency_ratio_zero():
 
     b = ScoreBreakdown()
     assert _compute_efficiency_ratio(b) == 0.0
+
+
+def test_distressed_debt_scoring_with_large_nominal():
+    from scoring.engine import score_bond
+
+    # Nominal 1000 RUB, price 600 RUB (60% of face), YTM 45% -> distressed!
+    s = score_bond(
+        internal_id="DIST-1000",
+        yield_to_maturity=45.0,
+        currency="RUB",
+        maturity_date=date(2027, 1, 1),
+        status="active",
+        issuer="Corp",
+        price=600.0,
+        nominal=1000.0,
+        coupon_rate=10.0,
+        market="moex",
+    )
+    # Yield component should be capped at 20.0 due to distress penalty
+    assert s.breakdown.yield_component <= 20.0
+    assert s.breakdown.volatility_component <= -18.0
+

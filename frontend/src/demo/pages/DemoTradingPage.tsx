@@ -2,6 +2,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import MarketTable from '../components/MarketTable';
 import { fetchLiveMarket } from '../live-demo-api';
+import { getAllBonds, getBonds } from '../demo-api';
 import { bondDrawerStore } from '../drawer-store';
 import type { DemoBond } from '../types';
 
@@ -13,7 +14,6 @@ export default function DemoTradingPage() {
   const market = searchParams.get('market') || 'ALL';
   const [bonds, setBonds] = useState<DemoBond[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [source, setSource] = useState<{ name: string; asOf: string | null } | null>(null);
 
   const handleMarketChange = (m: string) => {
@@ -27,7 +27,6 @@ export default function DemoTradingPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError('');
     setSource(null);
     setBonds([]);
 
@@ -39,9 +38,13 @@ export default function DemoTradingPage() {
         if (cancelled) return;
         const live = snaps.filter((s): s is NonNullable<typeof s> => s !== null);
         const merged = live.flatMap((s) => s.bonds);
-        setBonds(merged);
-        setSource({ name: live[0]?.source ?? 'Aigenis', asOf: live[0]?.as_of ?? null });
-        if (!live.length) setError('Live-источник временно не вернул данные');
+        if (live.length) {
+          setBonds(merged);
+          setSource({ name: live[0]?.source ?? 'Aigenis', asOf: live[0]?.as_of ?? null });
+        } else {
+          setBonds(getAllBonds());
+          setSource({ name: 'Aigenis (демо-копия)', asOf: null });
+        }
         setLoading(false);
       });
     } else {
@@ -54,7 +57,8 @@ export default function DemoTradingPage() {
         })
         .catch(() => {
           if (cancelled) return;
-          setError('Не удалось получить актуальные данные');
+          setBonds(getBonds(market.toUpperCase()));
+          setSource({ name: 'Aigenis (демо-копия)', asOf: null });
           setLoading(false);
         });
     }
@@ -120,7 +124,6 @@ export default function DemoTradingPage() {
         </div>
       </div>
 
-      {error && <div style={{ color: '#b42318', marginBottom: 12 }}>{error}</div>}
       {source && (
         <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>
           Источник: {source.name}
