@@ -33,6 +33,7 @@ export interface DemoBond {
   accrued_interest?: number | null;
   indexation_currency?: string | null;
   exchange_rate_on_start?: number | null;
+  coupon_schedule?: Record<string, unknown> | null;
 }
 
 export interface IssuerRisk {

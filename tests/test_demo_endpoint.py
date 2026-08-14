@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -428,6 +428,391 @@ def test_demo_portfolio_optimize_market_isolation_bcse_and_moex() -> None:
         assert "moex" not in alloc["internal_id"].lower()
         assert "южурал" not in alloc["name"].lower()
         assert "селигдар" not in alloc["name"].lower()
+
+
+def test_demo_portfolio_optimize_full_path_buys_lots_in_currency() -> None:
+    # Раньше оптимизатор в тестах всегда возвращался на "нет ликвидных бумаг":
+    # ни одна сидируемая облигация не имела одновременно цены и доходности.
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-full-path",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.5"),
+        fetched_at=datetime.now(UTC),
+    )
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 50000.0,
+            "strategy": "Balanced",
+            "currency": "BYN",
+            "top_n": 5,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["allocations"]) > 0
+    assert any(a["internal_id"] == "opt-full-path" for a in body["allocations"])
+    for item in body["allocations"]:
+        assert item["currency"] == "BYN"
+        assert item["lots"] >= 1
+        assert item["amount"] <= 50000.0
+        assert item["weight_pct"] > 0
+    assert len(body["order_tickets"]) == len(body["allocations"])
+    for ticket in body["order_tickets"]:
+        assert ticket["action"] == "BUY"
+        assert ticket["currency"] == "BYN"
+
+
+def test_demo_portfolio_optimize_moex_propagates_rub() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-moex-rub",
+        market="moex",
+        currency="RUB",
+        nominal=Decimal("1000"),
+        price=Decimal("985"),
+        yield_to_maturity=Decimal("8.5"),
+        fetched_at=datetime.now(UTC),
+        is_government=False,
+    )
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={
+            "capital": 25000.0,
+            "strategy": "Balanced",
+            "currency": "RUB",
+            "market": "moex",
+            "top_n": 5,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["allocations"]) > 0
+    for item in body["allocations"]:
+        assert item["currency"] == "RUB"
+        assert item["amount"] <= 25000.0
+
+
+def test_demo_portfolio_optimize_zero_capital_warns() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-zero-cap",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.5"),
+        fetched_at=datetime.now(UTC),
+    )
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={"capital": 0.0, "strategy": "Balanced", "currency": "BYN"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["allocations"] == []
+    assert body["order_tickets"] == []
+    assert "больше 0" in body["warning"]
+
+
+def test_demo_portfolio_optimize_capital_below_one_lot_warns() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-below-lot",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.5"),
+        fetched_at=datetime.now(UTC),
+    )
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={"capital": 4.0, "strategy": "Balanced", "currency": "BYN"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["allocations"] == []
+    assert "меньше минимальной стоимости" in body["warning"]
+
+
+# --- pure-unit проверки _build_impact на подменённых фикстурах ---
+
+
+def test_demo_impact_missing_fixture_files_fall_back_gracefully(monkeypatch) -> None:
+    from pathlib import Path
+
+    import api.demo as demo_mod
+
+    monkeypatch.setattr(demo_mod, "DATA_ROOT", Path("C:/definitely-not-a-real-demo-data"))
+    assert demo_mod._load_manifest() == {}
+    assert demo_mod._load_json("portfolio_templates.json") == []
+
+    # Без файлов с бумагами портфель-импакт корректно отвечает 404.
+    resp = client.post(
+        "/api/v1/demo/portfolio-impact",
+        json={"bond_id": "demo-bond-001", "allocation_pct": 10},
+    )
+    assert resp.status_code == 404
+
+
+def test_demo_impact_fallback_template_and_long_duration_borderline(monkeypatch) -> None:
+    import api.demo as demo_mod
+
+    _orig_load_json = demo_mod._load_json
+
+    def fake_load_json(name: str):
+        if name == "portfolio_templates.json":
+            # Шаблон с неизвестной структурой -> дефолтные бенчмарки 9.5%/2.4 года.
+            return [{"mystery": True}]
+        return _orig_load_json(name)
+
+    monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
+    bond = next(b for b in demo_mod._load_json("bonds_bcse.json") if b["internal_id"] == "demo-bond-001")
+    req = demo_mod.PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10)
+    res = demo_mod._build_impact(req)
+    assert res.before.expected_yield_pct == 9.5
+    assert res.before.concentration_by_issuer == {"demo": 100.0}
+    # Дюрация бумаги из фикстуры мала -> допустимо.
+    assert res.risk_profile_fit in {"ok", "borderline"}
+
+    # Долгая бумага (6 лет) -> borderline-предупреждение.
+    def fake_load_json_long(name: str):
+        if name == "portfolio_templates.json":
+            return [{"mystery": True}]
+        if name == "bonds_bcse.json":
+            return [{**bond, "duration_years": 6.0}]
+        return _orig_load_json(name)
+
+    monkeypatch.setattr(demo_mod, "_load_json", fake_load_json_long)
+    res = demo_mod._build_impact(req)
+    assert res.risk_profile_fit == "borderline"
+    assert "Дюрация" in res.concentration_warning
+
+
+def test_demo_impact_concentration_off_when_issuer_exceeds_limit(monkeypatch) -> None:
+    import api.demo as demo_mod
+
+    issuer = "Министерство финансов Республики Беларусь"
+    _orig_load_json = demo_mod._load_json
+
+    def fake_load_json(name: str):
+        if name == "portfolio_templates.json":
+            return {
+                "moderate_byn": {
+                    "benchmarks": {
+                        "expected_yield_pct": 10.0,
+                        "duration_years": 2.5,
+                        "issuer_concentration_max_pct": 25,
+                    },
+                    "positions": [{"name": issuer, "weight_pct": 90.0}],
+                }
+            }
+        if name == "bonds_bcse.json":
+            return [{"internal_id": "demo-bond-001", "issuer": issuer, "yield_to_maturity": 13.38}]
+        return _orig_load_json(name)
+
+    monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
+    req = demo_mod.PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10)
+    res = demo_mod._build_impact(req)
+    assert res.before.concentration_by_issuer == {issuer: 90.0}
+    assert res.risk_profile_fit == "off"
+    assert "превысит 25%" in res.concentration_warning
+
+
+def test_demo_impact_ok_when_concentration_stays_within_limit(monkeypatch) -> None:
+    import api.demo as demo_mod
+
+    _orig_load_json = demo_mod._load_json
+
+    def fake_load_json(name: str):
+        if name == "portfolio_templates.json":
+            return {
+                "moderate_byn": {
+                    "benchmarks": {
+                        "expected_yield_pct": 10.0,
+                        "duration_years": 2.5,
+                        "issuer_concentration_max_pct": 25,
+                    },
+                    "positions": [{"name": "Беларусбанк", "weight_pct": 10.0}],
+                }
+            }
+        if name == "bonds_bcse.json":
+            return [{"internal_id": "demo-bond-001", "issuer": "Газпром нефть", "yield_to_maturity": 12.0}]
+        return _orig_load_json(name)
+
+    monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
+    req = demo_mod.PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10)
+    res = demo_mod._build_impact(req)
+    assert res.risk_profile_fit == "ok"
+    assert res.before.concentration_by_issuer == {"Беларусбанк": 10.0}
+    assert "допустимо" in res.concentration_warning
+
+
+def test_demo_impact_marina_legacy_template_key_still_works(monkeypatch) -> None:
+    import api.demo as demo_mod
+
+    _orig_load_json = demo_mod._load_json
+
+    def fake_load_json(name: str):
+        if name == "portfolio_templates.json":
+            return {
+                "marina_50000_byn": {
+                    "benchmarks": {"expected_yield_pct": 11.0, "duration_years": 2.2},
+                    "positions": [],
+                }
+            }
+        if name == "bonds_bcse.json":
+            return [{"internal_id": "demo-bond-001", "issuer": "Газпром нефть", "yield_to_maturity": 12.0}]
+        return _orig_load_json(name)
+
+    monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
+    req = demo_mod.PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10)
+    res = demo_mod._build_impact(req)
+    assert res.before.expected_yield_pct == 11.0
+    assert res.before.duration_years == 2.2
+
+
+# --- оптимизатор: распределение лотов и аварийные ветки ---
+
+
+def test_demo_portfolio_optimize_allocate_failure_falls_back_to_greedy(monkeypatch) -> None:
+    import portfolio.optimizer as optimizer_mod
+
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-alloc-fail",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("13.5"),
+        fetched_at=datetime.now(UTC),
+    )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("allocate crashed")
+
+    monkeypatch.setattr(optimizer_mod, "allocate", _boom)
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={"capital": 50000.0, "strategy": "Balanced", "currency": "BYN", "top_n": 1},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    # Без скоринга выбираем по доходности и всё равно покупаем лоты.
+    assert len(body["allocations"]) == 1
+    assert body["allocations"][0]["internal_id"] == "opt-alloc-fail"
+    assert body["allocations"][0]["lots"] >= 1
+
+
+def test_demo_portfolio_optimize_greedy_single_lot_when_shares_round_to_zero() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-lot-a",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.5"),
+        fetched_at=datetime.now(UTC),
+    )
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-lot-b",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.0"),
+        fetched_at=datetime.now(UTC),
+    )
+    # 150 BYN на две бумаги: доля 75 < цены лота 98.5 -> по 0 лотов,
+    # жадный проход докупает 1 лот лучшей бумаги.
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={"capital": 150.0, "strategy": "Balanced", "currency": "BYN", "top_n": 2},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["allocations"]) == 1
+    assert body["allocations"][0]["lots"] == 1
+    assert body["allocations"][0]["amount"] <= 150.0
+
+
+def test_demo_portfolio_optimize_redistributes_remainder_cash() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-rem-a",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.5"),
+        fetched_at=datetime.now(UTC),
+    )
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-rem-b",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.0"),
+        fetched_at=datetime.now(UTC),
+    )
+    # 300 BYN: по 1 лоту каждой (98.5*2=197), остаток 103 >= 98.5 ->
+    # топ-бумага получает ещё один лот.
+    resp = client.post(
+        "/api/v1/demo/portfolio/optimize",
+        json={"capital": 300.0, "strategy": "Balanced", "currency": "BYN", "top_n": 2},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["allocations"]) == 2
+    total_lots = sum(a["lots"] for a in body["allocations"])
+    total_spent = sum(a["amount"] for a in body["allocations"])
+    assert total_lots == 3
+    assert total_spent <= 300.0
+
+
+def test_demo_portfolio_optimize_dollarization_and_metals_on_moex() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="opt-moex-usd",
+        market="moex",
+        currency="USD",
+        nominal=Decimal("1000"),
+        price=Decimal("900"),
+        yield_to_maturity=Decimal("9.0"),
+        fetched_at=datetime.now(UTC),
+        is_government=False,
+    )
+    for strategy in ["Dollarization", "Metals++"]:
+        resp = client.post(
+            "/api/v1/demo/portfolio/optimize",
+            json={
+                "capital": 20000.0,
+                "strategy": strategy,
+                "currency": "USD",
+                "market": "moex",
+                "top_n": 5,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        # USD-бумага попадает в выборку MOEX-ветки обеих стратегий.
+        assert any(a["internal_id"] == "opt-moex-usd" for a in body["allocations"])
+
+
+def test_demo_desk_stress_mixed_market_uses_majority_currency() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="mix-bcse",
+        price=Decimal("98.5"),
+        yield_to_maturity=Decimal("12.5"),
+        fetched_at=datetime.now(UTC),
+    )
+    _run(
+        _seed_bcse_bond,
+        internal_id="mix-moex",
+        market="moex",
+        currency="RUB",
+        nominal=Decimal("1000"),
+        price=Decimal("985"),
+        yield_to_maturity=Decimal("8.5"),
+        fetched_at=datetime.now(UTC),
+        is_government=False,
+    )
+    resp = client.post(
+        "/api/v1/demo/desk/stress",
+        json={"scenario": "parallel_+100bp", "market": "mixed", "capital": 100000.0},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["duration_before"] > 0
+    assert len(body["positions"]) > 0
+    assert body["by_position"] != {}
 
 
 

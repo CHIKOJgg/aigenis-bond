@@ -131,7 +131,15 @@ def test_register_xlsx_names():
 
 @pytest.mark.asyncio
 async def test_upsert_bond_and_queries():
+    from sqlalchemy import delete
+
+    from scraper.orm import BondORM
+
     async with session_scope() as session:
+        # Очистка от остатков других тестов (общая in-memory БД на сессию):
+        # точные списки ниже не должны зависеть от порядка запуска файлов.
+        await session.execute(delete(BondORM))
+        await session.flush()
         await upsert_bond(session, _bond("RB-1", currency="USD"))
         await upsert_bond(session, _bond("RB-2", currency="BYN", yield_to_maturity=Decimal("12")))
         await upsert_bond(session, _bond("RB-3", currency="USD", yield_to_maturity=Decimal("6")))
@@ -216,7 +224,13 @@ async def test_accruals_upsert():
 
 @pytest.mark.asyncio
 async def test_stocks_upsert_and_queries():
+    from sqlalchemy import delete
+
+    from scraper.orm import StockORM
+
     async with session_scope() as session:
+        await session.execute(delete(StockORM))
+        await session.flush()
         await upsert_stock(session, _stock("SBER", board="TQBR", value_traded=Decimal("5000")))
         await upsert_stock(session, _stock("GAZP", board="TQBR", value_traded=Decimal("9000")))
         await upsert_stock(session, _stock("VTBR", board="TQOD", value_traded=Decimal("100")))

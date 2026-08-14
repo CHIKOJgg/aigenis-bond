@@ -6,8 +6,16 @@ export function formatYtm(ytm: number | null | undefined): string {
 
 export function formatDurationYears(val: number | null | undefined): string {
   if (val == null) return '—';
+  // Входное значение может быть выражено и в днях (term_days), и в годах:
+  // значения больше 30 интерпретируются как дни. Для однозначности срока
+  // используйте formatTermDays.
   const years = val > 30 ? val / 365.25 : val;
   return `${years.toFixed(1)} г.`;
+}
+
+export function formatTermDays(days: number | null | undefined): string {
+  if (days == null) return '—';
+  return formatYears(days / 365.25);
 }
 
 export function formatYears(years: number | null | undefined): string {

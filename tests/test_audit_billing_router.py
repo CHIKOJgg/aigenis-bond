@@ -80,12 +80,14 @@ async def _seed_user(
     expires_at: datetime | None = None,
     trial_end: datetime | None = None,
 ) -> int:
-    now = datetime.now(UTC)
+    # Use the reminders module clock: when reminder tests freeze "now" via
+    # monkeypatch, seeded expiries stay relative to the frozen instant.
+    now = reminders_mod.datetime.now(UTC)
     async with session_scope() as s:
         s.add(
             UserORM(
                 id=uid,
-                email=email or f"br{uid}@t.co",
+                email=email if email is not None else f"br{uid}@t.co",
                 name=f"User {uid}",
                 password_hash="x",
                 role="user",
@@ -183,6 +185,18 @@ async def _count(model, *where) -> int:
         stmt = stmt.where(*where)
     async with session_scope() as s:
         return (await s.execute(stmt)).scalar_one()
+
+
+async def _purge_webhooks() -> None:
+    """Remove webhooks left behind by earlier tests in the shared in-memory DB.
+
+    The suite never drops tables, so emission tests that assert absolute
+    delivery counts must start from a clean WebhookORM table.
+    """
+    from sqlalchemy import delete
+
+    async with session_scope() as s:
+        await s.execute(delete(WebhookORM))
 
 
 def _make_client():
@@ -327,17 +341,17 @@ async def test_create_payment_service_failure_500(monkeypatch):
         assert resp.status_code == 500
 
 
-# KNOWN-FAILING: /billing/create-payment rejects the schema's own default
-# success_url. CreatePaymentRequest.success_url defaults to "/?billing=success",
-# which the router resolves against APP_BASE_URL (https://app.aigenis.by) — but
-# "app.aigenis.by" is NOT in the router's allowed_domains allowlist
-# ({"aigenis.by", "www.aigenis.by", "invest.aigenis.by", "localhost"} ∪ web_url).
-# So any client that omits success_url gets 400 instead of a payment link.
-async def test_create_payment_default_success_url_known_failing(monkeypatch):
+# Regression: the schema's own default success_url must be accepted.
+# CreatePaymentRequest.success_url defaults to "/?billing=success", which the
+# router resolves against APP_BASE_URL (https://app.aigenis.by). The router
+# must allow the APP_BASE_URL host and compare hostnames without ports.
+async def test_create_payment_default_success_url_resolved_and_allowed(monkeypatch):
     monkeypatch.setattr("api.billing.router.is_yookassa_configured", lambda: True)
     uid = await _seed_user(20006)
+    calls = []
 
     async def fake_create(user, plan, success_url, referral_code=None):
+        calls.append(success_url)
         return {"payment_id": "pay-dflt", "confirmation_url": "https://pay.example/c"}
 
     monkeypatch.setattr("api.billing.service.create_payment", fake_create)
@@ -347,7 +361,12 @@ async def test_create_payment_default_success_url_known_failing(monkeypatch):
             json={"plan": "pro"},  # no success_url -> schema default
             headers=_auth(uid),
         )
-        assert resp.status_code == 200  # actual: 400 "success_url domain is not allowed"
+        assert resp.status_code == 200
+    assert len(calls) == 1
+    resolved = calls[0]
+    assert resolved.startswith("https://")
+    assert resolved.endswith("/?billing=success")
+    assert "app.aigenis.by" in resolved or "aigenis.by" in resolved
 
 
 # --- /billing/subscription ------------------------------------------------- #
@@ -641,7 +660,7 @@ class _FakeHttpxClient:
 
     status: int = 200
     exc: Exception | None = None
-    instances: list["_FakeHttpxClient"] = []
+    instances: list[_FakeHttpxClient] = []
 
     def __init__(self, *args, **kwargs):
         self.calls: list[tuple[str, dict]] = []
@@ -702,7 +721,7 @@ async def test_deliver_webhook_success_records_delivery(monkeypatch):
 
 
 async def test_deliver_webhook_non_2xx_records_error(monkeypatch):
-    fake_cls = _patch_httpx_client(monkeypatch)
+    _patch_httpx_client(monkeypatch)
     _FakeHttpxClient.status = 500
     owner = await _seed_user(20104)
     pk = await _seed_partner_key(owner, "dlv-2")
@@ -719,7 +738,7 @@ async def test_deliver_webhook_non_2xx_records_error(monkeypatch):
 
 
 async def test_deliver_webhook_exception_records_error(monkeypatch):
-    fake_cls = _patch_httpx_client(monkeypatch)
+    _patch_httpx_client(monkeypatch)
     _FakeHttpxClient.exc = httpx.ConnectError("connection refused")
     owner = await _seed_user(20105)
     pk = await _seed_partner_key(owner, "dlv-3")
@@ -757,6 +776,7 @@ async def test_emit_webhook_event_matches_subscriptions(monkeypatch):
         return True
 
     monkeypatch.setattr(partner_webhooks, "deliver_webhook", fake_deliver)
+    await _purge_webhooks()  # dlv-* tests left active bond.updated webhooks in the shared DB
 
     owner = await _seed_user(20107)
     pk = await _seed_partner_key(owner, "emit-1")
@@ -799,6 +819,7 @@ async def test_emit_webhook_event_delivery_failure_swallowed(monkeypatch):
         raise RuntimeError("delivery crashed")
 
     monkeypatch.setattr(partner_webhooks, "deliver_webhook", boom)
+    await _purge_webhooks()
     owner = await _seed_user(20108)
     pk = await _seed_partner_key(owner, "emit-2")
     await partner_webhooks.register_webhook(
@@ -817,7 +838,7 @@ class _FakeDateTime:
     fixed: datetime | None = None
 
     @classmethod
-    def now(cls, tz=None):
+    def now(cls, tz=None):  # noqa: ARG003
         assert cls.fixed is not None
         return cls.fixed
 
@@ -874,7 +895,7 @@ async def test_notify_expiring_trials_email_and_telegram(monkeypatch):
     # u2: pro subscription expiring in 1 day.
     u2 = await _seed_user(21002, tier="pro", expires_days=1, telegram_id=71002)
     # u3: enterprise expiring in 3 days, no email -> telegram only.
-    u3 = await _seed_user(21003, tier="enterprise", expires_days=3, telegram_id=71003, email=None)
+    await _seed_user(21003, tier="enterprise", expires_days=3, telegram_id=71003, email="")
     # u4: pro expiring in 2 days -> outside the (3, 1) window.
     await _seed_user(21004, tier="pro", expires_days=2, telegram_id=71004)
     # u5: free tier with a paid-window expiry set -> not a reminder target.
@@ -889,8 +910,14 @@ async def test_notify_expiring_trials_email_and_telegram(monkeypatch):
         (f"br{u1}@t.co", "Pro (trial)", 3),
         (f"br{u2}@t.co", "Pro", 1),
     ]
+    # Telegram is used for every user that has a telegram_id, regardless of
+    # email availability: u1 (email+tg), u2 (email+tg), u3 (tg only).
     tg_ids = {chat_id for chat_id, _ in bot.messages}
-    assert tg_ids == {71002, 71003}
+    assert tg_ids == {71001, 71002, 71003}
+    assert sent_emails == [
+        (f"br{u1}@t.co", "Pro (trial)", 3),
+        (f"br{u2}@t.co", "Pro", 1),
+    ]
     msg_u2 = next(text for chat_id, text in bot.messages if chat_id == 71002)
     assert "истекает через <b>1 дн.</b>" in msg_u2
 

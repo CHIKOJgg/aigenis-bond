@@ -3,8 +3,13 @@ import os
 import socketserver
 from urllib.parse import unquote
 
-DIR = os.path.abspath(r"C:\Users\Honor\Desktop\aigenis-parser\.demo-dist")
-PORT = 5176
+# Папка со сборкой демо-SPA. По умолчанию — каталог .demo-dist в корне
+# репозитория; можно переопределить переменной окружения DEMO_DIST_DIR.
+DIR = os.environ.get(
+    "DEMO_DIST_DIR",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), ".demo-dist")),
+)
+PORT = int(os.environ.get("DEMO_PORT", "5176"))
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):

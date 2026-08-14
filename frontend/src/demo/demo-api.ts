@@ -260,8 +260,10 @@ export function runStressTest(
   topBonds.forEach((b) => {
     const dur = b.duration_years ?? (b.term_days ? b.term_days / 365.25 : 2.0);
     let shock = 1.0;
-    if (sc.kind === 'parallel') shock = scenarioKey.includes('300') ? 3.0 : 1.0;
-    else if (sc.kind === 'steepener') shock = dur > 3 ? 1.5 : 0.5;
+    if (sc.kind === 'parallel') {
+      // Снижение ставок (-100bp) даёт рост цен: знак шока отрицательный.
+      shock = scenarioKey.includes('-100') ? -1.0 : (scenarioKey.includes('300') ? 3.0 : 1.0);
+    } else if (sc.kind === 'steepener') shock = dur > 3 ? 1.5 : 0.5;
     else if (sc.kind === 'flattener') shock = dur > 3 ? 0.5 : 1.5;
     else if (sc.kind === 'inversion') shock = dur > 3 ? -0.5 : 2.0;
     else if (sc.kind === 'credit_shock') shock = 1.5;
@@ -315,12 +317,19 @@ export function runStressTest(
     }
   }
 
+  // Сдвиг дюрации: после роста ставок дюрация уменьшается, после снижения —
+  // увеличивается (формула api/demo.py: D*(1+y)/(1+y+s), s = ±1% при y ≈ 12.4%).
+  // Для остальных сценариев дюрация остаётся на месте.
+  const durationAfter = sc.kind === 'parallel'
+    ? (scenarioKey.includes('-100') ? 2.83 : 2.77)
+    : 2.8;
+
   return {
     scenario: sc,
     pnl_amount: +totalPnl.toFixed(2),
     pnl_pct: capital > 0 ? +((totalPnl / capital) * 100).toFixed(2) : 0.0,
     duration_before: 2.8,
-    duration_after: 2.95,
+    duration_after: durationAfter,
     by_tenor: byTenor,
     by_position: byPosition,
     positions,
@@ -334,6 +343,7 @@ export interface PortfolioOptimizationAllocation {
   issuer: string;
   isin: string;
   amount: number;
+  currency?: string;
   weight_pct: number;
   lots: number;
   ytm: number | null;
@@ -345,6 +355,7 @@ export interface RebalanceOrderTicket {
   name: string;
   lots: number;
   est_cost: number;
+  currency?: string;
   rationale: string;
 }
 
@@ -587,6 +598,7 @@ export function runPortfolioOptimizer(
       issuer: b.issuer ?? 'Aigenis',
       isin: b.isin ?? b.internal_id,
       amount: actualCost,
+      currency: b.currency ?? currency,
       weight_pct: weightPct,
       lots: c.lots,
       ytm: b.yield_to_maturity ?? null,
@@ -598,6 +610,7 @@ export function runPortfolioOptimizer(
       name: b.name,
       lots: c.lots,
       est_cost: actualCost,
+      currency: b.currency ?? currency,
       rationale: `Целевой вес ${weightPct}% в рамках стратегии '${STRATEGY_LABELS[strategy] ?? strategy}'`,
     });
   }

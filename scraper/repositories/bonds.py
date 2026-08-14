@@ -106,6 +106,9 @@ def _bond_to_orm(bond: Bond) -> dict:
         "status": bond.status,
         "raw": bond.raw,
         "fetched_at": bond.fetched_at,
+        # Первичный источник — белорусская площадка: рынок проставляется
+        # явно, чтобы не зависеть от server_default="bcse".
+        "market": bond.market or "bcse",
     }
 
 

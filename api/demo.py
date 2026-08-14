@@ -508,7 +508,7 @@ async def live_market_data(
         stmt = (
             select(BondORM, BondScoreORM)
             .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
-            .where(BondORM.market == market)
+            .where(func.lower(BondORM.market) == market.lower())
             .where(BondORM.status == "active")
             .order_by(BondORM.fetched_at.desc(), BondORM.name.asc())
             .limit(limit)
@@ -672,17 +672,35 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
     if bond is None:
         raise HTTPException(status_code=404, detail=f"Bond {req.bond_id} not in fixtures")
 
-    template = templates.get("marina_50000_byn") if isinstance(templates, dict) else None
+    template = None
+    if isinstance(templates, dict):
+        # В фикстуре шаблон хранится под ключом "moderate_byn" (легаси-ключ
+        # "marina_50000_byn" поддерживается для обратной совместимости).
+        template = templates.get("marina_50000_byn") or templates.get("moderate_byn")
     if not isinstance(template, dict):
         template = {
-            "expected_yield_pct": 9.5,
-            "duration_years": 2.4,
-            "concentration_by_issuer": {"demo": 100.0},
+            "benchmarks": {
+                "expected_yield_pct": 9.5,
+                "duration_years": 2.4,
+                "issuer_concentration_max_pct": 25,
+            },
+            "positions": [],
         }
 
-    before_yield = float(template.get("expected_yield_pct", 9.5))
-    before_duration = float(template.get("duration_years", 2.4))
-    before_concentration = dict(template.get("concentration_by_issuer", {"demo": 100.0}))
+    benchmarks = template.get("benchmarks") or {}
+    before_yield = float(benchmarks.get("expected_yield_pct", 9.5))
+    before_duration = float(benchmarks.get("duration_years", 2.4))
+    max_concentration = float(benchmarks.get("issuer_concentration_max_pct", 25.0))
+
+    # Концентрация по эмитентам до сделки: веса позиций из шаблона портфеля.
+    before_concentration: dict[str, float] = {}
+    for pos in template.get("positions") or []:
+        key = str(pos.get("name") or pos.get("instrument_id") or "demo")
+        before_concentration[key] = (
+            before_concentration.get(key, 0.0) + float(pos.get("weight_pct", 0.0))
+        )
+    if not before_concentration:
+        before_concentration = {"demo": 100.0}
 
     alloc = req.allocation_pct / 100.0
     bond_yield = float(bond.get("yield_to_maturity") or 0)
@@ -698,7 +716,7 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
     delta_yield_bps = round((after_yield - before_yield) * 100.0, 1)
     delta_duration = round(after_duration - before_duration, 2)
 
-    if after_concentration.get(issuer_key, 0.0) > 25.0:
+    if after_concentration.get(issuer_key, 0.0) > max_concentration:
         risk_fit: Literal["ok", "borderline", "off"] = "off"
         concentration_warning = (
             f"Концентрация на эмитента {issuer_key} превысит 25% "
@@ -765,7 +783,7 @@ async def demo_desk_curve(
             .where(BondORM.status == "active")
         )
         if market and market.lower() in ("bcse", "moex"):
-            stmt = stmt.where(BondORM.market == market.lower())
+            stmt = stmt.where(func.lower(BondORM.market) == market.lower())
         bonds = list((await session.execute(stmt)).scalars().all())
         try:
             from desk.yield_curve import curve_from_bonds, fit_nelson_siegel
@@ -803,7 +821,7 @@ async def demo_desk_rv(
             .where(BondORM.status == "active")
         )
         if market and market.lower() in ("bcse", "moex"):
-            stmt = stmt.where(BondORM.market == market.lower())
+            stmt = stmt.where(func.lower(BondORM.market) == market.lower())
         bonds = list((await session.execute(stmt)).scalars().all())
         try:
             from desk.relative_value import relative_value_signals
@@ -831,7 +849,7 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
     async with session_scope() as session:
         stmt = select(BondORM).where(BondORM.status == "active")
         if req.market and req.market.lower() in ("bcse", "moex"):
-            stmt = stmt.where(BondORM.market == req.market.lower())
+            stmt = stmt.where(func.lower(BondORM.market) == req.market.lower())
         bonds = list((await session.execute(stmt)).scalars().all())
 
         if not bonds:
@@ -940,7 +958,22 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
                         break
 
 
-            res = run_stress(scenario, bonds_with_amounts, base_currency="BYN")
+            # Валюта расчёта зависит от рынка: MOEX — рубли, BCSE — белорусские
+            # рубли. При смешанном портфеле берём рынок большинства бумаг.
+            market_key = (
+                req.market.lower()
+                if req.market and req.market.lower() in ("bcse", "moex")
+                else None
+            )
+            if market_key is None:
+                market_counts: dict[str, int] = {}
+                for b, _amount in bonds_with_amounts:
+                    market_counts[b.market] = market_counts.get(b.market, 0) + 1
+                market_key = (
+                    max(market_counts, key=market_counts.get) if market_counts else "bcse"
+                )
+            base_currency = "RUB" if market_key == "moex" else "BYN"
+            res = run_stress(scenario, bonds_with_amounts, base_currency=base_currency)
 
             # Средневзвешенная модифицированная дюрация портфеля до и после шока.
             # После роста ставок дюрация слегка уменьшается (эффект выпуклости),
@@ -1370,6 +1403,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "issuer": bond.issuer if bond.issuer else "Aigenis",
                 "isin": bond.isin if bond.isin else c["internal_id"],
                 "amount": pos_cost,
+                "currency": bond.currency if bond.currency else req.currency.upper(),
                 "weight_pct": real_weight_pct,
                 "lots": c["lots"],
                 "ytm": float(bond.yield_to_maturity) if bond.yield_to_maturity else None,
@@ -1381,6 +1415,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "name": bond_name,
                 "lots": c["lots"],
                 "est_cost": pos_cost,
+                "currency": bond.currency if bond.currency else req.currency.upper(),
                 "rationale": f"Целевой вес {real_weight_pct}% в рамках стратегии '{strategy_ru}'",
             })
 

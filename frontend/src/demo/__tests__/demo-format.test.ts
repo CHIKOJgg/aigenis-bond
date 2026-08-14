@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatYtm, formatDurationYears, formatPrice, formatPoints, formatBondDisplayName } from '../demo-format';
+import { formatYtm, formatDurationYears, formatTermDays, formatPrice, formatPoints, formatBondDisplayName } from '../demo-format';
 
 describe('formatYtm', () => {
   it('форматирует число с процентом', () => {
@@ -27,6 +27,20 @@ describe('formatDurationYears', () => {
   it('возвращает прочерк для null/undefined', () => {
     expect(formatDurationYears(null)).toBe('—');
     expect(formatDurationYears(undefined)).toBe('—');
+  });
+});
+
+describe('formatTermDays', () => {
+  it('переводит срок в днях в годы без эвристики', () => {
+    expect(formatTermDays(365)).toBe('1.0 г.');
+    expect(formatTermDays(1095)).toBe('3.0 г.');
+    // Долгий срок (>30 лет в днях) не должен трактоваться как годы.
+    expect(formatTermDays(12787)).toBe('35.0 г.');
+  });
+
+  it('возвращает прочерк для null/undefined', () => {
+    expect(formatTermDays(null)).toBe('—');
+    expect(formatTermDays(undefined)).toBe('—');
   });
 });
 

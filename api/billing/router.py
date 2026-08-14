@@ -156,12 +156,12 @@ async def create_payment(
     # Only allow absolute HTTPS URLs to known-safe domains or relative paths.
     from urllib.parse import urlparse
 
+    from api.notifications.email import APP_BASE_URL
+
     parsed = urlparse(base)
     if not parsed.scheme and not parsed.netloc:
         # Relative path — make it absolute against the public base URL
         # (YooKassa requires an absolute return URL).
-        from api.notifications.email import APP_BASE_URL
-
         base = f"{APP_BASE_URL.rstrip('/')}/{base.lstrip('/')}"
         parsed = urlparse(base)
     if parsed.scheme not in ("https",) or not parsed.netloc:
@@ -179,7 +179,13 @@ async def create_payment(
     web_url = get_settings().aigenis.web_url or ""
     if web_url:
         allowed_domains.add(web_url.rstrip("/").split("://")[-1].split("/")[0])
-    if parsed.netloc not in allowed_domains:
+    # Приложение само формирует дефолтный success_url против APP_BASE_URL,
+    # поэтому его хост должен быть разрешён всегда.
+    app_host = APP_BASE_URL.rstrip("/").split("://")[-1].split("/")[0]
+    if app_host:
+        allowed_domains.add(app_host)
+    # Сравниваем hostname без порта: localhost:5173 принадлежит localhost.
+    if parsed.hostname.lower() not in {d.lower() for d in allowed_domains}:
         raise HTTPException(status_code=400, detail="success_url domain is not allowed")
 
     result = await billing_service.create_payment(

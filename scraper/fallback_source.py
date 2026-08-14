@@ -43,10 +43,14 @@ _FALLBACK_SOURCE = os.getenv("FALLBACK_SOURCE", "").strip().lower()
 MOEX_ISS_BASE = "https://iss.moex.com/iss"
 # Default board. TQCB = RUB corporates. TQOB = USD/EUR eurobonds.
 _MOEX_BOARD = os.getenv("FALLBACK_MOEX_BOARD", "TQCB")
-# Boards scanned for the fallback. Comma-separated override via FALLBACK_MOEX_BOARDS
-# (e.g. "TQCB,TQOB"). TQOB adds USD/EUR eurobond coverage without paid login.
+# Boards scanned for the fallback by default. TQOB (USD/EUR eurobonds) is
+# enabled so that Долларизация / Металлы++ on MOEX have instruments to
+# allocate even when only the public (non-paid) source is available.
+# Comma-separated override via FALLBACK_MOEX_BOARDS (e.g. "TQCB,TQOB").
 _MOEX_BOARDS = [
-    b.strip().upper() for b in os.getenv("FALLBACK_MOEX_BOARDS", "").split(",") if b.strip()
+    b.strip().upper()
+    for b in os.getenv("FALLBACK_MOEX_BOARDS", "TQCB,TQOB").split(",")
+    if b.strip()
 ] or [_MOEX_BOARD]
 _MOEX_TIMEOUT = float(os.getenv("FALLBACK_MOEX_TIMEOUT", "30"))
 _MOEX_CAP = int(os.getenv("FALLBACK_MOEX_CAP", "1000"))
@@ -143,6 +147,10 @@ async def _fetch_moex_bonds(currency: str | None = None) -> list[dict[str, Any]]
                             {
                                 "internal_id": f"MOEX_{secid}",
                                 "name": sec.get("SECNAME") or secid,
+                                # Фоллбэк-адаптер всегда читает MOEX ISS: рынок
+                                # проставляется явно, чтобы бумаги не попадали
+                                # в BCSE-сегмент через server_default="bcse".
+                                "market": "moex",
                                 "currency": cur,
                                 "price": float(last) if last not in (None, "") else None,
                                 "yield_to_maturity": float(ytm) if ytm not in (None, "") else None,

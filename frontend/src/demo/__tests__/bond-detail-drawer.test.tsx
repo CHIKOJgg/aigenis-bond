@@ -100,4 +100,112 @@ describe('BondDetailDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Влияние на портфель/ }));
     expect(onPI).toHaveBeenCalledTimes(1);
   });
+
+  it('рендерит купонный график: даты слева, суммы купонов справа', () => {
+    renderDrawer();
+    expect(screen.getByText('Купонные выплаты')).toBeInTheDocument();
+    // demo-bond-001: {"2026-12-15": ["6.25 BYN"], ..., "2028-06-15": ["106.25 BYN"]}
+    expect(screen.getByText('15.12.2026')).toBeInTheDocument();
+    expect(screen.getAllByText('6.25 BYN').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('106.25 BYN')).toBeInTheDocument();
+  });
+
+  it('купонный график из live-детали имеет приоритет над фикстурой', () => {
+    render(
+      <BondDetailDrawer
+        bondId="demo-bond-001"
+        onClose={() => {}}
+        onPortfolioImpact={() => {}}
+        detail={{
+          internal_id: 'demo-bond-001',
+          isin: null,
+          name: 'demo-bond-001',
+          issuer: null,
+          issuer_logo: null,
+          currency: 'BYN',
+          nominal: 100,
+          coupon_rate: null,
+          coupon_frequency: null,
+          maturity_date: null,
+          price: null,
+          yield_to_maturity: null,
+          amortization: null,
+          market: 'bcse',
+          status: 'active',
+          is_government: false,
+          in_stock: null,
+          guarantor: null,
+          maturity_term_text: null,
+          coupon_description: null,
+          fetched_at: null,
+          term_days: null,
+          history: [],
+          coupon_schedule: { '2031-01-01': ['99.99 BYN'] },
+        }}
+      />,
+    );
+    expect(screen.getByText('01.01.2031')).toBeInTheDocument();
+    expect(screen.getByText('99.99 BYN')).toBeInTheDocument();
+  });
+
+  it('показывает заглушку, когда график купонов не предоставлен', () => {
+    render(
+      <BondDetailDrawer
+        bondId="live-custom"
+        onClose={() => {}}
+        onPortfolioImpact={() => {}}
+        bond={{
+          internal_id: 'live-custom',
+          isin: null,
+          name: 'live-custom',
+          issuer: null,
+          issuer_logo: null,
+          currency: 'BYN',
+          nominal: 100,
+          coupon_rate: null,
+          coupon_frequency: null,
+          maturity_date: null,
+          price: null,
+          yield_to_maturity: null,
+          amortization: null,
+          market: 'bcse',
+          status: 'active',
+          is_government: false,
+          in_stock: null,
+          guarantor: null,
+          maturity_term_text: null,
+          coupon_description: null,
+          fetched_at: null,
+          term_days: null,
+        }}
+        detail={{
+          internal_id: 'live-custom',
+          isin: null,
+          name: 'live-custom',
+          issuer: null,
+          issuer_logo: null,
+          currency: 'BYN',
+          nominal: 100,
+          coupon_rate: null,
+          coupon_frequency: null,
+          maturity_date: null,
+          price: null,
+          yield_to_maturity: null,
+          amortization: null,
+          market: 'bcse',
+          status: 'active',
+          is_government: false,
+          in_stock: null,
+          guarantor: null,
+          maturity_term_text: null,
+          coupon_description: null,
+          fetched_at: null,
+          term_days: null,
+          history: [],
+          coupon_schedule: {},
+        }}
+      />,
+    );
+    expect(screen.getByText('График не предоставлен')).toBeInTheDocument();
+  });
 });

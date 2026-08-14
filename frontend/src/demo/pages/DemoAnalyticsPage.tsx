@@ -12,9 +12,9 @@ import {
   ZAxis,
 } from 'recharts';
 import type { TooltipProps } from 'recharts';
-import { getScore, getMarketSummary, getBonds, scoreFromLiveBond } from '../demo-api';
+import { getScore, getMarketSummary, getBonds, getAllBonds, scoreFromLiveBond } from '../demo-api';
 import { filterAndSortBonds } from '../demo-filter';
-import { formatYtm, formatYears, formatDurationYears, formatBondDisplayName } from '../demo-format';
+import { formatYtm, formatYears, formatTermDays, formatBondDisplayName } from '../demo-format';
 import type { DemoBond, DemoScore, ScoreStatus, TermFilter } from '../types';
 import { SCORE_STATUS_LABEL } from '../demo-config';
 import AnalyticsKpiStrip from '../components/AnalyticsKpiStrip';
@@ -30,7 +30,7 @@ export default function DemoAnalyticsPage() {
   const navigate = useNavigate();
   const params = useParams<{ internalId?: string }>();
 
-  const market = (searchParams.get('market') || 'BCSE') as 'BCSE' | 'MOEX';
+  const market = (searchParams.get('market') || 'BCSE').toUpperCase();
   const [currency, setCurrency] = useState('ALL');
   const [term, setTerm] = useState<TermFilter>('all');
   const [status, setStatus] = useState<ScoreStatus | 'all'>('all');
@@ -45,10 +45,21 @@ export default function DemoAnalyticsPage() {
     setLive(null);
     setLiveLoading(true);
 
-    fetchLiveMarket(API_MARKET[market])
-      .then((snap) => {
+    // ALL = сводный универсум обоих рынков (BCSE + MOEX).
+    const markets = market === 'ALL' ? ['bcse', 'moex'] : [API_MARKET[market] ?? 'bcse'];
+    Promise.all(markets.map((m) => fetchLiveMarket(m)))
+      .then((snaps) => {
         if (cancelled) return;
-        setLive(snap);
+        const merged = snaps.flatMap((s) => s.bonds);
+        setLive({
+          source: snaps[0]?.source ?? 'Aigenis',
+          market: market,
+          currency: null,
+          as_of: snaps[0]?.as_of ?? null,
+          count: merged.length,
+          bonds: merged,
+          disclaimer: snaps[0]?.disclaimer ?? '',
+        });
         setLiveLoading(false);
       })
       .catch(() => {
@@ -70,7 +81,7 @@ export default function DemoAnalyticsPage() {
     ...fixtureSummary,
     global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
   } : fixtureSummary;
-  const bonds = live?.bonds ?? getBonds(market.toUpperCase());
+  const bonds = live?.bonds ?? (market === 'ALL' ? getAllBonds() : getBonds(market.toUpperCase()));
 
   const scoreLookup = useMemo(() => {
     if (!live) return getScore;
@@ -93,7 +104,21 @@ export default function DemoAnalyticsPage() {
     return ['ALL', ...Array.from(set)];
   }, [bonds]);
 
-  const marketStats = summary.markets[market.toLowerCase()];
+    // Для ALL-режима сводная статистика = сумма по обоим рынкам.
+  const marketStats = useMemo(() => (
+    market === 'ALL'
+      ? {
+          attractive_ideas: (summary.markets.bcse?.attractive_ideas ?? 0)
+            + (summary.markets.moex?.attractive_ideas ?? 0),
+          needs_review: (summary.markets.bcse?.needs_review ?? 0)
+            + (summary.markets.moex?.needs_review ?? 0),
+          best_yield_pct: Math.max(
+            summary.markets.bcse?.best_yield_pct ?? 0,
+            summary.markets.moex?.best_yield_pct ?? 0,
+          ),
+        }
+      : summary.markets[market.toLowerCase()]
+  ), [market, summary]);
 
   // KPIs computed from the visible universe (live or fixtures). The "best
   // yield" card is deliberately computed on non-distressed bonds only: a
@@ -229,7 +254,7 @@ export default function DemoAnalyticsPage() {
                   </td>
                   <td style={tdStyle}>{bond.maturity_date ?? '—'}</td>
                   <td style={tdStyle}>
-                    {bond.duration_years != null ? formatYears(bond.duration_years) : formatDurationYears(bond.term_days)}
+                    {bond.duration_years != null ? formatYears(bond.duration_years) : formatTermDays(bond.term_days)}
                   </td>
                   <td style={{ ...tdStyle, textAlign: 'center' }}>
                     <button

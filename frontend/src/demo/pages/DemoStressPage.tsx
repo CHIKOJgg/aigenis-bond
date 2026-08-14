@@ -11,6 +11,7 @@ export default function DemoStressPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const routeMarket = (searchParams.get('market') ?? 'BCSE').toUpperCase();
   const market = routeMarket === 'MOEX' ? 'MOEX' : 'BCSE';
+  const currency = market === 'MOEX' ? 'RUB' : 'BYN';
 
   const [scenarioKey, setScenarioKey] = useState('parallel_+100bp');
   const [capital, setCapital] = useState(50000);
@@ -188,7 +189,7 @@ export default function DemoStressPage() {
                 Ожидаемый P&L (убыток/прибыль)
               </div>
               <div style={{ fontSize: 24, fontWeight: 700, color: '#e03400', marginTop: 8 }}>
-                {res.pnl_amount.toLocaleString('ru-RU')} BYN
+                {res.pnl_amount.toLocaleString('ru-RU')} {currency}
               </div>
               <div style={{ fontSize: 13, color: '#e03400', fontWeight: 600, marginTop: 2 }}>
                 {res.pnl_pct}% от капитала
@@ -231,7 +232,7 @@ export default function DemoStressPage() {
                 <tr style={{ borderBottom: '2px solid #eef3f5', textAlign: 'left', color: '#717680' }}>
                   <th style={{ padding: '10px 12px' }}>Облигация</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right' }}>Кол-во</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Инвестиции (BYN)</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'right' }}>Инвестиции ({currency})</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right' }}>Прогнозируемый P&L</th>
                 </tr>
               </thead>
@@ -262,10 +263,10 @@ export default function DemoStressPage() {
                           {pos.lots} шт.
                         </td>
                         <td style={{ padding: '12px', textAlign: 'right', color: '#516c79' }}>
-                          {pos.invested.toLocaleString('ru-RU')} BYN
+                          {pos.invested.toLocaleString('ru-RU')} {currency}
                         </td>
                         <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#e03400' }}>
-                          {pos.pnl.toLocaleString('ru-RU')} BYN
+                          {pos.pnl.toLocaleString('ru-RU')} {currency}
                         </td>
                       </tr>
                     ));
@@ -277,10 +278,10 @@ export default function DemoStressPage() {
                       </td>
                       <td style={{ padding: '12px', textAlign: 'right', color: '#516c79' }}>—</td>
                       <td style={{ padding: '12px', textAlign: 'right', color: '#516c79' }}>
-                        {(capital / positionsCount).toLocaleString('ru-RU')} BYN
+                        {(capital / positionsCount).toLocaleString('ru-RU')} {currency}
                       </td>
                       <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#e03400' }}>
-                        {pnl.toLocaleString('ru-RU')} BYN
+                        {pnl.toLocaleString('ru-RU')} {currency}
                       </td>
                     </tr>
                   ));

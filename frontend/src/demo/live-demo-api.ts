@@ -99,6 +99,7 @@ export interface LiveOptimizeResponse {
     issuer: string;
     isin: string;
     amount: number;
+    currency?: string;
     weight_pct: number;
     lots: number;
     ytm: number | null;
@@ -109,6 +110,7 @@ export interface LiveOptimizeResponse {
     name: string;
     lots: number;
     est_cost: number;
+    currency?: string;
     rationale: string;
   }>;
   available_strategies: string[];

@@ -58,4 +58,23 @@ describe('DemoStressPage', () => {
     fireEvent.click(moexBtn);
     expect(moexBtn).toBeInTheDocument();
   });
+
+  it('подписывает денежные суммы валютой рынка (RUB для MOEX)', async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /MOEX/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/Облигация Минфин/i)).toBeInTheDocument();
+    });
+    // P&L-карточка и шапка таблицы используют RUB для MOEX.
+    expect(screen.getByText(/-1 500 RUB|-1500 RUB/i)).toBeInTheDocument();
+    expect(screen.getByText(/Инвестиции \(RUB\)/i)).toBeInTheDocument();
+  });
+
+  it('подписывает денежные суммы валютой рынка (BYN для BCSE)', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/-1 500 BYN|-1500 BYN/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Инвестиции \(BYN\)/i)).toBeInTheDocument();
+  });
 });

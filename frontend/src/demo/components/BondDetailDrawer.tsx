@@ -5,7 +5,7 @@ import { SCORE_STATUS_LABEL, SCORE_STATUS_DESC } from '../demo-config';
 import {
   formatYtm,
   formatYears,
-  formatDurationYears,
+  formatTermDays,
   formatPrice,
   formatPoints,
   formatBondDisplayName,
@@ -63,7 +63,7 @@ export default function BondDetailDrawer({
     liveExplanation ?? fixtureExplanation;
   const factors = normalizeFactors(explanation);
   const history = detail?.history ?? [];
-  const couponSchedule = detail?.coupon_schedule ?? null;
+  const couponSchedule = detail?.coupon_schedule ?? (bond as DemoBond & { coupon_schedule?: Record<string, unknown> | null }).coupon_schedule ?? null;
   const strengthsRaw = liveExplanation?.strengths.length ? liveExplanation.strengths :
     (explanation as BondExplanation)?.strengths ?? [];
   const weaknessesRaw = liveExplanation?.weaknesses.length ? liveExplanation.weaknesses :
@@ -341,7 +341,7 @@ export default function BondDetailDrawer({
                 <KeyValue label="Номинал" value={`${Number(bond.nominal.toFixed(0)).toLocaleString('ru-RU')} ${bond.currency}`} />
               )}
               {(bond.term_days != null || bond.duration_years != null) && (
-                <KeyValue label="Дюрация" value={bond.duration_years != null ? formatYears(bond.duration_years) : formatDurationYears(bond.term_days)} />
+                <KeyValue label="Дюрация" value={bond.duration_years != null ? formatYears(bond.duration_years) : formatTermDays(bond.term_days)} />
               )}
               {bond.maturity_date && (
                 <KeyValue label="Погашение" value={bond.maturity_date} />
@@ -501,7 +501,9 @@ function BondHistoryChart({ history }: { history: Array<{ date: string; price: n
 }
 
 function CouponScheduleTable({ schedule }: { schedule: Record<string, unknown> }) {
-  const years = Object.keys(schedule).sort();
+  // Схема графика: ключи — даты выплат (ISO "2026-12-15"), значения —
+  // суммы купона в валюте бумаги ("6.25 BYN"). Сортировка по датам.
+  const keys = Object.keys(schedule).sort();
   return (
     <div style={{
       padding: '16px',
@@ -512,17 +514,18 @@ function CouponScheduleTable({ schedule }: { schedule: Record<string, unknown> }
       <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
         Купонные выплаты
       </div>
-      {years.length === 0 ? (
+      {keys.length === 0 ? (
         <div style={{ fontSize: 13, color: '#717680' }}>График не предоставлен</div>
       ) : (
-        years.map((year) => {
-          const list = (Array.isArray(schedule[year]) ? schedule[year] : []) as string[];
+        keys.map((key) => {
+          const list = (Array.isArray(schedule[key]) ? schedule[key] : []) as string[];
+          const displayDate = key.length >= 10
+            ? `${key.slice(8, 10)}.${key.slice(5, 7)}.${key.slice(0, 4)}`
+            : key;
           return (
-            <div key={year} style={{ display: 'flex', gap: 12, padding: '5px 0', fontSize: 13, borderBottom: '1px solid #f0f4f6' }}>
-              <span style={{ fontWeight: 600, color: '#0B526B', width: 48, flexShrink: 0 }}>{year}</span>
-              <span style={{ color: '#2d3a45' }}>
-                {list.map((d) => d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4)).join(' · ')}
-              </span>
+            <div key={key} style={{ display: 'flex', gap: 12, padding: '5px 0', fontSize: 13, borderBottom: '1px solid #f0f4f6' }}>
+              <span style={{ fontWeight: 600, color: '#0B526B', width: 96, flexShrink: 0 }}>{displayDate}</span>
+              <span style={{ color: '#2d3a45' }}>{list.join(' · ')}</span>
             </div>
           );
         })

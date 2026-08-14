@@ -53,7 +53,7 @@ export default function AnalyticsFilters({
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Select label="Рынок" value={market} onChange={onMarketChange} options={[{ value: 'BCSE', label: 'BCSE' }, { value: 'MOEX', label: 'MOEX' }]} />
+        <Select label="Рынок" value={market} onChange={onMarketChange} options={[{ value: 'ALL', label: 'Все рынки' }, { value: 'BCSE', label: 'BCSE' }, { value: 'MOEX', label: 'MOEX' }]} />
         <Select label="Валюта" value={currency} onChange={onCurrencyChange} options={currencies.map((c) => ({ value: c, label: CURRENCY_LABEL[c] || c }))} />
         <Select label="Срок" value={term} onChange={(v) => onTermChange(v as TermFilter)} options={TERM_OPTIONS} />
         <Select label="Статус" value={status} onChange={(v) => onStatusChange(v as ScoreStatus | 'all')} options={STATUS_OPTIONS} />

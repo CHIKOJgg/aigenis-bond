@@ -302,7 +302,7 @@ export default function DemoOptimizerPage() {
                           {a.weight_pct.toFixed(1)}%
                         </td>
                         <td style={{ padding: 10, color: '#516c79' }}>
-                          {Math.round(a.amount).toLocaleString('ru-RU')} {currency}
+                          {Math.round(a.amount).toLocaleString('ru-RU')} {a.currency ?? currency}
                         </td>
                         <td style={{ padding: 10, color: '#06b663', fontWeight: 600 }}>
                           {formatYtm(a.ytm)}
@@ -363,7 +363,7 @@ export default function DemoOptimizerPage() {
                         {ticket.lots} шт.
                       </div>
                       <div style={{ fontSize: 12, color: '#516c79' }}>
-                        ~{(ticket.est_cost ?? 0).toLocaleString('ru-RU')} {currency}
+                        ~{(ticket.est_cost ?? 0).toLocaleString('ru-RU')} {ticket.currency ?? currency}
                       </div>
                     </div>
                   </div>

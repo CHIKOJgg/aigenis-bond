@@ -100,11 +100,17 @@ class TestHealth:
         env = {
             **os.environ,
             "DATABASE_URL": "postgresql+asyncpg://user:pass@127.0.0.1:1/none",
+            # Force UTF-8 child output: on Windows the child writes UTF-8 JSON,
+            # and reading it back with the cp1252 default locale raises
+            # UnicodeDecodeError (which leaves proc.stdout None).
+            "PYTHONIOENCODING": "utf-8",
         }
         proc = subprocess.run(
             [sys.executable, "-m", "scraper.health"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
             env=env,
         )

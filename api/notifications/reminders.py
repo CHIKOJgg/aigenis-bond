@@ -30,7 +30,9 @@ def _days_until(dt: datetime | None) -> int | None:
     delta = dt - datetime.now(UTC)
     if delta.total_seconds() <= 0:
         return 0
-    return max(1, (delta.total_seconds() + 86399) // 86400)
+    # total_seconds() is a float: floor-divide to an int so the count renders
+    # as "3 дн." and not "3.0 дн." in reminder messages.
+    return max(1, int((delta.total_seconds() + 86399) // 86400))
 
 
 async def notify_expiring_trials() -> int:

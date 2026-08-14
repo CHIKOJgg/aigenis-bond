@@ -234,7 +234,7 @@ async def _safe_deliver(wh: WebhookORM, event_type: str, payload: dict) -> None:
     try:
         await deliver_webhook(wh, event_type, payload)
     except Exception:
-        logger.exception("webhook_delivery_failed", webhook_id=wh.id)
+        logger.exception("webhook_delivery_failed id=%s", wh.id)
 
 
 async def emit_webhook_event(event_type: str, payload: dict, *, wait: bool = False) -> int:
@@ -245,7 +245,7 @@ async def emit_webhook_event(event_type: str, payload: dict, *, wait: bool = Fal
     background tasks so the caller is not blocked.
     """
     if event_type not in SUPPORTED_EVENTS:
-        logger.warning("webhook_unsupported_event", event=event_type)
+        logger.warning("webhook_unsupported_event: %s", event_type)
         return 0
 
     async with session_scope() as session:

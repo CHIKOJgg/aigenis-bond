@@ -139,7 +139,12 @@ export default function PortfolioForecastCalculator({
       realProfit,
       realAnnualizedReturn: Number.isFinite(realAnnualizedReturn) ? realAnnualizedReturn : 0,
       compoundBonus,
-      monthlyPassiveIncome: Math.round((final.nominalBalance * (netYtm / 100)) / 12),
+      // В режиме «снимать» купоны не капитализируются: месячный доход считается
+      // только с вложенного капитала (final.invested), иначе выплаченные ранее
+      // купоны дважды учитывались бы в доходе.
+      monthlyPassiveIncome: Math.round(
+        ((reinvest ? final.nominalBalance : final.invested) * (netYtm / 100)) / 12,
+      ),
     };
   }, [effectiveCapital, years, reinvest, netYtm, inflationRate, monthlyContribution]);
 

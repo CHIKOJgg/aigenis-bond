@@ -86,7 +86,7 @@ def _row(secid="MOEX1", currency="RUB", last="100.5", ytm="7.25", matdate="2030-
 @pytest.fixture(autouse=True)
 def clean_module_state(monkeypatch):
     monkeypatch.setattr(fb, "_FALLBACK_SOURCE", "moex")
-    monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB"])
+    monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB", "TQOB"])
     monkeypatch.setattr(fb, "_MOEX_CAP", 1000)
     monkeypatch.setattr(fb.logger, "warning", lambda *a, **k: None)
     monkeypatch.setattr(fb.logger, "info", lambda *a, **k: None)
@@ -139,6 +139,7 @@ class TestFetchMoexBonds:
         rows = await fb._fetch_moex_bonds("USD")
         assert len(rows) == 1
         assert rows[0]["internal_id"] == "MOEX_USD1"
+        assert rows[0]["market"] == "moex"
         assert rows[0]["currency"] == "USD"
         assert rows[0]["price"] is None
         assert rows[0]["yield_to_maturity"] is None
@@ -191,6 +192,7 @@ class TestFetchMoexBonds:
             "marketdata": {"columns": [], "data": []},
         }
         client = FakeMoexClient({("TQCB", 0): payload})
+        monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB"])
         monkeypatch.setattr(fb.httpx, "AsyncClient", lambda timeout: client)
         assert await fb._fetch_moex_bonds() == []
         assert len(client.calls) == 1
@@ -206,6 +208,7 @@ class TestFetchMoexBonds:
         rows = [_row(f"B{i}", "RUB") for i in range(5)]
         page = _securities_payload(rows)
         client = FakeMoexClient({("TQCB", 0): page})
+        monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB"])
         monkeypatch.setattr(fb.httpx, "AsyncClient", lambda timeout: client)
         monkeypatch.setattr(fb, "_MOEX_CAP", 2)
         result = await fb._fetch_moex_bonds()
@@ -221,6 +224,7 @@ class TestFetchMoexBonds:
             ("TQCB", 100): _securities_payload(tail_rows),
         }
         client = FakeMoexClient(pages)
+        monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB"])
         monkeypatch.setattr(fb.httpx, "AsyncClient", lambda timeout: client)
         result = await fb._fetch_moex_bonds()
         assert len(result) == 102
@@ -237,6 +241,24 @@ class TestFetchMoexBonds:
         monkeypatch.setattr(fb.httpx, "AsyncClient", lambda timeout: client)
         monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB", "TQOB"])
         result = await fb._fetch_moex_bonds(None)
+        assert len(result) == 2
+        assert {r["currency"] for r in result} == {"RUB", "USD"}
+        # Регрессия: fallback-адаптер всегда помечает market="moex" (иначе
+        # бумаги оседали в BCSE через server_default).
+        assert all(r["market"] == "moex" for r in result)
+
+    @pytest.mark.asyncio
+    async def test_default_boards_include_usd_eurobonds(self, monkeypatch):
+        # Регрессия: по умолчанию fallback сканирует TQCB+RUB и TQOB+USD/EUR,
+        # иначе Долларизация/Металлы++ на MOEX не находят инструментов.
+        pages = {
+            ("TQCB", 0): _securities_payload([_row("R1", "RUB")]),
+            ("TQOB", 0): _securities_payload([_row("U1", "USD")]),
+        }
+        client = FakeMoexClient(pages)
+        monkeypatch.setattr(fb.httpx, "AsyncClient", lambda timeout: client)
+        monkeypatch.setattr(fb, "_MOEX_BOARDS", ["TQCB", "TQOB"])
+        result = await fb._fetch_moex_bonds()
         assert len(result) == 2
         assert {r["currency"] for r in result} == {"RUB", "USD"}
 

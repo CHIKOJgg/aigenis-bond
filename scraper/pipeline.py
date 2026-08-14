@@ -451,7 +451,11 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                             price=b.price,
                             yield_to_maturity=ytm_val,
                             isin=b.isin,
-                            market=b.market or "bcse",
+                            # Весь конвейер run_once_moex читает MOEX ISS: рынок
+                            # принудительно "moex" — дефолт модели Bond
+                            # (market="bcse") не должен отправлять MOEX-бумаги
+                            # в BCSE-сегмент демо.
+                            market="moex",
                             status=b.status,
                             is_government=b.is_government,
                             fetched_at=datetime.now(UTC),
@@ -801,6 +805,10 @@ async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
                                 internal_id=iid,
                                 name=b.get("name") or iid,
                                 issuer=b.get("issuer"),
+                                # Никогда не полагаться на server_default="bcse":
+                                # фоллбэк отдаёт MOEX-бумаги, и без явного market
+                                # они оседают в BCSE-сегменте демо.
+                                market=b.get("market") or "moex",
                                 currency=b.get("currency", "RUB"),
                                 price=_d(b.get("price")),
                                 yield_to_maturity=_d(b.get("yield_to_maturity")),
@@ -813,6 +821,12 @@ async def run_once(client, currencies: Iterable[str]) -> dict[str, int]:
                         existing.price = _d(b.get("price"))
                         existing.yield_to_maturity = _d(b.get("yield_to_maturity"))
                         existing.fetched_at = datetime.now(UTC)
+                        if b.get("market") or (
+                            existing.market == "bcse" and iid.startswith("MOEX_")
+                        ):
+                            # Самолечение устаревших строк, попавших в BCSE
+                            # через server_default до явной простановки market.
+                            existing.market = b.get("market") or "moex"
                     saved_fb += 1
                 await session.commit()
         # Keep existing bonds scored; details/history skipped in stale mode.

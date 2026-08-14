@@ -454,7 +454,102 @@ async def test_run_once_moex_full_flow(monkeypatch, caplog):
         orm = (
             await session.execute(select(BondORM).where(BondORM.internal_id == "M-1"))
         ).scalar_one()
-        assert orm.market == "bcse"
+        assert orm.market == "moex"
+
+
+@pytest.mark.asyncio
+async def test_run_once_fallback_bonds_never_land_in_bcse(monkeypatch, caplog):
+    """MOEX fallback bonds must not be stored as BCSE via server_default.
+
+    Regression: fallback_source.py did not tag ``market`` and pipeline.py
+    inserted without one, so server_default="bcse" shipped MOEX bonds (ДОМ.РФ,
+    ВЭБ.РФ, ...) into the BCSE segment of the demo.
+    """
+    from sqlalchemy import delete, select
+
+    from scraper import pipeline
+
+    async def _fail_listing(client, currencies):
+        raise ScraperError("no credentials")
+
+    async def _fake_fallback(currency):
+        return [
+            {
+                # Старый формат адаптера: поля market нет вообще.
+                "internal_id": "MOEX_FB1",
+                "name": "ДОМ.РФ обл. А15",
+                "issuer": "ДОМ.РФ",
+                "currency": "RUB",
+                "price": 99.5,
+                "yield_to_maturity": 12.1,
+                "status": "active",
+            },
+            {
+                "internal_id": "MOEX_FB2",
+                "name": "ВЭБ.РФ сер. 21",
+                "issuer": "ВЭБ.РФ",
+                "currency": "RUB",
+                "price": 100.1,
+                "yield_to_maturity": 11.0,
+                "status": "active",
+                "market": "moex",
+            },
+            {
+                # Уже сохранённая строка, ошибочно помеченная bcse; поле
+                # market отсутствует — должна сработать самолечение по префиксу.
+                "internal_id": "MOEX_FB3",
+                "name": "Запад.скор.диаметр",
+                "issuer": "ЗСД",
+                "currency": "RUB",
+                "price": 100.0,
+                "yield_to_maturity": 10.5,
+                "status": "active",
+            },
+        ]
+
+    async with session_scope() as session:
+        session.add(
+            BondORM(
+                internal_id="MOEX_FB3",
+                name="Запад.скор.диаметр",
+                issuer="ЗСД",
+                currency="RUB",
+                market="bcse",
+                status="active",
+                fetched_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        )
+        await session.commit()
+
+    monkeypatch.setattr("scraper.pipeline.collect_listing", _fail_listing)
+    monkeypatch.setattr("scraper.fallback_source.fetch_fallback_bonds", _fake_fallback)
+    monkeypatch.setattr(
+        "scraper.pipeline.enrich_from_xlsx",
+        AsyncMock(return_value={"xlsx_bonds_enriched": 0, "xlsx_accruals_written": 0}),
+    )
+    monkeypatch.setattr("scraper.pipeline.recompute_all", AsyncMock(return_value=0))
+
+    client = SimpleNamespace(settings=SimpleNamespace())
+    summary = await pipeline.run_once(client, ["RUB"])
+    assert summary["stale_mode"] is True
+    assert summary["listing_total"] == 0
+
+    async with session_scope() as session:
+        for iid, expected in [
+            ("MOEX_FB1", "moex"),
+            ("MOEX_FB2", "moex"),
+            ("MOEX_FB3", "moex"),
+        ]:
+            orm = (
+                await session.execute(select(BondORM).where(BondORM.internal_id == iid))
+            ).scalar_one()
+            assert orm.market == expected
+
+    async with session_scope() as session:
+        await session.execute(
+            delete(BondORM).where(BondORM.internal_id.in_(["MOEX_FB1", "MOEX_FB2", "MOEX_FB3"]))
+        )
+        await session.commit()
 
 
 @pytest.mark.asyncio

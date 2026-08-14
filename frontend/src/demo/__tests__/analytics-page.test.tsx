@@ -122,4 +122,26 @@ describe('DemoAnalyticsPage', () => {
     expect(screen.getByText('Аналитика облигаций')).toBeInTheDocument();
     expect(await screen.findByText(/обновлено/i)).toBeInTheDocument();
   });
+
+  it('market=ALL объединяет оба рынка в одну таблицу', async () => {
+    renderPage(['/demo/analytics?market=ALL']);
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    const bcse = getBonds('BCSE');
+    const moex = getBonds('MOEX');
+    // Оба рынка представлены (названия могут повторяться между рынками).
+    expect(screen.getAllByText(bcse[0].name).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(moex[0].name).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Рынок')).toHaveValue('ALL');
+  });
+
+  it('рынок ALL доступен в селекторе и переключается в URL', async () => {
+    renderPage();
+    expect(await screen.findByRole('table')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Рынок'), { target: { value: 'ALL' } });
+    expect(screen.getByTestId('url-probe')).toHaveTextContent('market=ALL');
+    const bcse = getBonds('BCSE');
+    const moex = getBonds('MOEX');
+    expect((await screen.findAllByText(moex[0].name)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(bcse[0].name).length).toBeGreaterThan(0);
+  });
 });

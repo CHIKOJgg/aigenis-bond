@@ -68,4 +68,34 @@ describe('PortfolioForecastCalculator', () => {
 
     expect(screen.getByText(/чистыми 8.7%/i)).toBeInTheDocument();
   });
+
+  it('в режиме «Снимать» купонный доход считается только с вложенного капитала', () => {
+    render(
+      <PortfolioForecastCalculator
+        initialCapital={100000}
+        initialYtm={15.0}
+        currency="BYN"
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Снимать/i }));
+
+    // 100000 * 15% / 12 = 1250 BYN/мес — без реинвестирования выплаченные
+    // купоны не должны раздувать базу дохода.
+    expect(screen.getByText(/Купонный доход в месяц/i)).toBeInTheDocument();
+    expect(screen.getByText(/~?\s*1[\s\u00a0\u202f]*250 BYN \/ мес/i)).toBeInTheDocument();
+    expect(screen.getByText(/15[\s\u00a0\u202f]*000 BYN/)).toBeInTheDocument(); // годовой поток = 1250*12
+  });
+
+  it('в режиме «Реинвестировать» доход считается с итогового баланса', () => {
+    render(
+      <PortfolioForecastCalculator
+        initialCapital={100000}
+        initialYtm={15.0}
+        currency="BYN"
+      />
+    );
+    // По умолчанию реинвестирование включено: итог > вложенного капитала.
+    expect(screen.getByText(/Пассивный доход на конец срока/i)).toBeInTheDocument();
+  });
 });
