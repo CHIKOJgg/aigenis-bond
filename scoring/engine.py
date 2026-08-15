@@ -151,7 +151,12 @@ def _currency_component(currency: str) -> float:
     return CURRENCY_BONUS.get(currency.upper(), 10.0)
 
 
-def _metal_component(currency: str, issuer: str | None = None, name: str | None = None, internal_id: str | None = None) -> float:
+def _metal_component(
+    currency: str,
+    issuer: str | None = None,
+    name: str | None = None,
+    internal_id: str | None = None,
+) -> float:
     """Score metal exposure: direct XAU/XAG/XPT currency, metal-mining issuer, or gold/metal bond name."""
     direct = METAL_EXTRA_BONUS.get(currency.upper(), 0.0)
     if direct > 0:
@@ -438,20 +443,34 @@ def score_bond(
     price_f = float(price) if price is not None else None
     nominal_f = float(nominal) if nominal is not None else None
     from desk.ytm import to_price_pct, ytm_from_price
+
     price_pct = to_price_pct(price_f, nominal_f) if price_f is not None else None
 
-    if (ytm_pct is None or ytm_pct <= 0) and (price_f is not None or coupon_pct is not None or maturity_date is not None):
+    if (ytm_pct is None or ytm_pct <= 0) and (
+        price_f is not None or coupon_pct is not None or maturity_date is not None
+    ):
         try:
             ref = ref_date or date.today()
 
             # Case 1: Standard coupon bond
-            if price_pct is not None and coupon_pct is not None and coupon_pct > 0 and maturity_date is not None and maturity_date > ref:
+            if (
+                price_pct is not None
+                and coupon_pct is not None
+                and coupon_pct > 0
+                and maturity_date is not None
+                and maturity_date > ref
+            ):
                 solved = ytm_from_price(price_pct, coupon_pct, 2, maturity_date, ref)
                 if solved and solved > 0:
                     ytm_pct = round(solved, 4)
 
             # Case 2: Zero-coupon / discount bond
-            if (ytm_pct is None or ytm_pct <= 0) and price_pct is not None and maturity_date is not None and maturity_date > ref:
+            if (
+                (ytm_pct is None or ytm_pct <= 0)
+                and price_pct is not None
+                and maturity_date is not None
+                and maturity_date > ref
+            ):
                 years = (maturity_date - ref).days / 365.25
                 if years > 0.05 and 0.5 <= price_pct <= 500:
                     s = (((100.0 / price_pct) ** (1.0 / years)) - 1.0) * 100.0
@@ -505,7 +524,9 @@ def score_bond(
     # defaulted/frozen issuers (e.g. Belarus eurobonds at 92% YTM) to the top
     # of the opportunity lists, so the reward is capped and the risk penalty
     # is deepened instead. Profiled against real MOEX/BCSE quotes 2026-08.
-    distressed = price_pct is not None and ytm_pct is not None and price_pct < 70.0 and ytm_pct > 40.0
+    distressed = (
+        price_pct is not None and ytm_pct is not None and price_pct < 70.0 and ytm_pct > 40.0
+    )
     if distressed:
         breakdown.yield_component = min(breakdown.yield_component, 20.0)
         breakdown.volatility_component -= 18.0

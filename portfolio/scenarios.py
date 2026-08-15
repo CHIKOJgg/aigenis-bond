@@ -40,7 +40,7 @@ def run_scenario(
     portfolio_change = usd_impact + byn_impact + metals_impact + eur_impact
 
     raw = {"USD": usd_impact, "BYN": byn_impact, "Metals": metals_impact, "EUR": eur_impact}
-    worst = min(raw, key=raw.get) if any(raw.values()) else None
+    worst = min(raw, key=lambda k: raw[k]) if any(raw.values()) else None
     notes: list[str] = []
     if scenario == "Bull USD":
         notes.append("USD-активы выигрывают, BYN-активы теряют в USD-эквиваленте")

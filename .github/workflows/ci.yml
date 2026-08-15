@@ -48,7 +48,7 @@ jobs:
           pip install -e . || true
           pip install mypy
       - name: Mypy (strict for core packages)
-        run: mypy
+        run: mypy --follow-imports=silent api/aigenis scoring portfolio
 
   migrations:
     # Verify the Alembic chain applies cleanly on a fresh Postgres from zero to

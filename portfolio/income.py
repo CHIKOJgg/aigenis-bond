@@ -10,6 +10,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 __all__ = [
     "CashFlow",
@@ -32,7 +33,7 @@ class CashFlow:
         self.kind = kind  # "coupon" | "redemption"
         self.internal_id = internal_id
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, object]:
         return {
             "date": self.date.isoformat(),
             "amount": float(self.amount),
@@ -140,12 +141,12 @@ def annual_income(
 
 
 def portfolio_income(
-    holdings: list[dict],
+    holdings: list[dict[str, Any]],
     *,
     from_date: date | None = None,
     horizon_months: int = 12,
     fx_rates: dict[str, float] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Aggregate a coupon-income calendar across holdings.
 
     Each holding dict needs: ``internal_id``, ``amount`` and the bond terms
@@ -159,7 +160,7 @@ def portfolio_income(
     total_invested = Decimal("0.00")
     total_annual = Decimal("0.00")
     all_coupons: list[CashFlow] = []
-    per_bond: list[dict] = []
+    per_bond: list[dict[str, Any]] = []
 
     currency_map: dict[str, str] = {}
     for h in holdings:

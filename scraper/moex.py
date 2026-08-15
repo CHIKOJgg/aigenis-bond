@@ -381,7 +381,9 @@ class MoexClient:
                     rows = _parse_iss_rows(payload, "history")
                     for c in rows:
                         d = _to_date(c.get("TRADEDATE") or c.get("begin"))
-                        close = _to_dec(c.get("CLOSE") or c.get("LEGALCLOSEPRICE") or c.get("CLOSEPRICE"))
+                        close = _to_dec(
+                            c.get("CLOSE") or c.get("LEGALCLOSEPRICE") or c.get("CLOSEPRICE")
+                        )
                         ytm = _to_dec(c.get("YIELDCLOSE") or c.get("YIELD") or c.get("WAPREC"))
                         if d and (close is not None or ytm is not None):
                             try:

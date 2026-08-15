@@ -62,7 +62,7 @@ from scraper.orm import (
 # --------------------------------------------------------------------------- #
 # Shared helpers
 # --------------------------------------------------------------------------- #
-_YOOKASSA_IP = "185.71.76.1"   # inside YooKassa's published 185.71.76.0/27
+_YOOKASSA_IP = "185.71.76.1"  # inside YooKassa's published 185.71.76.0/27
 _FOREIGN_IP = "203.0.113.7"
 
 
@@ -214,6 +214,7 @@ def _webhook_headers(ip: str = _YOOKASSA_IP, **extra) -> dict[str, str]:
 # 1. api/billing/router.py
 # =========================================================================== #
 
+
 # --- /billing/plans -------------------------------------------------------- #
 async def test_billing_plans_endpoint_shape():
     async with _make_client() as client:
@@ -305,7 +306,11 @@ async def test_create_payment_happy_path_200(monkeypatch):
     async with _make_client() as client:
         resp = await client.post(
             "/billing/create-payment",
-            json={"plan": "enterprise", "success_url": "https://aigenis.by/ok", "referral_code": "P1"},
+            json={
+                "plan": "enterprise",
+                "success_url": "https://aigenis.by/ok",
+                "referral_code": "P1",
+            },
             headers=_auth(uid),
         )
         assert resp.status_code == 200
@@ -428,11 +433,11 @@ def test_webhook_ip_helper_functions(monkeypatch):
     # _allowed_networks defaults to the published YooKassa ranges.
     assert len(_allowed_networks()) == 7
 
-    assert _ip_allowed("185.71.76.1") is True       # inside 185.71.76.0/27
-    assert _ip_allowed("185.71.76.33") is False     # just outside /27
-    assert _ip_allowed("77.75.156.11") is True      # exact /32 entry
-    assert _ip_allowed("77.75.156.12") is False     # outside the /32
-    assert _ip_allowed("2a02:5180::1") is True      # IPv6 2a02:5180::/32
+    assert _ip_allowed("185.71.76.1") is True  # inside 185.71.76.0/27
+    assert _ip_allowed("185.71.76.33") is False  # just outside /27
+    assert _ip_allowed("77.75.156.11") is True  # exact /32 entry
+    assert _ip_allowed("77.75.156.12") is False  # outside the /32
+    assert _ip_allowed("2a02:5180::1") is True  # IPv6 2a02:5180::/32
     assert _ip_allowed(_FOREIGN_IP) is False
     assert _ip_allowed(None) is False
     assert _ip_allowed("not-an-ip") is False
@@ -508,9 +513,7 @@ async def test_webhook_unverified_payment_400(monkeypatch):
     async with _make_client() as client:
         resp = await client.post(
             "/billing/webhook",
-            content=json.dumps(
-                {"event": "payment.succeeded", "object": {"id": "forged"}}
-            ).encode(),
+            content=json.dumps({"event": "payment.succeeded", "object": {"id": "forged"}}).encode(),
             headers=_webhook_headers(),
         )
         assert resp.status_code == 400
@@ -532,6 +535,7 @@ async def test_webhook_ip_override_star_disables_filtering(monkeypatch):
 # 2. api/partner/webhooks.py
 # =========================================================================== #
 
+
 # --- HMAC signing ---------------------------------------------------------- #
 def test_sign_payload_deterministic_hmac():
     body = b'{"event":"bond.updated","payload":{}}'
@@ -539,7 +543,7 @@ def test_sign_payload_deterministic_hmac():
     expected = hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
     assert sig == expected
     assert partner_webhooks.sign_payload("s3cret", body) == sig  # deterministic
-    assert partner_webhooks.sign_payload("other", body) != sig   # secret matters
+    assert partner_webhooks.sign_payload("other", body) != sig  # secret matters
     assert partner_webhooks.sign_payload("s3cret", b"other") != sig  # body matters
 
 
@@ -649,7 +653,10 @@ def test_pin_public_ip_dns(monkeypatch):
 
     monkeypatch.setattr(partner_webhooks.socket, "getaddrinfo", fake_getaddrinfo)
     assert partner_webhooks._pin_public_ip("public.example") == ("93.184.216.34", "public.example")
-    assert partner_webhooks._pin_public_ip("ipv6.example") == ("[2606:2800:220:1::1]", "ipv6.example")
+    assert partner_webhooks._pin_public_ip("ipv6.example") == (
+        "[2606:2800:220:1::1]",
+        "ipv6.example",
+    )
     assert partner_webhooks._pin_public_ip("private.example") is None
     assert partner_webhooks._pin_public_ip("missing.example") is None
 
@@ -758,7 +765,11 @@ async def test_deliver_webhook_ssrf_blocked_no_call(monkeypatch):
     fake_cls = _patch_httpx_client(monkeypatch)
     owner = await _seed_user(20106)
     pk = await _seed_partner_key(owner, "dlv-4")
-    for private_url in ("https://127.0.0.1/hook", "https://localhost/hook", "https://10.0.0.5/hook"):
+    for private_url in (
+        "https://127.0.0.1/hook",
+        "https://localhost/hook",
+        "https://10.0.0.5/hook",
+    ):
         wh = await partner_webhooks.register_webhook(
             partner_key_id=pk, url=private_url, events=["bond.updated"], secret="s"
         )
@@ -877,7 +888,7 @@ async def test_notify_expiring_trials_email_and_telegram(monkeypatch):
     sent_emails: list[tuple[str, str, int]] = []
     monkeypatch.setattr(
         "api.notifications.email.send_subscription_expiring_email",
-        lambda to, tier, days: (sent_emails.append((to, tier, days)) or True),
+        lambda to, tier, days: sent_emails.append((to, tier, days)) or True,
     )
 
     class FakeBot:

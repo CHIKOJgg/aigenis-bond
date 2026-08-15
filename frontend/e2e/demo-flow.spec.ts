@@ -49,7 +49,7 @@ test.describe('demo smoke flow (6.3)', () => {
     await expect(dialog).not.toBeVisible();
 
     await page.getByRole('button', { name: 'Открыть' }).first().click();
-    await dialog.getByRole('button', { name: 'Влияние на портфель' }).click();
+    await dialog.getByRole('button', { name: 'Влияние на портфель', exact: true }).click();
 
     await expect(page).toHaveURL(/\/demo\/portfolio-impact\//);
     await expect(page.getByRole('heading', { name: /Влияние на портфель/ })).toBeVisible();

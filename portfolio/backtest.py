@@ -14,6 +14,7 @@ import math
 from bisect import bisect_right
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Any
 
 from scraper.models import Bond
 from scraper.orm import BondHistoryORM
@@ -48,10 +49,10 @@ class BacktestResult:
         self.annual_return_pct: Decimal | None = None
         self.sharpe_ratio: Decimal | None = None
         self.max_drawdown_pct: Decimal | None = None
-        self.equity_curve: list[dict] = []
-        self.positions_history: list[dict] = []
+        self.equity_curve: list[dict[str, Any]] = []
+        self.positions_history: list[dict[str, Any]] = []
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "strategy": self.strategy,
             "start_date": self.start_date.isoformat(),
@@ -209,8 +210,8 @@ def run_backtest(
     # Simulate
     capital = initial_capital
     holdings: dict[str, Decimal] = {}  # internal_id -> amount held
-    equity_curve: list[dict] = []
-    positions_history: list[dict] = []
+    equity_curve: list[dict[str, Any]] = []
+    positions_history: list[dict[str, Any]] = []
     last_rebalance = result.start_date - timedelta(days=rebalance_days)
 
     for current_date in sorted_dates:

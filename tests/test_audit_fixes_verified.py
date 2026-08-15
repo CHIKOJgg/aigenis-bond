@@ -152,7 +152,11 @@ def test_webhook_locks_evicts_unlocked_keys_only():
 
             # Trigger eviction check by running the same pattern as billing service
             if len(_webhook_locks) > _WEBHOOK_LOCK_MAX_KEYS:
-                for k in [k for k, lock_item in _webhook_locks.items() if not lock_item.locked() and k != "active-pay-id"]:
+                for k in [
+                    k
+                    for k, lock_item in _webhook_locks.items()
+                    if not lock_item.locked() and k != "active-pay-id"
+                ]:
                     _webhook_locks.pop(k, None)
 
             # Active lock MUST survive eviction!

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 from ml.models import RebalanceAction, RebalancePlan
 from portfolio.optimizer import allocate
@@ -25,7 +26,7 @@ MIN_TRADE_AMOUNT = Decimal("50")
 
 
 def _compute_weights(
-    positions: Iterable,
+    positions: Iterable[Any],
     target_alloc: dict[str, Decimal],
     total: Decimal,
     initial_capital: Decimal | None = None,
@@ -51,7 +52,7 @@ def build_plan(
     *,
     bonds: list[Bond],
     prefs: UserPreferences,
-    current_positions: list,
+    current_positions: list[Any],
     current_total: Decimal,
     drift_threshold: float = DEFAULT_DRIFT_THRESHOLD,
     top_n: int = 10,
@@ -114,8 +115,8 @@ def build_plan(
         max_drift_observed=round(drift, 4),
         actions=actions,
         expected_return=target_alloc.expected_return,
-        estimated_cost=sum(
-            (abs(a.amount) for a in actions if a.side != "hold"), start=Decimal("0")
+        estimated_cost=float(
+            sum((abs(a.amount) for a in actions if a.side != "hold"), start=Decimal("0"))
         ),
         created_at=datetime.now(UTC),
     )

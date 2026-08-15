@@ -160,6 +160,3 @@ def test_metals_strategy_prioritizes_metal_bonds():
     assert scores["AIG_OP35"] == 58.0
     assert scores["AIG_OP43"] == 27.0
     assert scores["AIG_OP42"] == 15.0
-
-
-

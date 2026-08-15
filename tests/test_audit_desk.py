@@ -99,7 +99,9 @@ def _bond(
         yield_to_maturity=Decimal(str(ytm)) if ytm is not None else None,
         coupon_rate=Decimal(str(coupon)) if coupon is not None else None,
         coupon_frequency=freq,
-        maturity_date=maturity if isinstance(maturity, date) else (date.fromisoformat(maturity) if maturity else None),
+        maturity_date=maturity
+        if isinstance(maturity, date)
+        else (date.fromisoformat(maturity) if maturity else None),
         price=Decimal(str(price)) if price is not None else None,
         nominal=Decimal(str(nominal)),
         start_date=start_date,
@@ -139,6 +141,7 @@ class FakeBond:
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/spreads.py
 # ══════════════════════════════════════════════════════════════════════════ #
+
 
 def test_solve_flat_yield_empty_flows_returns_none():
     assert solve_flat_yield([], 100.0) is None
@@ -236,9 +239,23 @@ def test_compute_spreads_z_and_g_spread_identity():
 def test_compute_spreads_skips_incomplete_bonds():
     curve = NelsonSiegelParams(beta0=10.0, beta1=0.0, beta2=0.0, tau=1.5)
     bonds = [
-        FakeBond("OK", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=5.0, price=95.0),
-        FakeBond("NO-PRICE", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=5.0, price=None),
-        FakeBond("NO-YTM", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=None, price=95.0),
+        FakeBond(
+            "OK", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=5.0, price=95.0
+        ),
+        FakeBond(
+            "NO-PRICE",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=5.0,
+            price=None,
+        ),
+        FakeBond(
+            "NO-YTM",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=None,
+            price=95.0,
+        ),
         FakeBond("NO-MAT", currency="USD", maturity_date=None, yield_to_maturity=5.0, price=95.0),
     ]
     reports = compute_spreads(bonds, {"USD": curve}, asof=ASOF)
@@ -248,7 +265,13 @@ def test_compute_spreads_skips_incomplete_bonds():
 def test_compute_spreads_skips_unknown_currency_and_matured():
     curve = NelsonSiegelParams(beta0=10.0, beta1=0.0, beta2=0.0, tau=1.5)
     bonds = [
-        FakeBond("NO-CURVE", currency="RUB", maturity_date=date(2027, 1, 1), yield_to_maturity=5.0, price=95.0),
+        FakeBond(
+            "NO-CURVE",
+            currency="RUB",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=5.0,
+            price=95.0,
+        ),
         FakeBond("MATURED", currency="USD", maturity_date=ASOF, yield_to_maturity=5.0, price=95.0),
     ]
     assert compute_spreads(bonds, {"USD": curve}, asof=ASOF) == []
@@ -257,8 +280,20 @@ def test_compute_spreads_skips_unknown_currency_and_matured():
 def test_compute_spreads_side_labels_cheap_and_fair():
     curve = NelsonSiegelParams(beta0=10.0, beta1=0.0, beta2=0.0, tau=1.5)
     bonds = [
-        FakeBond("CHEAP", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=25.0, price=80.0),
-        FakeBond("FAIR", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=10.0, price=90.9091),
+        FakeBond(
+            "CHEAP",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=25.0,
+            price=80.0,
+        ),
+        FakeBond(
+            "FAIR",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=10.0,
+            price=90.9091,
+        ),
     ]
     reports = {r.internal_id: r for r in compute_spreads(bonds, {"USD": curve}, asof=ASOF)}
     # model 90.9091 vs dirty 80 → mispricing +13.6364% ≥ +1 → cheap.
@@ -273,9 +308,27 @@ def test_compute_spreads_side_labels_cheap_and_fair():
 def test_compute_spreads_sorted_by_abs_mispricing_desc():
     curve = NelsonSiegelParams(beta0=10.0, beta1=0.0, beta2=0.0, tau=1.5)
     bonds = [
-        FakeBond("FAIR", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=10.0, price=90.9091),
-        FakeBond("RICH", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=5.2632, price=95.0),
-        FakeBond("CHEAP", currency="USD", maturity_date=date(2027, 1, 1), yield_to_maturity=25.0, price=80.0),
+        FakeBond(
+            "FAIR",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=10.0,
+            price=90.9091,
+        ),
+        FakeBond(
+            "RICH",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=5.2632,
+            price=95.0,
+        ),
+        FakeBond(
+            "CHEAP",
+            currency="USD",
+            maturity_date=date(2027, 1, 1),
+            yield_to_maturity=25.0,
+            price=80.0,
+        ),
     ]
     reports = compute_spreads(bonds, {"USD": curve}, asof=ASOF)
     assert [r.internal_id for r in reports] == ["CHEAP", "RICH", "FAIR"]
@@ -306,6 +359,7 @@ def test_compute_spreads_dirty_price_includes_accrued():
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/yield_curve.py
 # ══════════════════════════════════════════════════════════════════════════ #
+
 
 def test_ns_rate_at_zero_is_beta0_plus_beta1():
     assert _ns_rate(0.0, 10.0, 2.0, -3.0, 2.0) == 12.0
@@ -348,7 +402,10 @@ def test_fit_nelson_siegel_empty_and_sparse():
     one = fit_nelson_siegel([CurvePoint(tenor="1Y", years=1.0, rate_pct=7.0)])
     assert (one.beta0, one.beta1, one.beta2) == (7.0, 0.0, 0.0)
     two = fit_nelson_siegel(
-        [CurvePoint(tenor="1Y", years=1.0, rate_pct=5.0), CurvePoint(tenor="10Y", years=10.0, rate_pct=7.0)]
+        [
+            CurvePoint(tenor="1Y", years=1.0, rate_pct=5.0),
+            CurvePoint(tenor="10Y", years=10.0, rate_pct=7.0),
+        ]
     )
     assert (two.beta0, two.beta1, two.beta2) == (6.0, 0.0, 0.0)
 
@@ -356,10 +413,19 @@ def test_fit_nelson_siegel_empty_and_sparse():
 def test_fit_nelson_siegel_reproduces_rates():
     true = NelsonSiegelParams(beta0=5.0, beta1=-1.5, beta2=1.0, tau=2.5)
     tenors = {"1Y": 1.0, "2Y": 2.0, "3Y": 3.0, "5Y": 5.0, "7Y": 7.0, "10Y": 10.0}
-    points = [CurvePoint(tenor=t, years=y, rate_pct=_ns_rate(y, **true.model_dump())) for t, y in tenors.items()]
+    points = [
+        CurvePoint(tenor=t, years=y, rate_pct=_ns_rate(y, **true.model_dump()))
+        for t, y in tenors.items()
+    ]
     fitted = fit_nelson_siegel(points)
     for y in tenors.values():
-        assert abs(_ns_rate(y, fitted.beta0, fitted.beta1, fitted.beta2, fitted.tau) - _ns_rate(y, **true.model_dump())) < 1e-2
+        assert (
+            abs(
+                _ns_rate(y, fitted.beta0, fitted.beta1, fitted.beta2, fitted.tau)
+                - _ns_rate(y, **true.model_dump())
+            )
+            < 1e-2
+        )
 
 
 def test_curve_from_bonds_buckets_and_averages():
@@ -390,6 +456,31 @@ def test_curve_from_bonds_skips_missing_and_matured():
     assert curve.points[0].rate_pct == 6.0
 
 
+def test_curve_from_bonds_excludes_distribution_and_anomalies():
+    """Eligibility gate: дистрибуция (цена 55%, YTM 57.6%) не должна
+    поднимать бакет кривой (как 1545% поднимал «короткий» бакет до 130%)."""
+    bonds = [
+        _bond(internal_id="A", ytm=12.0, maturity="2055-01-01"),
+        _bond(internal_id="B", ytm=14.0, maturity="2055-07-01"),
+        _bond(internal_id="DIST", ytm=57.6, maturity="2055-06-01", price=55.0),
+        _bond(internal_id="EXT", ytm=800.0, maturity="2055-06-01", price=50.0),
+    ]
+    curve = curve_from_bonds(bonds)
+    assert len(curve.points) == 1
+    assert curve.points[0].rate_pct == 13.0  # median of 12 и 14
+
+
+def test_curve_from_bonds_uses_median_not_mean():
+    """Медиана устойчива к одиночному высокому значению внутри бакета."""
+    bonds = [
+        _bond(internal_id="A", ytm=10.0, maturity="2055-01-01"),
+        _bond(internal_id="B", ytm=12.0, maturity="2055-06-01"),
+        _bond(internal_id="C", ytm=40.0, maturity="2055-03-01", price=100.0),
+    ]
+    curve = curve_from_bonds(bonds)
+    assert curve.points[0].rate_pct == 12.0  # не среднее (20.67)
+
+
 def test_curve_slope_and_curvature():
     curve = YieldCurve(
         currency="USD",
@@ -400,12 +491,16 @@ def test_curve_slope_and_curvature():
         ],
     )
     assert curve_slope(curve) == 2.0
-    assert curve_curvature(curve, NelsonSiegelParams(beta0=5.0, beta1=-1.0, beta2=-3.0, tau=2.0)) == -3.0
+    assert (
+        curve_curvature(curve, NelsonSiegelParams(beta0=5.0, beta1=-1.0, beta2=-3.0, tau=2.0))
+        == -3.0
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/relative_value.py
 # ══════════════════════════════════════════════════════════════════════════ #
+
 
 def test_rv_z_score_sign_and_sides():
     # YTMs 8, 12, 4, 8.5 → mean 8.125, pstdev 2.8367.
@@ -483,6 +578,37 @@ def test_rv_sorted_by_abs_z_desc():
     assert zs == sorted(zs, reverse=True)
 
 
+def test_rv_excludes_distribution_and_extreme_bonds():
+    """Eligibility gate: дистрибуция (цена 55%, YTM 57.6%) и сверхвысокий
+    риск (YTM 800%) не должны выдавать «Недооценена (BUY)» с Z=+8."""
+    bonds = [
+        _bond(internal_id="A", ytm=8.0),
+        _bond(internal_id="B", ytm=12.0),
+        _bond(internal_id="C", ytm=4.0),
+        _bond(internal_id="D", ytm=8.5),
+        _bond(internal_id="DIST", ytm=57.6, price=55.0),
+        _bond(internal_id="EXT", ytm=800.0, price=50.0),
+    ]
+    ids = {s.internal_id for s in relative_value_signals(bonds, asof=ASOF)}
+    assert "DIST" not in ids
+    assert "EXT" not in ids
+    assert {"A", "B", "C", "D"} <= ids
+
+
+def test_rv_excludes_ytm_anomaly_bond():
+    """Обычная бумага (цена 99%) с YTM 57.6% при аналогах 4-15% — аномалия:
+    не должна ломать z-score всего бакета."""
+    bonds = [
+        _bond(internal_id=f"P{i}", ytm=y) for i, y in enumerate([4.0, 6.0, 8.0, 10.0, 12.0, 15.0])
+    ]
+    bonds.append(_bond(internal_id="ANOM", ytm=57.6, price=99.0))
+    ids = {s.internal_id for s in relative_value_signals(bonds, asof=ASOF)}
+    assert "ANOM" not in ids
+    # Остальные сравниваются между собой, без раздутого «справедливого уровня».
+    by_id = {s.internal_id: s for s in relative_value_signals(bonds, asof=ASOF)}
+    assert abs(by_id["P0"].fair_spread_pct - 9.1666) < 0.01  # среднее 4..15
+
+
 def test_signals_from_curve_consistency():
     params = NelsonSiegelParams(beta0=5.0, beta1=-1.0, beta2=0.5, tau=2.5)
     curve = YieldCurve(
@@ -518,6 +644,7 @@ def test_signals_from_curve_sparse_returns_empty():
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/repo.py
 # ══════════════════════════════════════════════════════════════════════════ #
+
 
 def test_repo_deal_haircut_math():
     deal = repo_deal(
@@ -579,6 +706,7 @@ def test_haircut_by_issuer_tiers():
 # desk/carry.py
 # ══════════════════════════════════════════════════════════════════════════ #
 
+
 def test_carry_hand_numbers_with_curve():
     """1Y 10% annual bond, ytm 10, funding 6, horizon 30d, flat 8% curve.
 
@@ -628,16 +756,36 @@ def test_carry_zero_horizon():
 
 
 def test_carry_returns_none_missing_inputs():
-    assert carry_for_bond(_bond(internal_id="X", ytm=None, coupon=8.0), funding_rate_pct=5.0, asof=ASOF) is None
-    assert carry_for_bond(_bond(internal_id="Y", ytm=8.0, coupon=None), funding_rate_pct=5.0, asof=ASOF) is None
-    assert carry_for_bond(_bond(internal_id="Z", ytm=8.0, coupon=8.0, maturity=None), funding_rate_pct=5.0, asof=ASOF) is None
+    assert (
+        carry_for_bond(
+            _bond(internal_id="X", ytm=None, coupon=8.0), funding_rate_pct=5.0, asof=ASOF
+        )
+        is None
+    )
+    assert (
+        carry_for_bond(
+            _bond(internal_id="Y", ytm=8.0, coupon=None), funding_rate_pct=5.0, asof=ASOF
+        )
+        is None
+    )
+    assert (
+        carry_for_bond(
+            _bond(internal_id="Z", ytm=8.0, coupon=8.0, maturity=None),
+            funding_rate_pct=5.0,
+            asof=ASOF,
+        )
+        is None
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/stress.py
 # ══════════════════════════════════════════════════════════════════════════ #
 
-def _zero_coupon(internal_id: str, *, maturity: str, ytm: float, price: float = 100.0, freq: int = 1, **kw) -> Bond:
+
+def _zero_coupon(
+    internal_id: str, *, maturity: str, ytm: float, price: float = 100.0, freq: int = 1, **kw
+) -> Bond:
     return _bond(
         internal_id=internal_id,
         ytm=ytm,
@@ -679,7 +827,11 @@ def test_run_stress_fx_shock_hand_numbers():
     # cur_value = amount * new_price/100 * 0.8 = 1000*1.0*0.8 = 800 → P&L -200.
     usd = _zero_coupon("USD-1", maturity="2030-01-01", ytm=8.0, currency="USD")
     byn = _zero_coupon("BYN-1", maturity="2030-01-01", ytm=8.0, currency="BYN")
-    res = run_stress(PRESET_SCENARIOS["fx_shock_-20%"], [(usd, Decimal("1000")), (byn, Decimal("1000"))], asof=ASOF)
+    res = run_stress(
+        PRESET_SCENARIOS["fx_shock_-20%"],
+        [(usd, Decimal("1000")), (byn, Decimal("1000"))],
+        asof=ASOF,
+    )
     assert res.by_position["USD-1"] == Decimal("0.00")
     assert res.by_position["BYN-1"] == Decimal("-200.00")
     assert res.pnl == Decimal("-200.00")
@@ -703,7 +855,11 @@ def test_run_stress_by_tenor_buckets():
 def test_run_stress_credit_shock_skips_government():
     gov = _zero_coupon("GOV", maturity="2030-01-01", ytm=8.0, is_government=True)
     corp = _zero_coupon("CORP", maturity="2030-01-01", ytm=8.0, is_government=False)
-    res = run_stress(PRESET_SCENARIOS["credit_shock_+150bp"], [(gov, Decimal("1000")), (corp, Decimal("1000"))], asof=ASOF)
+    res = run_stress(
+        PRESET_SCENARIOS["credit_shock_+150bp"],
+        [(gov, Decimal("1000")), (corp, Decimal("1000"))],
+        asof=ASOF,
+    )
     assert res.by_position["GOV"] == Decimal("0.00")  # sovereign is risk-free
     assert res.by_position["CORP"] < res.by_position["GOV"]
 
@@ -765,6 +921,7 @@ def test_preset_scenarios_cover_all_kinds_and_run():
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/duration.py
 # ══════════════════════════════════════════════════════════════════════════ #
+
 
 def test_par_bond_duration_below_maturity():
     bond = _bond(internal_id="PAR", ytm=10.0, coupon=10.0, freq=2, maturity="2036-01-01")
@@ -852,7 +1009,12 @@ def test_extreme_negative_ytm_raises():
 
 def test_duration_report_none_and_no_maturity():
     empty = duration_report(None, asof=ASOF)
-    assert (empty.modified_duration, empty.macaulay_duration, empty.convexity, empty.dv01) == (0.0, 0.0, 0.0, 0.0)
+    assert (empty.modified_duration, empty.macaulay_duration, empty.convexity, empty.dv01) == (
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    )
     nomat = duration_report(_bond(internal_id="N", maturity=None), asof=ASOF)
     assert nomat.modified_duration == 0.0
 
@@ -865,12 +1027,20 @@ def test_key_rate_duration_keys():
 
 def test_low_level_duration_functions_agree():
     mac = macaulay_duration(
-        nominal=Decimal("1000"), coupon_rate_pct=10.0, coupon_frequency=2,
-        ytm_pct=10.0, maturity=date(2036, 1, 1), ref=ASOF,
+        nominal=Decimal("1000"),
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        ytm_pct=10.0,
+        maturity=date(2036, 1, 1),
+        ref=ASOF,
     )
     mod = modified_duration(
-        nominal=Decimal("1000"), coupon_rate_pct=10.0, coupon_frequency=2,
-        ytm_pct=10.0, maturity=date(2036, 1, 1), ref=ASOF,
+        nominal=Decimal("1000"),
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        ytm_pct=10.0,
+        maturity=date(2036, 1, 1),
+        ref=ASOF,
     )
     assert abs(mod - mac / 1.05) < 1e-9
 
@@ -879,19 +1049,28 @@ def test_low_level_duration_functions_agree():
 # desk/cashflow.py
 # ══════════════════════════════════════════════════════════════════════════ #
 
+
 def test_pricing_cashflows_frequency_flow_counts():
     for freq, expected in ((1, 10), (2, 20), (4, 40)):
         flows = pricing_cashflows(
-            nominal=100.0, coupon_rate_pct=10.0, coupon_frequency=freq,
-            maturity=date(2034, 1, 1), asof=date(2024, 1, 1), issue_date=date(2024, 1, 1),
+            nominal=100.0,
+            coupon_rate_pct=10.0,
+            coupon_frequency=freq,
+            maturity=date(2034, 1, 1),
+            asof=date(2024, 1, 1),
+            issue_date=date(2024, 1, 1),
         )
         assert len(flows) == expected, f"freq={freq}"
 
 
 def test_pricing_cashflows_coupon_amounts():
     flows = pricing_cashflows(
-        nominal=100.0, coupon_rate_pct=10.0, coupon_frequency=2,
-        maturity=date(2034, 1, 1), asof=date(2024, 1, 1), issue_date=date(2024, 1, 1),
+        nominal=100.0,
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        maturity=date(2034, 1, 1),
+        asof=date(2024, 1, 1),
+        issue_date=date(2024, 1, 1),
     )
     assert all(abs(amt - 5.0) < 1e-9 for t, amt in flows[:-1])
     assert abs(flows[-1][1] - 105.0) < 1e-9  # final coupon + redemption
@@ -900,29 +1079,50 @@ def test_pricing_cashflows_coupon_amounts():
 def test_pricing_cashflows_zero_coupon_single_redemption_flow():
     # ACT/365 → t in years = days/365 (NOT /365.25 as in tenor math).
     flows = pricing_cashflows(
-        nominal=100.0, coupon_rate_pct=0.0, coupon_frequency=1,
-        maturity=date(2028, 1, 1), asof=date(2026, 1, 1), issue_date=date(2026, 1, 1),
+        nominal=100.0,
+        coupon_rate_pct=0.0,
+        coupon_frequency=1,
+        maturity=date(2028, 1, 1),
+        asof=date(2026, 1, 1),
+        issue_date=date(2026, 1, 1),
     )
     assert [(round(t, 9), round(a, 9)) for t, a in flows] == [(1.0, 0.0), (2.0, 100.0)]
 
 
 def test_pricing_cashflows_after_maturity_no_flows():
-    assert pricing_cashflows(
-        nominal=100.0, coupon_rate_pct=10.0, coupon_frequency=2,
-        maturity=date(2034, 1, 1), asof=date(2034, 1, 1), issue_date=date(2024, 1, 1),
-    ) == []
-    assert pricing_cashflows(
-        nominal=100.0, coupon_rate_pct=10.0, coupon_frequency=2,
-        maturity=date(2034, 1, 1), asof=date(2035, 1, 1), issue_date=date(2024, 1, 1),
-    ) == []
+    assert (
+        pricing_cashflows(
+            nominal=100.0,
+            coupon_rate_pct=10.0,
+            coupon_frequency=2,
+            maturity=date(2034, 1, 1),
+            asof=date(2034, 1, 1),
+            issue_date=date(2024, 1, 1),
+        )
+        == []
+    )
+    assert (
+        pricing_cashflows(
+            nominal=100.0,
+            coupon_rate_pct=10.0,
+            coupon_frequency=2,
+            maturity=date(2034, 1, 1),
+            asof=date(2035, 1, 1),
+            issue_date=date(2024, 1, 1),
+        )
+        == []
+    )
 
 
 def test_pricing_cashflows_fallback_without_issue_date():
     # Month-spaced coupons backward from maturity: 2026-07-01 (181/365 y) and
     # 2027-01-01 (1.0 y).
     flows = pricing_cashflows(
-        nominal=100.0, coupon_rate_pct=10.0, coupon_frequency=2,
-        maturity=date(2027, 1, 1), asof=date(2026, 1, 1),
+        nominal=100.0,
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        maturity=date(2027, 1, 1),
+        asof=date(2026, 1, 1),
     )
     assert len(flows) == 2
     assert abs(flows[0][0] - 181 / 365) < 1e-9
@@ -941,8 +1141,12 @@ def test_accrued_interest_at_coupon_date_zero():
     # Ex-coupon convention: exactly on a coupon date the previous coupon was
     # just paid → 0.0 accrued.
     ai = accrued_interest(
-        coupon_rate_pct=10.0, coupon_frequency=2, issue_date=date(2026, 1, 1),
-        maturity_date=date(2030, 1, 1), asof=date(2026, 7, 1), face=100.0,
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        issue_date=date(2026, 1, 1),
+        maturity_date=date(2030, 1, 1),
+        asof=date(2026, 7, 1),
+        face=100.0,
     )
     assert ai == 0.0
 
@@ -951,8 +1155,13 @@ def test_accrued_interest_half_period_act365():
     # Semiannual 10%: coupon per period = 100*10%/2 = 5.00. Half a period
     # (2026-01-01 → 2026-04-01 is 90 of 181 days) → 5.00*90/181 = 2.486.
     ai = accrued_interest(
-        coupon_rate_pct=10.0, coupon_frequency=2, issue_date=date(2026, 1, 1),
-        maturity_date=date(2030, 1, 1), asof=date(2026, 4, 1), convention="ACT/365", face=100.0,
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        issue_date=date(2026, 1, 1),
+        maturity_date=date(2030, 1, 1),
+        asof=date(2026, 4, 1),
+        convention="ACT/365",
+        face=100.0,
     )
     assert abs(ai - 5.0 * 90 / 181) < 1e-9
     assert abs(ai - 2.5) < 0.02  # ≈ half the 5.00 per-period coupon
@@ -960,23 +1169,46 @@ def test_accrued_interest_half_period_act365():
 
 def test_accrued_interest_30_360_exact_half():
     ai = accrued_interest(
-        coupon_rate_pct=10.0, coupon_frequency=2, issue_date=date(2026, 1, 1),
-        maturity_date=date(2030, 1, 1), asof=date(2026, 4, 1), convention="30/360", face=100.0,
+        coupon_rate_pct=10.0,
+        coupon_frequency=2,
+        issue_date=date(2026, 1, 1),
+        maturity_date=date(2030, 1, 1),
+        asof=date(2026, 4, 1),
+        convention="30/360",
+        face=100.0,
     )
     assert abs(ai - 2.5) < 1e-9
 
 
 def test_accrued_interest_guards():
     kw = {"coupon_frequency": 2, "maturity_date": date(2030, 1, 1), "face": 100.0}
-    assert accrued_interest(coupon_rate_pct=10.0, **kw, issue_date=None, asof=date(2026, 4, 1)) == 0.0
-    assert accrued_interest(coupon_rate_pct=10.0, **kw, issue_date=date(2026, 1, 1), asof=date(2025, 12, 1)) == 0.0  # before issue
-    assert accrued_interest(coupon_rate_pct=0.0, **kw, issue_date=date(2026, 1, 1), asof=date(2026, 4, 1)) == 0.0
-    assert accrued_interest(coupon_rate_pct=10.0, **kw, issue_date=date(2026, 1, 1), asof=date(2031, 1, 1)) == 0.0  # past maturity
+    assert (
+        accrued_interest(coupon_rate_pct=10.0, **kw, issue_date=None, asof=date(2026, 4, 1)) == 0.0
+    )
+    assert (
+        accrued_interest(
+            coupon_rate_pct=10.0, **kw, issue_date=date(2026, 1, 1), asof=date(2025, 12, 1)
+        )
+        == 0.0
+    )  # before issue
+    assert (
+        accrued_interest(
+            coupon_rate_pct=0.0, **kw, issue_date=date(2026, 1, 1), asof=date(2026, 4, 1)
+        )
+        == 0.0
+    )
+    assert (
+        accrued_interest(
+            coupon_rate_pct=10.0, **kw, issue_date=date(2026, 1, 1), asof=date(2031, 1, 1)
+        )
+        == 0.0
+    )  # past maturity
 
 
 # ══════════════════════════════════════════════════════════════════════════ #
 # desk/ytm.py
 # ══════════════════════════════════════════════════════════════════════════ #
+
 
 def test_ytm_par_bond_equals_coupon():
     y = ytm_from_price(100.0, 10.0, 2, date(2036, 1, 1), asof=ASOF)
@@ -1038,6 +1270,7 @@ def test_sane_yield_and_tolerance():
 # (root conftest.py recompiles BigInteger PKs to INTEGER so they autoincrement).
 # ══════════════════════════════════════════════════════════════════════════ #
 
+
 async def _count_rows(session, model) -> int:
     result = await session.execute(select(func.count()).select_from(model))
     return int(result.scalar_one())
@@ -1087,7 +1320,9 @@ def _repo_deal() -> RepoDeal:
 
 def _stress_result(name: str = "T1") -> StressResult:
     return StressResult(
-        scenario=StressScenario(kind="parallel", name=name, description="d", rate_shocks={"1Y": 1.0}),
+        scenario=StressScenario(
+            kind="parallel", name=name, description="d", rate_shocks={"1Y": 1.0}
+        ),
         portfolio_value=Decimal("1000.00"),
         stressed_value=Decimal("950.00"),
         pnl=Decimal("-50.00"),
@@ -1120,13 +1355,17 @@ async def test_save_curve_points_empty_and_rows():
     async with session_scope() as session:
         assert await save_curve_points(session, currency="USD", points=[]) == 0
         n = await save_curve_points(
-            session, currency="USD", points=[("1Y", 1.0, 10.0), ("10Y", 10.0, 8.0)],
+            session,
+            currency="USD",
+            points=[("1Y", 1.0, 10.0), ("10Y", 10.0, 8.0)],
             ns_params={"beta0": 10.0},
         )
         assert n == 2
         rows = (
-            await session.execute(select(CurvePointORM).where(CurvePointORM.currency == "USD"))
-        ).scalars().all()
+            (await session.execute(select(CurvePointORM).where(CurvePointORM.currency == "USD")))
+            .scalars()
+            .all()
+        )
         assert len(rows) == 2
         assert rows[0].ns_params == {"beta0": 10.0}
         assert float(rows[0].years) == 1.0
@@ -1186,7 +1425,11 @@ async def test_save_repo_deal_insert():
         await save_repo_deal(session, _repo_deal())
         await save_repo_deal(session, _repo_deal())
         assert await _count_rows(session, RepoDealORM) == 2
-        row = (await session.execute(select(RepoDealORM).where(RepoDealORM.internal_id == "RD-1"))).scalars().first()
+        row = (
+            (await session.execute(select(RepoDealORM).where(RepoDealORM.internal_id == "RD-1")))
+            .scalars()
+            .first()
+        )
         assert float(row.cash_lent) == 950.0
         assert float(row.haircut_pct) == 5.0
 

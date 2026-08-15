@@ -46,7 +46,9 @@ def _row(b: BondORM) -> dict:
         "coupon_frequency": b.coupon_frequency,
         "nominal": float(b.nominal) if b.nominal is not None else None,
         "price": float(b.price) if b.price is not None else None,
-        "yield_to_maturity": float(b.yield_to_maturity) if b.yield_to_maturity is not None else None,
+        "yield_to_maturity": float(b.yield_to_maturity)
+        if b.yield_to_maturity is not None
+        else None,
     }
 
 
@@ -55,19 +57,26 @@ def _check(row: dict, asof: date, tol: float) -> list[dict]:
     price_pct = to_price_pct(row["price"], row["nominal"])
     stored = row["yield_to_maturity"]
     if stored is None or stored <= 0:
-        issues.append({"field": "yield_to_maturity", "issue": "missing_or_nonpositive", "value": stored})
+        issues.append(
+            {"field": "yield_to_maturity", "issue": "missing_or_nonpositive", "value": stored}
+        )
 
     if row["coupon_rate"] is None or row["coupon_rate"] <= 0:
-        issues.append({"field": "coupon_rate", "issue": "missing_or_nonpositive", "value": row["coupon_rate"]})
+        issues.append(
+            {"field": "coupon_rate", "issue": "missing_or_nonpositive", "value": row["coupon_rate"]}
+        )
 
     if price_pct is None:
         issues.append({"field": "price", "issue": "missing_or_nonpositive", "value": row["price"]})
     elif not (PRICE_PCT_MIN <= price_pct <= PRICE_PCT_MAX):
-        issues.append({
-            "field": "price_pct", "issue": "outside_sane_range",
-            "value": round(price_pct, 4),
-            "range": [PRICE_PCT_MIN, PRICE_PCT_MAX],
-        })
+        issues.append(
+            {
+                "field": "price_pct",
+                "issue": "outside_sane_range",
+                "value": round(price_pct, 4),
+                "range": [PRICE_PCT_MIN, PRICE_PCT_MAX],
+            }
+        )
 
     mat: date | None = None
     if row["maturity_date"] is None:
@@ -76,10 +85,14 @@ def _check(row: dict, asof: date, tol: float) -> list[dict]:
         try:
             mat = date.fromisoformat(row["maturity_date"])
         except ValueError:
-            issues.append({"field": "maturity_date", "issue": "unparseable", "value": row["maturity_date"]})
+            issues.append(
+                {"field": "maturity_date", "issue": "unparseable", "value": row["maturity_date"]}
+            )
             mat = None
         if mat is not None and mat <= asof:
-            issues.append({"field": "maturity_date", "issue": "matured_or_today", "value": mat.isoformat()})
+            issues.append(
+                {"field": "maturity_date", "issue": "matured_or_today", "value": mat.isoformat()}
+            )
 
     if (
         price_pct is not None
@@ -98,13 +111,15 @@ def _check(row: dict, asof: date, tol: float) -> list[dict]:
         if stored is not None and stored > 0 and rec is not None:
             diff = stored - rec
             if abs(diff) > tol:
-                issues.append({
-                    "field": "yield_to_maturity",
-                    "issue": "diverges_from_price_recompute",
-                    "stored": round(stored, 4),
-                    "recomputed": round(rec, 4),
-                    "diff_pp": round(diff, 2),
-                })
+                issues.append(
+                    {
+                        "field": "yield_to_maturity",
+                        "issue": "diverges_from_price_recompute",
+                        "stored": round(stored, 4),
+                        "recomputed": round(rec, 4),
+                        "diff_pp": round(diff, 2),
+                    }
+                )
     return issues
 
 
@@ -177,8 +192,12 @@ def _render_text(report: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--asof", default=str(date.today()))
-    parser.add_argument("--strict", type=float, default=0.5,
-                        help="flag stored-vs-recomputed YTM deviations above N pp")
+    parser.add_argument(
+        "--strict",
+        type=float,
+        default=0.5,
+        help="flag stored-vs-recomputed YTM deviations above N pp",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     asof = date.fromisoformat(args.asof)

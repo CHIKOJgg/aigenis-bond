@@ -36,7 +36,6 @@ from scraper.db import dispose, get_engine, session_scope
 from scraper.orm import (
     AlertEventORM,
     AlertORM,
-    AlertRuleORM,
     Base,
     BillingPaymentEventORM,
     BondHistoryORM,
@@ -48,6 +47,7 @@ from scraper.orm import (
     SubscriptionORM,
     UserORM,
 )
+
 
 # --------------------------------------------------------------------------- #
 # Shared helpers
@@ -90,9 +90,7 @@ async def _seed_user(
                 role="user",
                 subscription_tier=tier,
                 subscription_expires_at=(
-                    datetime.now(UTC) + timedelta(days=expires_days)
-                    if expires_days
-                    else None
+                    datetime.now(UTC) + timedelta(days=expires_days) if expires_days else None
                 ),
                 payment_channel=channel,
                 is_active=True,
@@ -170,7 +168,9 @@ async def _seed_bond_history(iid: str, rows: list[tuple[str, float, float]]) -> 
 
 async def _seed_stock(iid: str, *, name: str = "Stock", currency: str = "RUB") -> None:
     async with session_scope() as s:
-        s.add(StockORM(internal_id=iid, secid=iid, name=name, currency=currency, price=Decimal("100")))
+        s.add(
+            StockORM(internal_id=iid, secid=iid, name=name, currency=currency, price=Decimal("100"))
+        )
 
 
 async def _count(model) -> int:
@@ -210,6 +210,7 @@ def _json(obj: dict) -> bytes:
 # =========================================================================== #
 # 1. Billing service — api/billing/service.py
 # =========================================================================== #
+
 
 # --- Metadata / webhook plumbing ------------------------------------------- #
 def test_metadata_user_id_tolerant_parsing():
@@ -284,7 +285,11 @@ def test_payment_succeeded_creates_subscription(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -323,7 +328,11 @@ def test_payment_succeeded_extends_existing_subscription(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -338,6 +347,7 @@ def test_payment_succeeded_extends_existing_subscription(monkeypatch):
 
 def test_payment_succeeded_overpay_accepted(monkeypatch):
     """Documented behavior: paying MORE than the plan price is accepted."""
+
     def run():
         async def _go():
             uid = await _seed_user(603)
@@ -347,12 +357,21 @@ def test_payment_succeeded_overpay_accepted(monkeypatch):
 
             monkeypatch.setattr(billing_service, "fetch_payment", fake_fetch_payment)
             await billing_service.handle_webhook(
-                _json({"event": "payment.succeeded", "object": _payment("pay-603", amount="29.50", user_id=uid)})
+                _json(
+                    {
+                        "event": "payment.succeeded",
+                        "object": _payment("pay-603", amount="29.50", user_id=uid),
+                    }
+                )
             )
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -373,14 +392,20 @@ def test_payment_succeeded_underpay_rejected(monkeypatch):
 
             monkeypatch.setattr(billing_service, "fetch_payment", fake_fetch_payment)
             await billing_service.handle_webhook(
-                _json({"event": "payment.succeeded", "object": _payment("pay-604", amount="20.00", user_id=uid)})
+                _json(
+                    {
+                        "event": "payment.succeeded",
+                        "object": _payment("pay-604", amount="20.00", user_id=uid),
+                    }
+                )
             )
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
-                    .first()
-                )
+                    await s.execute(
+                        SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                    )
+                ).first()
             assert sub is None
 
         return _go
@@ -398,14 +423,20 @@ def test_payment_succeeded_wrong_currency_rejected(monkeypatch):
 
             monkeypatch.setattr(billing_service, "fetch_payment", fake_fetch_payment)
             await billing_service.handle_webhook(
-                _json({"event": "payment.succeeded", "object": _payment("pay-605", currency="USD", user_id=uid)})
+                _json(
+                    {
+                        "event": "payment.succeeded",
+                        "object": _payment("pay-605", currency="USD", user_id=uid),
+                    }
+                )
             )
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
-                    .first()
-                )
+                    await s.execute(
+                        SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                    )
+                ).first()
             assert sub is None
 
         return _go
@@ -428,7 +459,11 @@ def test_payment_succeeded_redelivery_is_idempotent(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -465,7 +500,11 @@ def test_payment_canceled_marks_subscription_canceled(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -505,7 +544,11 @@ def test_payment_canceled_stale_payment_ignored(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -546,7 +589,11 @@ def test_refund_succeeded_full_refund_revokes(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -591,7 +638,11 @@ def test_refund_partial_ignored(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -605,6 +656,7 @@ def test_refund_partial_ignored(monkeypatch):
 
 def test_refund_stars_channel_not_revoked(monkeypatch):
     """A YooKassa refund must not revoke access paid for via Telegram Stars."""
+
     def run():
         async def _go():
             uid = await _seed_user(611, channel="stars")
@@ -631,7 +683,11 @@ def test_refund_stars_channel_not_revoked(monkeypatch):
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -657,6 +713,7 @@ def test_refund_empty_id_rejected():
     # the subscription is marked refunded / access revoked. The handler should
     # reject objects whose ``id`` is missing, as it does for missing payment ids.
     """
+
     def run():
         async def _go():
             uid = await _seed_user(612, channel="yookassa")
@@ -675,7 +732,11 @@ def test_refund_empty_id_rejected():
 
             async with session_scope() as s:
                 sub = (
-                    (await s.execute(SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)))
+                    (
+                        await s.execute(
+                            SubscriptionORM.__table__.select().where(SubscriptionORM.user_id == uid)
+                        )
+                    )
                     .mappings()
                     .first()
                 )
@@ -704,7 +765,7 @@ class _FakeResp:
 
 
 class _FakeAsyncClient:
-    instances: list["_FakeAsyncClient"] = []
+    instances: list[_FakeAsyncClient] = []
 
     def __init__(self, *args, **kwargs):
         self.auth = kwargs.get("auth")
@@ -774,7 +835,9 @@ def test_create_payment_referral_code_in_metadata(monkeypatch):
         async def _go():
             fake_cls = _patch_yookassa_client(monkeypatch)
             user = SimpleNamespace(id=602)
-            await billing_service.create_payment(user, "enterprise", "https://app.example/ok", referral_code="PARTNER1")
+            await billing_service.create_payment(
+                user, "enterprise", "https://app.example/ok", referral_code="PARTNER1"
+            )
             payload = fake_cls.instances[0].calls[0][1]["json"]
             assert payload["amount"] == {"value": "99.00", "currency": "BYN"}
             assert payload["metadata"]["referral_code"] == "PARTNER1"
@@ -802,8 +865,7 @@ def test_create_payment_unknown_plan_returns_none(monkeypatch):
 def test_create_payment_yookassa_error_returns_none(monkeypatch):
     def run():
         async def _go():
-            fake_cls = _patch_yookassa_client(monkeypatch)
-            original_post = _FakeAsyncClient.post
+            _patch_yookassa_client(monkeypatch)
 
             async def failing_post(self, url, **kwargs):
                 self.calls.append((url, kwargs))
@@ -825,6 +887,7 @@ def test_create_payment_when_not_configured_returns_none(monkeypatch):
     (Regression: ``create_payment`` used to call the YooKassa API with empty
     auth instead of returning None immediately.)
     """
+
     def run():
         async def _go():
             assert billing_service.is_yookassa_configured() is False  # .env is empty in tests
@@ -1072,7 +1135,9 @@ def test_transactions_pagination_and_limit_validation():
                         json={"internal_id": "B-PG", "side": "buy", "amount": 100, "price": 100.0},
                         headers=_auth(705),
                     )
-                page1 = await client.get("/api/v1/transactions", params={"limit": 2}, headers=_auth(705))
+                page1 = await client.get(
+                    "/api/v1/transactions", params={"limit": 2}, headers=_auth(705)
+                )
                 assert len(page1.json()) == 2
                 page2 = await client.get(
                     "/api/v1/transactions", params={"limit": 2, "offset": 1}, headers=_auth(705)
@@ -1082,8 +1147,16 @@ def test_transactions_pagination_and_limit_validation():
                     "/api/v1/transactions", params={"offset": 5}, headers=_auth(705)
                 )
                 assert off.json() == []
-                assert (await client.get("/api/v1/transactions", params={"limit": 0}, headers=_auth(705))).status_code == 422
-                assert (await client.get("/api/v1/transactions", params={"limit": 500}, headers=_auth(705))).status_code == 422
+                assert (
+                    await client.get(
+                        "/api/v1/transactions", params={"limit": 0}, headers=_auth(705)
+                    )
+                ).status_code == 422
+                assert (
+                    await client.get(
+                        "/api/v1/transactions", params={"limit": 500}, headers=_auth(705)
+                    )
+                ).status_code == 422
 
         return _go
 
@@ -1102,7 +1175,9 @@ def test_pnl_spot_check_and_snapshot_persistence():
                     headers=_auth(706),
                 )
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-PNL", "amount": 1000}, headers=_auth(706)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-PNL", "amount": 1000},
+                    headers=_auth(706),
                 )
                 r = await client.get("/api/v1/pnl", headers=_auth(706))
                 assert r.status_code == 200
@@ -1129,7 +1204,9 @@ def test_pnl_spot_check_and_snapshot_persistence():
                 assert len(rows) == 1
                 assert rows[0]["total_value"] == pytest.approx(1020.41, abs=0.01)
 
-                bad_days = await client.get("/api/v1/pnl/history", params={"days": 6}, headers=_auth(706))
+                bad_days = await client.get(
+                    "/api/v1/pnl/history", params={"days": 6}, headers=_auth(706)
+                )
                 assert bad_days.status_code == 422
 
         return _go
@@ -1158,9 +1235,16 @@ def test_backtest_deterministic_spot_check():
     def run():
         async def _go():
             await _seed_user(708)
-            await _seed_bond("B-BT", currency="USD", ytm=10.0, price=105.0, maturity=date(2040, 1, 1))
+            await _seed_bond(
+                "B-BT", currency="USD", ytm=10.0, price=105.0, maturity=date(2040, 1, 1)
+            )
             await _seed_bond_history(
-                "B-BT", [("2026-01-01", 100.0, 10.0), ("2026-02-01", 102.0, 10.0), ("2026-03-01", 105.0, 10.0)]
+                "B-BT",
+                [
+                    ("2026-01-01", 100.0, 10.0),
+                    ("2026-02-01", 102.0, 10.0),
+                    ("2026-03-01", 105.0, 10.0),
+                ],
             )
             async with _make_client() as client:
                 r = await client.post(
@@ -1260,6 +1344,7 @@ def _pricing_client():
 
 def test_pricing_default_shape(monkeypatch):
     """Private client IP (127.0.0.1) -> country US, no geo lookup, billing source."""
+
     def run():
         async def _go():
             calls: list[str] = []
@@ -1310,6 +1395,7 @@ def test_pricing_geo_lookup_for_public_ip(monkeypatch):
 
 def test_pricing_cf_connecting_ip_always_trusted(monkeypatch):
     """cf-connecting-ip is honored even without TRUSTED_PROXY=1."""
+
     def run():
         async def _go():
             calls: list[str] = []
@@ -1434,11 +1520,19 @@ def test_desk_duration_report_and_404():
         async def _go():
             await _seed_user(712)
             await _seed_bond(
-                "B-DUR", currency="BYN", ytm=10.0, price=100.0, coupon=12.0, freq=2,
-                maturity=date(2030, 1, 1), nominal=Decimal("1000"),
+                "B-DUR",
+                currency="BYN",
+                ytm=10.0,
+                price=100.0,
+                coupon=12.0,
+                freq=2,
+                maturity=date(2030, 1, 1),
+                nominal=Decimal("1000"),
             )
             async with _make_client() as client:
-                r = await client.get("/api/v1/desk/duration", params={"bond_id": "B-DUR"}, headers=_auth(712))
+                r = await client.get(
+                    "/api/v1/desk/duration", params={"bond_id": "B-DUR"}, headers=_auth(712)
+                )
                 assert r.status_code == 200
                 body = r.json()
                 assert body["title"] == "duration:B-DUR"
@@ -1453,7 +1547,9 @@ def test_desk_duration_report_and_404():
                 assert rp.status_code == 200
                 assert rp.json()["title"] == "duration:portfolio"
 
-                r404 = await client.get("/api/v1/desk/duration", params={"bond_id": "NOPE"}, headers=_auth(712))
+                r404 = await client.get(
+                    "/api/v1/desk/duration", params={"bond_id": "NOPE"}, headers=_auth(712)
+                )
                 assert r404.status_code == 404
 
         return _go
@@ -1475,7 +1571,9 @@ def test_desk_carry_and_funding_validation():
                 assert isinstance(trades[0]["expected_pnl_pct"], float)
                 assert isinstance(trades[0]["coupon_pct"], float)
 
-                bad = await client.get("/api/v1/desk/carry", params={"funding": -1}, headers=_auth(713))
+                bad = await client.get(
+                    "/api/v1/desk/carry", params={"funding": -1}, headers=_auth(713)
+                )
                 assert bad.status_code == 422
 
         return _go
@@ -1488,17 +1586,31 @@ def test_desk_repo_treasury_spot_check():
         async def _go():
             await _seed_user(714)
             await _seed_bond(
-                "B-REPO", currency="BYN", ytm=10.0, price=100.0, coupon=8.0,
-                issuer="Treasury of the Republic of Belarus", nominal=Decimal("1000"),
+                "B-REPO",
+                currency="BYN",
+                ytm=10.0,
+                price=100.0,
+                coupon=8.0,
+                issuer="Treasury of the Republic of Belarus",
+                nominal=Decimal("1000"),
             )
             await _seed_bond(
-                "B-BANK", currency="BYN", ytm=10.0, price=100.0,
-                issuer="Belarusbank", nominal=Decimal("1000"),
+                "B-BANK",
+                currency="BYN",
+                ytm=10.0,
+                price=100.0,
+                issuer="Belarusbank",
+                nominal=Decimal("1000"),
             )
             async with _make_client() as client:
                 r = await client.post(
                     "/api/v1/desk/repo",
-                    json={"bond_id": "B-REPO", "notional": 1000, "tenor_days": 30, "repo_rate_pct": 5.0},
+                    json={
+                        "bond_id": "B-REPO",
+                        "notional": 1000,
+                        "tenor_days": 30,
+                        "repo_rate_pct": 5.0,
+                    },
                     headers=_auth(714),
                 )
                 assert r.status_code == 200
@@ -1513,7 +1625,12 @@ def test_desk_repo_treasury_spot_check():
 
                 bank = await client.post(
                     "/api/v1/desk/repo",
-                    json={"bond_id": "B-BANK", "notional": 1000, "tenor_days": 30, "repo_rate_pct": 5.0},
+                    json={
+                        "bond_id": "B-BANK",
+                        "notional": 1000,
+                        "tenor_days": 30,
+                        "repo_rate_pct": 5.0,
+                    },
                     headers=_auth(714),
                 )
                 assert bank.json()["haircut_pct"] == 3.0  # bank -> 3%
@@ -1536,8 +1653,14 @@ def test_desk_stress_presets_and_fx_shock_spot_check():
         async def _go():
             await _seed_user(715)
             await _seed_bond(
-                "B-STR", currency="BYN", ytm=10.0, price=100.0, coupon=8.0, freq=2,
-                maturity=date(2030, 1, 1), nominal=Decimal("1000"),
+                "B-STR",
+                currency="BYN",
+                ytm=10.0,
+                price=100.0,
+                coupon=8.0,
+                freq=2,
+                maturity=date(2030, 1, 1),
+                nominal=Decimal("1000"),
             )
             async with _make_client() as client:
                 r = await client.get("/api/v1/desk/stress", headers=_auth(715))
@@ -1548,7 +1671,14 @@ def test_desk_stress_presets_and_fx_shock_spot_check():
 
                 assert {s["scenario"] for s in scenarios} == set(PRESET_SCENARIOS)
                 for s in scenarios:
-                    assert s["kind"] in {"parallel", "steepener", "flattener", "inversion", "credit_shock", "fx_shock"}
+                    assert s["kind"] in {
+                        "parallel",
+                        "steepener",
+                        "flattener",
+                        "inversion",
+                        "credit_shock",
+                        "fx_shock",
+                    }
 
                 # FX shock -20% on a BYN bond worth 1000: exactly -200.00 / -20.0%.
                 fx = next(s for s in scenarios if s["scenario"] == "fx_shock_-20%")
@@ -1596,7 +1726,7 @@ def test_desk_spreads_reports():
     def run():
         async def _go():
             await _seed_user(717)
-            for i, (iid, ytm, mat) in enumerate(
+            for _i, (iid, ytm, mat) in enumerate(
                 [
                     ("B-SP1", 5.0, date(2027, 1, 1)),
                     ("B-SP2", 6.0, date(2030, 1, 1)),
@@ -1604,7 +1734,9 @@ def test_desk_spreads_reports():
                     ("B-SP4", 9.0, date(2036, 1, 1)),
                 ]
             ):
-                await _seed_bond(iid, currency="USD", ytm=ytm, price=100.0, coupon=ytm, maturity=mat)
+                await _seed_bond(
+                    iid, currency="USD", ytm=ytm, price=100.0, coupon=ytm, maturity=mat
+                )
             async with _make_client() as client:
                 r = await client.get("/api/v1/desk/spreads", headers=_auth(717))
                 assert r.status_code == 200
@@ -1670,7 +1802,9 @@ def test_reports_portfolio_html_contains_pnl():
                     headers=_auth(720),
                 )
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-REP", "amount": 1000}, headers=_auth(720)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-REP", "amount": 1000},
+                    headers=_auth(720),
                 )
                 r = await client.get("/api/v1/reports/portfolio", headers=_auth(720))
                 assert r.status_code == 200
@@ -1724,7 +1858,9 @@ def test_forecast_three_horizons_spot_check():
                     assert f["method"] == "monte_carlo"
                     assert set(f["mc_percentiles"]) == {"p5", "p25", "p50", "p75", "p95"}
                     assert f["cvar_95"] < f["mc_percentiles"]["p50"]
-                    assert f["pessimistic_capital"] < f["expected_capital"] < f["optimistic_capital"]
+                    assert (
+                        f["pessimistic_capital"] < f["expected_capital"] < f["optimistic_capital"]
+                    )
                     # Deterministic annuity spot-check (7.0% p.a., +500/month).
                     expected = _annuity_value(10000.0, 500.0, 7.0, f["horizon_years"] * 12)
                     assert f["expected_capital"] == pytest.approx(expected, abs=0.01)
@@ -1742,7 +1878,12 @@ def test_scenarios_spot_check():
                 r = await client.get("/api/v1/scenarios", headers=_auth(723))
                 assert r.status_code == 200
                 scenarios = r.json()
-                assert [s["scenario"] for s in scenarios] == ["Bull USD", "Neutral", "Bull BYN", "Stress"]
+                assert [s["scenario"] for s in scenarios] == [
+                    "Bull USD",
+                    "Neutral",
+                    "Bull BYN",
+                    "Stress",
+                ]
                 bull = next(s for s in scenarios if s["scenario"] == "Bull USD")
                 assert bull["usd_byn_end"] == pytest.approx(3.795, abs=1e-9)  # 3.30 * 1.15
                 assert bull["fx_change_pct"] == 15.0
@@ -1767,7 +1908,9 @@ def test_positions_crud_and_validation():
             await _seed_bond("B-POS", currency="BYN", price=100.0)
             async with _make_client() as client:
                 r = await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-POS", "amount": 1000}, headers=_auth(724)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-POS", "amount": 1000},
+                    headers=_auth(724),
                 )
                 assert r.status_code == 200
                 assert r.json() == {"status": "ok", "internal_id": "B-POS", "amount": 1000.0}
@@ -1779,21 +1922,29 @@ def test_positions_crud_and_validation():
                 assert body["positions"][0]["internal_id"] == "B-POS"
 
                 zero = await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-POS", "amount": 0}, headers=_auth(724)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-POS", "amount": 0},
+                    headers=_auth(724),
                 )
                 assert zero.status_code == 400
                 neg = await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-POS", "amount": -5}, headers=_auth(724)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-POS", "amount": -5},
+                    headers=_auth(724),
                 )
                 assert neg.status_code == 400
                 nf = await client.post(
-                    "/api/v1/positions", json={"internal_id": "NOPE", "amount": 100}, headers=_auth(724)
+                    "/api/v1/positions",
+                    json={"internal_id": "NOPE", "amount": 100},
+                    headers=_auth(724),
                 )
                 assert nf.status_code == 404
 
                 deleted = await client.delete("/api/v1/positions/B-POS", headers=_auth(724))
                 assert deleted.status_code == 200
-                assert (await client.get("/api/v1/positions", headers=_auth(724))).json()["positions"] == []
+                assert (await client.get("/api/v1/positions", headers=_auth(724))).json()[
+                    "positions"
+                ] == []
 
         return _go
 
@@ -1805,12 +1956,20 @@ def test_portfolio_income_spot_check():
         async def _go():
             await _seed_user(725)
             await _seed_bond(
-                "B-INC", currency="BYN", ytm=10.0, price=100.0, coupon=8.0, freq=2,
-                maturity=date(2030, 1, 1), nominal=Decimal("1000"),
+                "B-INC",
+                currency="BYN",
+                ytm=10.0,
+                price=100.0,
+                coupon=8.0,
+                freq=2,
+                maturity=date(2030, 1, 1),
+                nominal=Decimal("1000"),
             )
             async with _make_client() as client:
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-INC", "amount": 1000}, headers=_auth(725)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-INC", "amount": 1000},
+                    headers=_auth(725),
                 )
                 r = await client.get("/api/v1/portfolio/income", headers=_auth(725))
                 assert r.status_code == 200
@@ -1863,7 +2022,9 @@ def test_portfolio_recommendation_and_holdings_modes():
                 assert len(rec.json()["forecast"]) == 3
 
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-PF", "amount": 1000}, headers=_auth(727)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-PF", "amount": 1000},
+                    headers=_auth(727),
                 )
                 held = await client.get("/api/v1/portfolio", headers=_auth(727))
                 assert held.status_code == 200
@@ -1932,7 +2093,9 @@ def test_build_plan_modes():
             await _seed_user(729)
             await _seed_bond("B-PL", currency="BYN", ytm=10.0, price=100.0, coupon=8.0)
             async with _make_client() as client:
-                empty = await client.post("/api/v1/build_plan", json={"positions": []}, headers=_auth(729))
+                empty = await client.post(
+                    "/api/v1/build_plan", json={"positions": []}, headers=_auth(729)
+                )
                 assert empty.status_code == 200
                 assert empty.json()["mode"] == "empty"
 
@@ -1958,7 +2121,9 @@ def test_rebalance_below_threshold():
             await _seed_bond("B-RB", currency="BYN", ytm=10.0, price=100.0, coupon=8.0)
             async with _make_client() as client:
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-RB", "amount": 10000}, headers=_auth(730)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-RB", "amount": 10000},
+                    headers=_auth(730),
                 )
                 r = await client.post("/api/v1/rebalance", headers=_auth(730))
                 assert r.status_code == 200
@@ -1976,14 +2141,27 @@ def test_rebalance_above_threshold():
         async def _go():
             await _seed_user(731)
             # B1 (high-yield USD) dominates B2 (low-yield BYN) in scoring.
-            await _seed_bond("B-RB1", currency="USD", ytm=20.0, price=100.0, coupon=15.0, maturity=date(2030, 1, 1))
-            await _seed_bond("B-RB2", currency="BYN", ytm=4.0, price=100.0, coupon=1.0, maturity=date(2028, 1, 1))
+            await _seed_bond(
+                "B-RB1",
+                currency="USD",
+                ytm=20.0,
+                price=100.0,
+                coupon=15.0,
+                maturity=date(2030, 1, 1),
+            )
+            await _seed_bond(
+                "B-RB2", currency="BYN", ytm=4.0, price=100.0, coupon=1.0, maturity=date(2028, 1, 1)
+            )
             async with _make_client() as client:
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-RB1", "amount": 5000}, headers=_auth(731)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-RB1", "amount": 5000},
+                    headers=_auth(731),
                 )
                 await client.post(
-                    "/api/v1/positions", json={"internal_id": "B-RB2", "amount": 100}, headers=_auth(731)
+                    "/api/v1/positions",
+                    json={"internal_id": "B-RB2", "amount": 100},
+                    headers=_auth(731),
                 )
                 r = await client.post("/api/v1/rebalance", headers=_auth(731))
                 assert r.status_code == 200
@@ -2012,7 +2190,12 @@ def test_alert_rules_crud_and_metric_validation():
             async with _make_client() as client:
                 bond_rule = await client.post(
                     "/api/v1/alerts/rules",
-                    json={"internal_id": "B-ALR", "metric": "ytm", "direction": "above", "threshold": 10.0},
+                    json={
+                        "internal_id": "B-ALR",
+                        "metric": "ytm",
+                        "direction": "above",
+                        "threshold": 10.0,
+                    },
                     headers=_auth(732),
                 )
                 assert bond_rule.status_code == 200
@@ -2025,21 +2208,36 @@ def test_alert_rules_crud_and_metric_validation():
                 # Bond rules may not use stock-only metrics.
                 bad_metric = await client.post(
                     "/api/v1/alerts/rules",
-                    json={"internal_id": "B-ALR", "metric": "pbr", "direction": "above", "threshold": 1.0},
+                    json={
+                        "internal_id": "B-ALR",
+                        "metric": "pbr",
+                        "direction": "above",
+                        "threshold": 1.0,
+                    },
                     headers=_auth(732),
                 )
                 assert bad_metric.status_code == 400
 
                 stock_rule = await client.post(
                     "/api/v1/alerts/rules",
-                    json={"internal_id": "SBER", "metric": "pbr", "direction": "below", "threshold": 1.0},
+                    json={
+                        "internal_id": "SBER",
+                        "metric": "pbr",
+                        "direction": "below",
+                        "threshold": 1.0,
+                    },
                     headers=_auth(732),
                 )
                 assert stock_rule.status_code == 200
 
                 nf = await client.post(
                     "/api/v1/alerts/rules",
-                    json={"internal_id": "NOPE", "metric": "price", "direction": "above", "threshold": 1.0},
+                    json={
+                        "internal_id": "NOPE",
+                        "metric": "price",
+                        "direction": "above",
+                        "threshold": 1.0,
+                    },
                     headers=_auth(732),
                 )
                 assert nf.status_code == 404
@@ -2055,7 +2253,12 @@ def test_alert_rules_crud_and_metric_validation():
                 # User isolation: user 733's rules are invisible to user 732's delete.
                 other_rule = await client.post(
                     "/api/v1/alerts/rules",
-                    json={"internal_id": "B-ALR", "metric": "price", "direction": "below", "threshold": 90.0},
+                    json={
+                        "internal_id": "B-ALR",
+                        "metric": "price",
+                        "direction": "below",
+                        "threshold": 90.0,
+                    },
                     headers=_auth(733),
                 )
                 other_id = other_rule.json()["id"]
@@ -2102,15 +2305,26 @@ def test_system_alerts_feed():
         async def _go():
             uid = await _seed_user(735)
             async with session_scope() as s:
-                s.add(AlertORM(kind="data_quality", title="New bond listed", message="B1 was added to the catalog"))
+                s.add(
+                    AlertORM(
+                        kind="data_quality",
+                        title="New bond listed",
+                        message="B1 was added to the catalog",
+                    )
+                )
             async with _make_client() as client:
                 r = await client.get("/api/v1/alerts", headers=_auth(uid))
                 assert r.status_code == 200
                 alerts = r.json()
                 assert len(alerts) == 1
-                assert alerts[0] == {"title": "New bond listed", "message": "B1 was added to the catalog"}
+                assert alerts[0] == {
+                    "title": "New bond listed",
+                    "message": "B1 was added to the catalog",
+                }
 
-                bad_limit = await client.get("/api/v1/alerts", params={"limit": 0}, headers=_auth(uid))
+                bad_limit = await client.get(
+                    "/api/v1/alerts", params={"limit": 0}, headers=_auth(uid)
+                )
                 assert bad_limit.status_code == 422
 
         return _go

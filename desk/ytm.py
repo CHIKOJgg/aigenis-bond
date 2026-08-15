@@ -44,7 +44,9 @@ def to_price_pct(price: Any, nominal: Any) -> float | None:
             nom = float(nominal)
         except (TypeError, ValueError):
             nom = 0.0
-        if nom > 0 and (p > 500 or p < 0.5 or (nom >= 2000 and p > 150 and abs(p - nom) < abs(p - 100))):
+        if nom > 0 and (
+            p > 500 or p < 0.5 or (nom >= 2000 and p > 150 and abs(p - nom) < abs(p - 100))
+        ):
             return p / nom * 100.0
 
     return p
@@ -106,10 +108,7 @@ def ytm_from_price(
         px = pv_coupons + pv_face
 
         # Derivative with respect to y
-        dpx = -sum(
-            (i - 1 + w) * c / (freq * (base ** (i + w)))
-            for i in range(1, n + 1)
-        )
+        dpx = -sum((i - 1 + w) * c / (freq * (base ** (i + w))) for i in range(1, n + 1))
         dpx -= (n - 1 + w) * face / (freq * (base ** (n + w)))
 
         if dpx == 0 or not isfinite(dpx):
@@ -127,7 +126,6 @@ def ytm_from_price(
             return None
 
     return y * 100.0 if isfinite(y) and y > -0.99 else None
-
 
 
 def sanity_tolerance_pp() -> float:

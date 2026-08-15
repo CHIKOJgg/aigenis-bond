@@ -86,7 +86,7 @@ async def save_rebalance_plan(session: AsyncSession, user_id: int, plan: Rebalan
     obj = RebalanceHistoryORM(**values)
     session.add(obj)
     await session.flush()
-    return obj.id
+    return int(obj.id)
 
 
 async def list_rebalance_history(

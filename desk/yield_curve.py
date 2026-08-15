@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from math import exp
-from statistics import fmean
+from statistics import fmean, median
 
 from scipy.optimize import minimize
 
 from desk.models import CurvePoint, NelsonSiegelParams, YieldCurve
+from scoring.eligibility import filter_eligible
 
 TENOR_YEARS = {
     "1M": 1 / 12,
@@ -87,9 +88,17 @@ def interpolate(_curve: YieldCurve, params: NelsonSiegelParams, tenor: str) -> f
 
 
 def curve_from_bonds(bonds: Iterable) -> YieldCurve:
-    """Сгруппировать облигации по срокам и построить среднюю кривую."""
+    """Сгруппировать облигации по срокам и построить среднюю кривую.
+
+    Eligibility gate отсекает дистрибуцию, сверхвысокорисковые и аномалии
+    (см. scoring/eligibility.py): одна бумага с YTM 1545% не должна
+    поднимать «короткий» бакет до 130%. Внутри бакета берётся медиана —
+    устойчивая оценка центра распределения.
+    """
+    bond_list = list(bonds)
+    eligible, _excluded = filter_eligible(bond_list)
     buckets: dict[str, list[float]] = {}
-    for b in bonds:
+    for b in eligible:
         if b.maturity_date is None or b.yield_to_maturity is None:
             continue
         years = (b.maturity_date - datetime.now(UTC).date()).days / 365.25
@@ -101,11 +110,11 @@ def curve_from_bonds(bonds: Iterable) -> YieldCurve:
         CurvePoint(
             tenor=t,
             years=TENOR_YEARS[t],
-            rate_pct=round(fmean(vs), 4),
+            rate_pct=round(median(vs), 4),
         )
         for t, vs in sorted(buckets.items(), key=lambda kv: TENOR_YEARS[kv[0]])
     ]
-    currency = next((b.currency for b in bonds if getattr(b, "currency", None)), "USD")
+    currency = next((b.currency for b in eligible if getattr(b, "currency", None)), "USD")
     return YieldCurve(currency=currency, observed_at=datetime.now(UTC), points=points)
 
 

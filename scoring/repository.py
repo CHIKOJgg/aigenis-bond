@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from scoring.eligibility import (
+    DISTRIBUTION_MAX_PRICE_PCT,
+    DISTRIBUTION_MIN_YTM_PCT,
+    EXCLUDED_STATUSES,
+    EXTREME_MAX_YTM_PCT,
+)
 from scoring.engine import score_bond
 from scoring.models import BondScore, ScoreBreakdown
 from scraper.db import upsert_row
 from scraper.orm import BondORM, BondScoreORM
 
 
-def _to_orm(score: BondScore) -> dict:
+def _to_orm(score: BondScore) -> dict[str, Any]:
     return {
         "internal_id": score.internal_id,
         "score": Decimal(str(score.score)),
@@ -48,10 +55,33 @@ async def upsert_scores_batch(session: AsyncSession, scores: list[BondScore]) ->
 async def top_scores(
     session: AsyncSession, limit: int = 20, offset: int = 0, market: str | None = None
 ) -> list[BondScoreORM]:
-    stmt = select(BondScoreORM)
+    """Топ по Score из бумаг, допущенных в портфель (eligibility gate).
+
+    Исключаются на уровне SQL: бумаги в статусах дефолта/делистинга,
+    с YTM > 100% (аномалия данных или дистресс) и «дистрибуция»
+    (цена < 80% номинала при YTM > 30%).
+    """
+    stmt = (
+        select(BondScoreORM)
+        .join(BondORM, BondScoreORM.internal_id == BondORM.internal_id)
+        .where(BondORM.status.notin_(EXCLUDED_STATUSES))
+        .where(
+            or_(
+                BondORM.yield_to_maturity.is_(None),
+                BondORM.yield_to_maturity <= EXTREME_MAX_YTM_PCT,
+            )
+        )
+        .where(
+            not_(
+                and_(
+                    BondORM.price < DISTRIBUTION_MAX_PRICE_PCT,
+                    BondORM.yield_to_maturity > DISTRIBUTION_MIN_YTM_PCT,
+                )
+            )
+        )
+    )
     if market:
-        stmt = stmt.join(BondORM, BondScoreORM.internal_id == BondORM.internal_id, isouter=True)
-        stmt = stmt.where(BondORM.market == market)
+        stmt = stmt.where(func.lower(BondORM.market) == market.lower())
     stmt = stmt.order_by(BondScoreORM.score.desc()).limit(limit).offset(offset)
     result = await session.execute(stmt)
     return list(result.scalars().all())
@@ -72,8 +102,17 @@ async def recompute_all(session: AsyncSession) -> int:
     bonds = list(result.scalars().all())
     scores: list[BondScore] = []
     for b in bonds:
-        ytm = float(b.yield_to_maturity) if b.yield_to_maturity is not None and float(b.yield_to_maturity) > 0 else None
-        if ytm is None and b.price is not None and b.coupon_rate is not None and b.maturity_date is not None:
+        ytm = (
+            float(b.yield_to_maturity)
+            if b.yield_to_maturity is not None and float(b.yield_to_maturity) > 0
+            else None
+        )
+        if (
+            ytm is None
+            and b.price is not None
+            and b.coupon_rate is not None
+            and b.maturity_date is not None
+        ):
             try:
                 price_pct = to_price_pct(b.price, b.nominal)
                 if price_pct is not None:

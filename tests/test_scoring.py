@@ -143,13 +143,9 @@ def test_inflation_component():
 
 
 def test_volatility_component_penalties():
-    extreme = _volatility_component(
-        ytm_pct=80, price_pct=None, status="active", coupon_pct=5.0
-    )
+    extreme = _volatility_component(ytm_pct=80, price_pct=None, status="active", coupon_pct=5.0)
     assert extreme < 0
-    normal = _volatility_component(
-        ytm_pct=10, price_pct=100.0, status="active", coupon_pct=5.0
-    )
+    normal = _volatility_component(ytm_pct=10, price_pct=100.0, status="active", coupon_pct=5.0)
     assert normal == 0.0
     extreme_price = _volatility_component(
         ytm_pct=10, price_pct=10.0, status="active", coupon_pct=5.0
@@ -447,9 +443,7 @@ def test_volatility_component_price_band():
     from scoring.engine import _volatility_component
 
     assert (
-        _volatility_component(
-            ytm_pct=None, price_pct=40.0, status="active", coupon_pct=None
-        )
+        _volatility_component(ytm_pct=None, price_pct=40.0, status="active", coupon_pct=None)
         == -1.0
     )
 
@@ -493,4 +487,3 @@ def test_distressed_debt_scoring_with_large_nominal():
     # Yield component should be capped at 20.0 due to distress penalty
     assert s.breakdown.yield_component <= 20.0
     assert s.breakdown.volatility_component <= -18.0
-

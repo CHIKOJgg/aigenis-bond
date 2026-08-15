@@ -280,7 +280,11 @@ async def _handle_payment_succeeded(obj: dict, metadata: dict) -> None:
     # to prevent double-granting subscription days under concurrent webhook calls.
     lock = _webhook_locks.setdefault(payment_id, asyncio.Lock())
     if len(_webhook_locks) > _WEBHOOK_LOCK_MAX_KEYS:
-        for k in [k for k, item_lock in _webhook_locks.items() if not item_lock.locked() and k != payment_id]:
+        for k in [
+            k
+            for k, item_lock in _webhook_locks.items()
+            if not item_lock.locked() and k != payment_id
+        ]:
             _webhook_locks.pop(k, None)
     async with lock:
         if plan not in PLANS:

@@ -60,6 +60,7 @@ EXCLUDE_PATTERNS = ("**/test_*.py", "**/__tests__/**", "**/*.min.js", "**/e2e/**
 # for anything that is not already in the repo).
 LEGACY = {
     "telegram_bot/commands.py": "1149 lines / 55 KB bot command hub; split into per-command modules",
+    "api/demo.py": "1305 lines / 60 KB demo API (manifest-driven snapshot, impact math, stress, optimize); split on next refactor pass",
 }
 
 

@@ -40,9 +40,9 @@ def test_database_settings_default_url():
 
 
 def test_redis_settings_default_url():
-    r = RedisSettings()
-    assert r.url.startswith("redis://")
-    assert "redis:6379" in r.url
+    """The built-in default must not depend on a local `.env` file."""
+    r = RedisSettings(_env_file=None)
+    assert r.url == "redis://localhost:6379/0"
 
 
 def test_transient_error_is_scraper_error():

@@ -105,6 +105,9 @@ async def test_top_scores_ordering_and_offset():
     async with session_scope() as session:
         await session.execute(delete(BondScoreORM))
         await session.flush()
+        await _add_bond(session, "T-1")
+        await _add_bond(session, "T-2")
+        await _add_bond(session, "T-3")
         await upsert_scores_batch(
             session,
             [_score("T-1", 70.0), _score("T-2", 90.0), _score("T-3", 80.0)],
@@ -117,7 +120,15 @@ async def test_top_scores_ordering_and_offset():
 
 @pytest.mark.asyncio
 async def test_top_scores_market_filter():
+    from sqlalchemy import delete
+
+    from scraper.orm import BondScoreORM
+
     async with session_scope() as session:
+        # Изоляция от test_top_scores_ordering_and_offset (общая БД).
+        await session.execute(delete(BondScoreORM))
+        await session.execute(delete(BondORM))
+        await session.flush()
         await _add_bond(session, "M-1", market="bcse")
         await _add_bond(session, "M-2", market="moex")
         await upsert_scores_batch(session, [_score("M-1", 10.0), _score("M-2", 99.0)])

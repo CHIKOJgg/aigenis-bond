@@ -7,6 +7,7 @@ from datetime import date
 from ml.engine import latest_artifact, predict_batch
 from ml.features import build_features
 from ml.models import Decision, Recommendation
+from scoring.eligibility import filter_eligible
 from scoring.engine import score_bond
 from scoring.models import UserPreferences
 
@@ -36,6 +37,10 @@ def recommend_bonds(
     """
     asof = asof or date.today()
     history_by_bond = history_by_bond or {}
+
+    # Eligibility gate: дистрибуция, сверхвысокорисковые и аномалии не
+    # рекомендуются к покупке (см. scoring/eligibility.py).
+    bonds, _excluded = filter_eligible(bonds)
 
     features = [
         build_features(
@@ -87,7 +92,9 @@ def recommend_bonds(
 
         risks: list[str] = []
         if pred.predicted_return_pct is not None and pred.predicted_return_pct >= 0.5:
-            risks.append(f"прогноз роста доходности: {pred.predicted_return_pct:.2f}% — риск снижения цены")
+            risks.append(
+                f"прогноз роста доходности: {pred.predicted_return_pct:.2f}% — риск снижения цены"
+            )
         if feature.score_duration_component < 0:
             risks.append("длительная дюрация — процентный риск")
         if not feature.is_gov_issuer and not feature.is_active:

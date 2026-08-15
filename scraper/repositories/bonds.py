@@ -112,9 +112,7 @@ def _bond_to_orm(bond: Bond) -> dict:
     }
 
 
-async def upsert_bond(
-    session: AsyncSession, bond: Bond, *, merge_missing: bool = True
-) -> None:
+async def upsert_bond(session: AsyncSession, bond: Bond, *, merge_missing: bool = True) -> None:
     """Upsert a bond, by default preserving DB values the fresh payload lacks.
 
     Detail payloads are often partial (a section failed to parse, or a
@@ -126,9 +124,7 @@ async def upsert_bond(
     values = _bond_to_orm(bond)
     if merge_missing:
         existing = (
-            await session.execute(
-                select(BondORM).where(BondORM.internal_id == bond.internal_id)
-            )
+            await session.execute(select(BondORM).where(BondORM.internal_id == bond.internal_id))
         ).scalar_one_or_none()
         if existing is not None:
             for key, val in values.items():
@@ -164,9 +160,7 @@ async def update_bond_name(session: AsyncSession, internal_id: str, name: str) -
     ещё не был вставлен полным пайплайном (или шёл параллельный прогон).
     """
     await session.execute(
-        update(BondORM)
-        .where(BondORM.internal_id == internal_id)
-        .values(name=name)
+        update(BondORM).where(BondORM.internal_id == internal_id).values(name=name)
     )
 
 

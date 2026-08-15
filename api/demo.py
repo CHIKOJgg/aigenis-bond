@@ -489,7 +489,9 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         "coupon_description": bond.coupon_description,
         "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
         "term_days": bond.term_days,
-        "accrued_interest": round(analytics["accrued_interest"], 4) if analytics.get("accrued_interest") is not None else None,
+        "accrued_interest": round(analytics["accrued_interest"], 4)
+        if analytics.get("accrued_interest") is not None
+        else None,
     }
 
 
@@ -696,8 +698,8 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
     before_concentration: dict[str, float] = {}
     for pos in template.get("positions") or []:
         key = str(pos.get("name") or pos.get("instrument_id") or "demo")
-        before_concentration[key] = (
-            before_concentration.get(key, 0.0) + float(pos.get("weight_pct", 0.0))
+        before_concentration[key] = before_concentration.get(key, 0.0) + float(
+            pos.get("weight_pct", 0.0)
         )
     if not before_concentration:
         before_concentration = {"demo": 100.0}
@@ -855,7 +857,9 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
         if not bonds:
             stmt_fallback = select(BondORM).where(BondORM.status == "active")
             if req.market and req.market.lower() in ("bcse", "moex"):
-                stmt_fallback = stmt_fallback.where(func.lower(BondORM.market) == req.market.lower())
+                stmt_fallback = stmt_fallback.where(
+                    func.lower(BondORM.market) == req.market.lower()
+                )
             bonds = list((await session.execute(stmt_fallback)).scalars().all())
 
         # Облигации неделимы: капитал на позицию превращаем в целое количество
@@ -891,6 +895,10 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
             }
 
         try:
+            # Eligibility gate: дистрибуция/аномалии не участвуют в стрессе.
+            from scoring.eligibility import filter_eligible
+
+            bonds, _excluded = filter_eligible(bonds)
             top_bonds = bonds[:10]
             per_bond_target = req.capital / max(len(top_bonds), 1)
             bonds_with_amounts = []
@@ -927,13 +935,15 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
                 amount = Decimal(str(round(lots * nom, 2)))
                 if lots > 0:
                     bonds_with_amounts.append((b, amount))
-                    position_amounts.append({
-                        "internal_id": b.internal_id,
-                        "name": b.name or b.internal_id,
-                        "lots": lots,
-                        "invested": invested,
-                        "price_money": round(price_money, 2),
-                    })
+                    position_amounts.append(
+                        {
+                            "internal_id": b.internal_id,
+                            "name": b.name or b.internal_id,
+                            "lots": lots,
+                            "invested": invested,
+                            "price_money": round(price_money, 2),
+                        }
+                    )
 
             # Если из-за округления все лоты стали 0, но бюджет позволяет купить хотя бы 1 бумагу
             if not bonds_with_amounts:
@@ -948,15 +958,16 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
                         invested = round(lots * dirty_price_money, 2)
                         amount = Decimal(str(round(lots * nom, 2)))
                         bonds_with_amounts.append((b, amount))
-                        position_amounts.append({
-                            "internal_id": b.internal_id,
-                            "name": b.name or b.internal_id,
-                            "lots": lots,
-                            "invested": invested,
-                            "price_money": round(price_money, 2),
-                        })
+                        position_amounts.append(
+                            {
+                                "internal_id": b.internal_id,
+                                "name": b.name or b.internal_id,
+                                "lots": lots,
+                                "invested": invested,
+                                "price_money": round(price_money, 2),
+                            }
+                        )
                         break
-
 
             # Валюта расчёта зависит от рынка: MOEX — рубли, BCSE — белорусские
             # рубли. При смешанном портфеле берём рынок большинства бумаг.
@@ -969,9 +980,7 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
                 market_counts: dict[str, int] = {}
                 for b, _amount in bonds_with_amounts:
                     market_counts[b.market] = market_counts.get(b.market, 0) + 1
-                market_key = (
-                    max(market_counts, key=market_counts.get) if market_counts else "bcse"
-                )
+                market_key = max(market_counts, key=market_counts.get) if market_counts else "bcse"
             base_currency = "RUB" if market_key == "moex" else "BYN"
             res = run_stress(scenario, bonds_with_amounts, base_currency=base_currency)
 
@@ -1019,7 +1028,9 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
             # новая дюрация ≈ D * (1 + y) / (1 + y + s).
             if rate_shock_decimal != 0:
                 duration_after = round(
-                    duration_before * (1 + avg_ytm / 100) / (1 + avg_ytm / 100 + rate_shock_decimal),
+                    duration_before
+                    * (1 + avg_ytm / 100)
+                    / (1 + avg_ytm / 100 + rate_shock_decimal),
                     2,
                 )
             else:
@@ -1139,7 +1150,9 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
         elif strategy == "Metals++":
             if req_market == "bcse":
                 currency_filter = or_(
-                    BondORM.indexation_currency.in_(["XAU", "XAG", "XPT", "GOLD", "SILVER", "PLATINUM"]),
+                    BondORM.indexation_currency.in_(
+                        ["XAU", "XAG", "XPT", "GOLD", "SILVER", "PLATINUM"]
+                    ),
                     and_(
                         or_(BondORM.issuer.ilike("%айгенис%"), BondORM.issuer.ilike("%aigenis%")),
                         or_(
@@ -1197,6 +1210,23 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             )
             bonds = list((await session.execute(fallback_stmt)).scalars().all())
 
+        # Eligibility gate: дистрибуция, сверхвысокорисковые и аномалии
+        # в портфель не попадают (см. scoring/eligibility.py).
+        from scoring.eligibility import filter_eligible
+
+        bonds_before = bonds
+        bonds, excluded = filter_eligible(bonds_before)
+        name_by_id = {b.internal_id: b.name for b in bonds_before}
+        excluded_payload = [
+            {
+                "internal_id": iid,
+                "name": name_by_id.get(iid),
+                "reason": res.reason,
+                "kind": res.kind,
+            }
+            for iid, res in excluded.items()
+        ]
+
         if not bonds:
             return {
                 "strategy": req.strategy,
@@ -1213,6 +1243,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 },
                 "allocations": [],
                 "order_tickets": [],
+                "excluded": excluded_payload,
                 "available_strategies": [
                     "Conservative",
                     "Balanced",
@@ -1287,6 +1318,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             if b.coupon_rate is not None and b.maturity_date is not None:
                 try:
                     from desk.cashflow import accrued_interest
+
                     accrued = accrued_interest(
                         coupon_rate_pct=float(b.coupon_rate),
                         coupon_frequency=int(b.coupon_frequency or 2),
@@ -1305,25 +1337,31 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             ytm_val = float(b.yield_to_maturity) if b.yield_to_maturity else 10.0
             score_weight = float(alloc.items.get(b.internal_id, Decimal("0"))) if alloc else 1.0
 
-            candidates.append({
-                "internal_id": b.internal_id,
-                "bond": b,
-                "dirty_price": dirty_price_money,
-                "ytm": ytm_val,
-                "score_weight": score_weight,
-                "lots": 0,
-            })
+            candidates.append(
+                {
+                    "internal_id": b.internal_id,
+                    "bond": b,
+                    "dirty_price": dirty_price_money,
+                    "ytm": ytm_val,
+                    "score_weight": score_weight,
+                    "lots": 0,
+                }
+            )
 
         # Фильтрация кандидатов, вошедших в скоринг-аллокацию (top-N)
         if alloc and alloc.items:
             selected_candidates = [c for c in candidates if c["internal_id"] in alloc.items]
         else:
-            selected_candidates = sorted(candidates, key=lambda x: x["ytm"], reverse=True)[:req.top_n]
+            selected_candidates = sorted(candidates, key=lambda x: x["ytm"], reverse=True)[
+                : req.top_n
+            ]
 
         if not selected_candidates:
-            selected_candidates = candidates[:req.top_n]
+            selected_candidates = candidates[: req.top_n]
 
-        min_price = min(c["dirty_price"] for c in selected_candidates) if selected_candidates else 1000.0
+        min_price = (
+            min(c["dirty_price"] for c in selected_candidates) if selected_candidates else 1000.0
+        )
 
         # Если бюджет меньше стоимости даже 1 лота
         if total_cap < min_price:
@@ -1371,14 +1409,18 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
         # Если из-за округления вниз ни один лот не купился — жадно выделяем по 1 лоту
         # лучшим бумагам, пока хватает бюджета
         if sum(c["lots"] for c in selected_candidates) == 0:
-            sorted_candidates = sorted(selected_candidates, key=lambda x: x["score_weight"], reverse=True)
+            sorted_candidates = sorted(
+                selected_candidates, key=lambda x: x["score_weight"], reverse=True
+            )
             for c in sorted_candidates:
                 if remaining_cash >= c["dirty_price"]:
                     c["lots"] = 1
                     remaining_cash -= c["dirty_price"]
         else:
             # Распределяем остаток кэша по топ-бумагам
-            sorted_candidates = sorted(selected_candidates, key=lambda x: x["score_weight"], reverse=True)
+            sorted_candidates = sorted(
+                selected_candidates, key=lambda x: x["score_weight"], reverse=True
+            )
             for c in sorted_candidates:
                 while remaining_cash >= c["dirty_price"]:
                     c["lots"] += 1
@@ -1397,29 +1439,42 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
 
             bond_name = bond.name or c["internal_id"]
 
-            items_payload.append({
-                "internal_id": c["internal_id"],
-                "name": bond_name,
-                "issuer": bond.issuer if bond.issuer else "Aigenis",
-                "isin": bond.isin if bond.isin else c["internal_id"],
-                "amount": pos_cost,
-                "currency": bond.currency if bond.currency else req.currency.upper(),
-                "weight_pct": real_weight_pct,
-                "lots": c["lots"],
-                "ytm": float(bond.yield_to_maturity) if bond.yield_to_maturity else None,
-            })
+            items_payload.append(
+                {
+                    "internal_id": c["internal_id"],
+                    "name": bond_name,
+                    "issuer": bond.issuer if bond.issuer else "Aigenis",
+                    "isin": bond.isin if bond.isin else c["internal_id"],
+                    "amount": pos_cost,
+                    "currency": bond.currency if bond.currency else req.currency.upper(),
+                    "weight_pct": real_weight_pct,
+                    "lots": c["lots"],
+                    "ytm": float(bond.yield_to_maturity) if bond.yield_to_maturity else None,
+                }
+            )
 
-            order_tickets.append({
-                "action": "BUY",
-                "internal_id": c["internal_id"],
-                "name": bond_name,
-                "lots": c["lots"],
-                "est_cost": pos_cost,
-                "currency": bond.currency if bond.currency else req.currency.upper(),
-                "rationale": f"Целевой вес {real_weight_pct}% в рамках стратегии '{strategy_ru}'",
-            })
+            order_tickets.append(
+                {
+                    "action": "BUY",
+                    "internal_id": c["internal_id"],
+                    "name": bond_name,
+                    "lots": c["lots"],
+                    "est_cost": pos_cost,
+                    "currency": bond.currency if bond.currency else req.currency.upper(),
+                    "rationale": f"Целевой вес {real_weight_pct}% в рамках стратегии '{strategy_ru}'",
+                }
+            )
 
-        exp_ret = round(sum(c["ytm"] * (c["lots"] * c["dirty_price"] / actual_total_cost) for c in allocated), 2) if allocated else (alloc.expected_return if alloc else 12.0)
+        exp_ret = (
+            round(
+                sum(
+                    c["ytm"] * (c["lots"] * c["dirty_price"] / actual_total_cost) for c in allocated
+                ),
+                2,
+            )
+            if allocated
+            else (alloc.expected_return if alloc else 12.0)
+        )
         vol = alloc.volatility if alloc else 3.5
         sharpe = round((exp_ret - 4.0) / vol, 2) if vol > 0 else 0.0
 
@@ -1438,6 +1493,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             },
             "allocations": items_payload,
             "order_tickets": order_tickets,
+            "excluded": excluded_payload,
             "available_strategies": [
                 "Conservative",
                 "Balanced",
@@ -1449,4 +1505,3 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             ],
             "warning": None,
         }
-

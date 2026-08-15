@@ -251,4 +251,3 @@ def test_run_all_presets_returns_all_scenarios():
     assert set(results) == set(PRESET_SCENARIOS)
     for res in results.values():
         assert res.scenario.simple_description is not None
-

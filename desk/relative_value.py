@@ -8,6 +8,7 @@ from statistics import fmean, pstdev
 
 from desk.cashflow import accrued_interest
 from desk.models import RVSignal, YieldCurve
+from scoring.eligibility import filter_eligible
 
 
 def _bucket_by_tenor(years_to_maturity: float) -> str:
@@ -32,38 +33,52 @@ def relative_value_signals(
     asof: date | None = None,
     z_threshold: float = 1.0,
 ) -> list[RVSignal]:
-    """Сгенерировать rich/cheap сигналы внутри валюты по tenor-бакетам."""
+    """Сгенерировать rich/cheap сигналы внутри валюты по tenor-бакетам.
+
+    Eligibility gate отсекает дистрибуцию, сверхвысокорисковые и аномалии
+    (см. scoring/eligibility.py): бумага с YTM 1545% не должна выдавать
+    «Недооценена (BUY)» с Z=+8.7 и «справедливым уровнем» 47.8% — это
+    риск дефолта, а не возможность.
+    """
     asof = asof or date.today()
+    bond_list = list(bonds)
+    eligible, _excluded = filter_eligible(bond_list)
     groups: dict[tuple[str, str], list[dict]] = {}
     today = asof
 
-    for b in bonds:
+    for b in eligible:
         if b.yield_to_maturity is None or b.maturity_date is None:
             continue
         years = max((b.maturity_date - today).days / 365.25, 0.0)
         if years <= 0:
             continue
         key = (str(b.currency), _bucket_by_tenor(years))
-        groups.setdefault(key, []).append({
-            "id": b.internal_id,
-            "name": getattr(b, "name", None) or b.internal_id,
-            "issuer": getattr(b, "issuer", None),
-            "isin": getattr(b, "isin", None),
-            "price": float(b.price) if getattr(b, "price", None) is not None else None,
-            "nominal": float(b.nominal) if getattr(b, "nominal", None) is not None else 1000.0,
-            "ytm": float(b.yield_to_maturity),
-            "accrued_interest": round(
-                accrued_interest(
-                    coupon_rate_pct=float(b.coupon_rate) if getattr(b, "coupon_rate", None) is not None else 0.0,
-                    coupon_frequency=int(b.coupon_frequency) if getattr(b, "coupon_frequency", None) is not None else 2,
-                    issue_date=getattr(b, "start_date", None) or getattr(b, "issue_date", None),
-                    maturity_date=b.maturity_date,
-                    asof=today,
-                    face=float(b.nominal) if getattr(b, "nominal", None) is not None else 100.0,
+        groups.setdefault(key, []).append(
+            {
+                "id": b.internal_id,
+                "name": getattr(b, "name", None) or b.internal_id,
+                "issuer": getattr(b, "issuer", None),
+                "isin": getattr(b, "isin", None),
+                "price": float(b.price) if getattr(b, "price", None) is not None else None,
+                "nominal": float(b.nominal) if getattr(b, "nominal", None) is not None else 1000.0,
+                "ytm": float(b.yield_to_maturity),
+                "accrued_interest": round(
+                    accrued_interest(
+                        coupon_rate_pct=float(b.coupon_rate)
+                        if getattr(b, "coupon_rate", None) is not None
+                        else 0.0,
+                        coupon_frequency=int(b.coupon_frequency)
+                        if getattr(b, "coupon_frequency", None) is not None
+                        else 2,
+                        issue_date=getattr(b, "start_date", None) or getattr(b, "issue_date", None),
+                        maturity_date=b.maturity_date,
+                        asof=today,
+                        face=float(b.nominal) if getattr(b, "nominal", None) is not None else 100.0,
+                    ),
+                    2,
                 ),
-                2,
-            ),
-        })
+            }
+        )
 
     signals: list[RVSignal] = []
     for (currency, _tenor_bucket), items in groups.items():

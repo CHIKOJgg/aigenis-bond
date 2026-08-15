@@ -563,7 +563,9 @@ def test_demo_impact_fallback_template_and_long_duration_borderline(monkeypatch)
         return _orig_load_json(name)
 
     monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
-    bond = next(b for b in demo_mod._load_json("bonds_bcse.json") if b["internal_id"] == "demo-bond-001")
+    bond = next(
+        b for b in demo_mod._load_json("bonds_bcse.json") if b["internal_id"] == "demo-bond-001"
+    )
     req = demo_mod.PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10)
     res = demo_mod._build_impact(req)
     assert res.before.expected_yield_pct == 9.5
@@ -633,7 +635,13 @@ def test_demo_impact_ok_when_concentration_stays_within_limit(monkeypatch) -> No
                 }
             }
         if name == "bonds_bcse.json":
-            return [{"internal_id": "demo-bond-001", "issuer": "Газпром нефть", "yield_to_maturity": 12.0}]
+            return [
+                {
+                    "internal_id": "demo-bond-001",
+                    "issuer": "Газпром нефть",
+                    "yield_to_maturity": 12.0,
+                }
+            ]
         return _orig_load_json(name)
 
     monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
@@ -658,7 +666,13 @@ def test_demo_impact_marina_legacy_template_key_still_works(monkeypatch) -> None
                 }
             }
         if name == "bonds_bcse.json":
-            return [{"internal_id": "demo-bond-001", "issuer": "Газпром нефть", "yield_to_maturity": 12.0}]
+            return [
+                {
+                    "internal_id": "demo-bond-001",
+                    "issuer": "Газпром нефть",
+                    "yield_to_maturity": 12.0,
+                }
+            ]
         return _orig_load_json(name)
 
     monkeypatch.setattr(demo_mod, "_load_json", fake_load_json)
@@ -813,7 +827,3 @@ def test_demo_desk_stress_mixed_market_uses_majority_currency() -> None:
     assert body["duration_before"] > 0
     assert len(body["positions"]) > 0
     assert body["by_position"] != {}
-
-
-
-

@@ -105,8 +105,7 @@ class TestVerifiedCoupon:
 class TestVerifiedVolatility:
     def test_normal_zero(self):
         assert (
-            _volatility_component(ytm_pct=10, price_pct=100.0, status="active", coupon_pct=5)
-            == 0.0
+            _volatility_component(ytm_pct=10, price_pct=100.0, status="active", coupon_pct=5) == 0.0
         )
 
     def test_extreme_ytm(self):
@@ -117,9 +116,7 @@ class TestVerifiedVolatility:
 
     def test_risky_status(self):
         assert (
-            _volatility_component(
-                ytm_pct=10, price_pct=100.0, status="defaulted", coupon_pct=5
-            )
+            _volatility_component(ytm_pct=10, price_pct=100.0, status="defaulted", coupon_pct=5)
             <= -5.0
         )
 
@@ -245,7 +242,18 @@ VERIFIED_PROFILES = [
         100.0,
         {"B", "A"},
     ),
-    ("USD bank systemic 4yr", 12.0, "USD", 2030, "Сбербанк", "active", 7.0, 100.0, 100.0, {"B", "C"}),
+    (
+        "USD bank systemic 4yr",
+        12.0,
+        "USD",
+        2030,
+        "Сбербанк",
+        "active",
+        7.0,
+        100.0,
+        100.0,
+        {"B", "C"},
+    ),
     # --- C-тир: средние ---
     (
         "BYN gov bond 4yr",

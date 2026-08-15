@@ -158,6 +158,7 @@ def _build_forecast(
 
 async def _get_fx_rates(session) -> dict[str, float]:
     from notifications.fx_repository import latest_fx
+
     rates = {"BYN": 1.0}
     for pair, curr in [("USD/BYN", "USD"), ("EUR/BYN", "EUR"), ("RUB/BYN", "RUB")]:
         fx = await latest_fx(session, pair)

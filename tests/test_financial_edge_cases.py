@@ -345,40 +345,52 @@ def test_accrued_interest_zero_coupon_and_boundary_dates():
     maturity = date(2026, 1, 1)
 
     # asof == issue_date -> 0
-    assert accrued_interest(
-        coupon_rate_pct=10.0,
-        coupon_frequency=2,
-        issue_date=issue,
-        maturity_date=maturity,
-        asof=issue,
-    ) == 0.0
+    assert (
+        accrued_interest(
+            coupon_rate_pct=10.0,
+            coupon_frequency=2,
+            issue_date=issue,
+            maturity_date=maturity,
+            asof=issue,
+        )
+        == 0.0
+    )
 
     # asof == maturity -> 0
-    assert accrued_interest(
-        coupon_rate_pct=10.0,
-        coupon_frequency=2,
-        issue_date=issue,
-        maturity_date=maturity,
-        asof=maturity,
-    ) == 0.0
+    assert (
+        accrued_interest(
+            coupon_rate_pct=10.0,
+            coupon_frequency=2,
+            issue_date=issue,
+            maturity_date=maturity,
+            asof=maturity,
+        )
+        == 0.0
+    )
 
     # asof before issue -> 0
-    assert accrued_interest(
-        coupon_rate_pct=10.0,
-        coupon_frequency=2,
-        issue_date=issue,
-        maturity_date=maturity,
-        asof=date(2023, 1, 1),
-    ) == 0.0
+    assert (
+        accrued_interest(
+            coupon_rate_pct=10.0,
+            coupon_frequency=2,
+            issue_date=issue,
+            maturity_date=maturity,
+            asof=date(2023, 1, 1),
+        )
+        == 0.0
+    )
 
     # zero coupon rate -> 0
-    assert accrued_interest(
-        coupon_rate_pct=0.0,
-        coupon_frequency=2,
-        issue_date=issue,
-        maturity_date=maturity,
-        asof=date(2025, 1, 1),
-    ) == 0.0
+    assert (
+        accrued_interest(
+            coupon_rate_pct=0.0,
+            coupon_frequency=2,
+            issue_date=issue,
+            maturity_date=maturity,
+            asof=date(2025, 1, 1),
+        )
+        == 0.0
+    )
 
 
 # =========================================================================== #
@@ -551,7 +563,7 @@ def test_daily_returns_and_drawdown_and_sharpe():
     curve = [
         {"date": "2026-01-01", "value": 10000.0},
         {"date": "2026-01-02", "value": 10500.0},  # +5%
-        {"date": "2026-01-03", "value": 9500.0},   # drawdown from 10500 to 9500: ~9.52%
+        {"date": "2026-01-03", "value": 9500.0},  # drawdown from 10500 to 9500: ~9.52%
         {"date": "2026-01-04", "value": 11000.0},  # peak
     ]
     rets = compute_daily_returns(curve)
@@ -596,7 +608,10 @@ def test_scoring_engine_distressed_debt_penalty():
     # Distressed debt volatility component must be deeply negative
     assert score_distressed.breakdown.volatility_component <= -18.0
     assert score_distressed.breakdown.yield_component <= 20.0
-    assert score_healthy.breakdown.volatility_component > score_distressed.breakdown.volatility_component
+    assert (
+        score_healthy.breakdown.volatility_component
+        > score_distressed.breakdown.volatility_component
+    )
 
 
 def test_scoring_metal_keywords():
@@ -696,5 +711,3 @@ def test_scoring_with_extreme_yield_and_discount():
     )
     assert isinstance(sc_distressed.score, float)
     assert sc_distressed.tier in ("C", "D")
-
-

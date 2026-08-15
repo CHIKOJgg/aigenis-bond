@@ -121,7 +121,7 @@ def test_to_decimal_comma_thousands_rejected():
     separator, never as a thousands separator."""
     from scraper.models import _to_decimal
 
-    with pytest.raises(ValueError, match="Cannot parse decimal from '1,234.56'"):
+    with pytest.raises(ValueError, match=r"Cannot parse decimal from '1,234.56'"):
         _to_decimal("1,234.56")
 
 
@@ -357,7 +357,7 @@ def test_fx_constants_shape():
         "CNY": "CNY/BYN",
     }
     assert METAL_IDS == {"XAU": 0, "XAG": 1, "XPT": 2}
-    assert TROY_OZ_PER_GRAM == Decimal("31.1034768")
+    assert Decimal("31.1034768") == TROY_OZ_PER_GRAM
 
 
 class _FakeResp:
@@ -572,7 +572,9 @@ async def test_metal_repository_ordering_and_missing():
         for i, price in enumerate(["100", "101", "102"]):
             await upsert_metal(session, "XAU", Decimal(price))
             row = (
-                await session.execute(select(MetalPriceORM).order_by(MetalPriceORM.id.desc()).limit(1))
+                await session.execute(
+                    select(MetalPriceORM).order_by(MetalPriceORM.id.desc()).limit(1)
+                )
             ).scalar_one()
             row.observed_at = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(hours=i)
         await session.flush()
@@ -622,7 +624,12 @@ def test_periods_to_frequency_counts_window_and_caps():
 
     assert (
         _periods_to_frequency(
-            [{"start": "2026-01-15"}, {"start": "2026-02-15"}, {"start": "2026-03-15"}, {"start": "2026-04-15"}]
+            [
+                {"start": "2026-01-15"},
+                {"start": "2026-02-15"},
+                {"start": "2026-03-15"},
+                {"start": "2026-04-15"},
+            ]
         )
         == 4
     )
@@ -826,7 +833,9 @@ async def test_payment_charge_id_none_grants_each_delivery():
         _FakeMessage(tg, _FakePayment("stars_sub:pro", None))
     )
     async with session_scope() as session:
-        user = (await session.execute(select(UserORM).where(UserORM.telegram_id == tg))).scalar_one()
+        user = (
+            await session.execute(select(UserORM).where(UserORM.telegram_id == tg))
+        ).scalar_one()
         expiry1 = user.subscription_expires_at
         assert user.last_charge_id is None
 
@@ -834,7 +843,9 @@ async def test_payment_charge_id_none_grants_each_delivery():
         _FakeMessage(tg, _FakePayment("stars_sub:pro", None))
     )
     async with session_scope() as session:
-        user = (await session.execute(select(UserORM).where(UserORM.telegram_id == tg))).scalar_one()
+        user = (
+            await session.execute(select(UserORM).where(UserORM.telegram_id == tg))
+        ).scalar_one()
         expiry2 = user.subscription_expires_at
     assert expiry2 == expiry1 + timedelta(days=30)
     assert await subs.get_tier_by_telegram(tg) == "pro"
@@ -1137,7 +1148,9 @@ async def test_set_tier_duplicate_does_not_mutate():
     await subs.set_tier_by_telegram(tg, "pro", duration_days=30, charge_id="chg-dup")
     expiry = (await _user_row(tg)).subscription_expires_at
 
-    assert await subs.set_tier_by_telegram(tg, "pro", duration_days=30, charge_id="chg-dup") is False
+    assert (
+        await subs.set_tier_by_telegram(tg, "pro", duration_days=30, charge_id="chg-dup") is False
+    )
     user = await _user_row(tg)
     assert user.subscription_expires_at == expiry
     assert user.subscription_tier == "pro"
@@ -1231,7 +1244,9 @@ async def test_get_account_status_trial_then_expired():
     assert status.days_left == subs.TRIAL_DAYS
 
     async with session_scope() as session:
-        user = (await session.execute(select(UserORM).where(UserORM.telegram_id == tg))).scalar_one()
+        user = (
+            await session.execute(select(UserORM).where(UserORM.telegram_id == tg))
+        ).scalar_one()
         user.trial_end = _now() - timedelta(days=1)
         await session.flush()
     status = await subs.get_account_status(tg)
@@ -1304,9 +1319,9 @@ async def test_attach_referrer_extends_paid_window_not_trial_from_scratch():
     await subs.attach_referrer(inv_tg, ref_id)
     referrer = await _user_row(ref_tg)
     # paid window extended by 3 days (base was captured slightly before _now())
-    assert subs._as_aware(referrer.subscription_expires_at) >= _now() + timedelta(days=8) - timedelta(
-        seconds=5
-    )
+    assert subs._as_aware(referrer.subscription_expires_at) >= _now() + timedelta(
+        days=8
+    ) - timedelta(seconds=5)
     # trial was NOT re-armed from scratch
     assert referrer.trial_end is None
 
@@ -1350,9 +1365,7 @@ async def test_gating_uses_users_table_not_subscription_row():
         await session.flush()
 
         assert (
-            await session.execute(
-                select(SubscriptionORM).where(SubscriptionORM.user_id == pro.id)
-            )
+            await session.execute(select(SubscriptionORM).where(SubscriptionORM.user_id == pro.id))
         ).first() is None  # no sub row for this user
         assert await _get_user_tier(session, pro.id) == "pro"
         assert await _get_user_tier(session, expired.id) == "free"  # expiry-aware

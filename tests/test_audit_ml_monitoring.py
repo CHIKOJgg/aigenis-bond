@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+import forecast.engine as fc
 import ml.engine as engine
 import ml.registry as registry
 import monitoring.engine as mon_engine
@@ -225,7 +226,18 @@ def test_time_split_single_sample_keeps_train_only():
 
 def test_time_split_preserves_order_and_fraction():
     samples = _make_samples(10)
-    shuffled = [samples[3], samples[0], samples[9], samples[4], samples[1], samples[5], samples[2], samples[6], samples[8], samples[7]]
+    shuffled = [
+        samples[3],
+        samples[0],
+        samples[9],
+        samples[4],
+        samples[1],
+        samples[5],
+        samples[2],
+        samples[6],
+        samples[8],
+        samples[7],
+    ]
     train_s, test_s = _time_split(shuffled, test_fraction=0.5)
     assert len(train_s) == 5 and len(test_s) == 5
     all_asof = [s.asof for s in train_s + test_s]
@@ -363,7 +375,14 @@ def test_backtest_report_rejects_empty_and_small():
 
 def test_backtest_report_structure(samples_30):
     report = backtest_report(samples_30, target_horizon_days=90)
-    assert set(report) == {"horizon_days", "n_train", "n_test", "regressor", "classifier", "top_features"}
+    assert set(report) == {
+        "horizon_days",
+        "n_train",
+        "n_test",
+        "regressor",
+        "classifier",
+        "top_features",
+    }
     assert report["horizon_days"] == 90
     assert report["n_train"] + report["n_test"] == TRAIN_MIN
     assert report["n_train"] == 22 and report["n_test"] == 8
@@ -395,14 +414,26 @@ def test_predict_one_no_models_uses_score():
     assert p.confidence == 0.9
     assert p.internal_id == "X1"
 
-    low = predict_one(_make_feature("X2", date(2026, 1, 1), 9.0, score=30.0), regressor_path=None, classifier_path=None)
+    low = predict_one(
+        _make_feature("X2", date(2026, 1, 1), 9.0, score=30.0),
+        regressor_path=None,
+        classifier_path=None,
+    )
     assert low.decision == "avoid"
     assert low.confidence == 0.3
 
-    mid = predict_one(_make_feature("X3", date(2026, 1, 1), 9.0, score=50.0), regressor_path=None, classifier_path=None)
+    mid = predict_one(
+        _make_feature("X3", date(2026, 1, 1), 9.0, score=50.0),
+        regressor_path=None,
+        classifier_path=None,
+    )
     assert mid.decision == "hold"
 
-    hi = predict_one(_make_feature("X4", date(2026, 1, 1), 9.0, score=150.0), regressor_path=None, classifier_path=None)
+    hi = predict_one(
+        _make_feature("X4", date(2026, 1, 1), 9.0, score=150.0),
+        regressor_path=None,
+        classifier_path=None,
+    )
     assert hi.confidence == 1.0
 
 
@@ -422,8 +453,8 @@ def test_predict_one_regressor_only(reg_artifact):
 def _matrix(f):
     from ml.features import features_to_matrix
 
-    X, _ = features_to_matrix([f])
-    return X
+    x_mat, _ = features_to_matrix([f])
+    return x_mat
 
 
 def test_predict_one_classifier_only(clf_artifact):
@@ -649,8 +680,12 @@ async def test_repo_upsert_predictions_updates_existing_key():
 
 
 async def test_repo_latest_predictions_ordering_and_filter():
-    old = _pred("B1", date(2026, 1, 1), "v1", decision="hold", created_at=datetime(2026, 1, 1, tzinfo=UTC))
-    new = _pred("B2", date(2026, 1, 2), "v1", decision="buy", created_at=datetime(2026, 1, 2, tzinfo=UTC))
+    old = _pred(
+        "B1", date(2026, 1, 1), "v1", decision="hold", created_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    new = _pred(
+        "B2", date(2026, 1, 2), "v1", decision="buy", created_at=datetime(2026, 1, 2, tzinfo=UTC)
+    )
     async with session_scope() as s:
         await upsert_predictions(s, [old, new])
     async with session_scope() as s:
@@ -805,6 +840,8 @@ def _no_partner_webhook(monkeypatch):
 async def _clean_db():
     """The in-memory engine is shared process-wide; wipe every table so each
     test starts from an empty database."""
+    from contextlib import suppress
+
     from sqlalchemy import delete
     from sqlalchemy.exc import OperationalError
 
@@ -814,10 +851,8 @@ async def _clean_db():
     engine = get_engine()
     async with engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
-            try:
+            with suppress(OperationalError):  # table not created yet (ordering safety)
                 await conn.execute(delete(table))
-            except OperationalError:  # table not created yet (ordering safety)
-                pass
     yield
 
 
@@ -843,7 +878,9 @@ def test_assess_data_quality_naive_timestamps_treated_as_utc():
     assert report.issues == []
 
 
-async def _add_active_bond(s, iid, *, ytm="8.0", coupon="5.0", price="100.0", status="active", offer_date=None):
+async def _add_active_bond(
+    s, iid, *, ytm="8.0", coupon="5.0", price="100.0", status="active", offer_date=None
+):
     s.add(
         BondORM(
             internal_id=iid,
@@ -1043,7 +1080,7 @@ async def test_run_all_structure_with_empty_db():
     async with session_scope() as s:
         results = await mon_engine.run_all(s)
     assert set(results) == {"bonds", "fx", "metals", "data_quality"}
-    for name, mr in results.items():
+    for _name, mr in results.items():
         assert isinstance(mr, mon_engine.MonitoringResult)
         assert isinstance(mr.new_alerts, int)
     assert results["bonds"].new_alerts == 0
@@ -1069,9 +1106,6 @@ async def test_run_all_isolates_failing_check(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-import forecast.engine as fc
-
-
 def test_monthly_return_formula():
     assert fc._monthly_return(7.0) == Decimal(str((1.07) ** (1 / 12) - 1))
     assert fc._monthly_return(0.0) == Decimal("0")
@@ -1095,7 +1129,10 @@ def test_forecast_capital_deterministic_path():
         volatility_pct=0.0,
     )
     r = Decimal(str((1.07) ** (1 / 12) - 1))
-    expected = Decimal("10000") * (Decimal("1") + r) ** 12 + Decimal("500") * ((Decimal("1") + r) ** 12 - Decimal("1")) / r
+    expected = (
+        Decimal("10000") * (Decimal("1") + r) ** 12
+        + Decimal("500") * ((Decimal("1") + r) ** 12 - Decimal("1")) / r
+    )
     assert float(res.expected_capital) == pytest.approx(float(expected), abs=0.01)
     assert res.pessimistic_capital == res.expected_capital
     assert res.optimistic_capital == res.expected_capital
@@ -1114,7 +1151,9 @@ def test_forecast_capital_zero_contribution_compounds_initial():
         volatility_pct=0.0,
     )
     r = Decimal(str((1.07) ** (1 / 12) - 1))
-    assert float(res.expected_capital) == pytest.approx(10000.0 * float((Decimal("1") + r) ** 12), abs=0.01)
+    assert float(res.expected_capital) == pytest.approx(
+        10000.0 * float((Decimal("1") + r) ** 12), abs=0.01
+    )
 
 
 def test_forecast_capital_volatility_percentiles_and_cvar():
@@ -1174,7 +1213,10 @@ def test_forecast_horizons_structure_and_growth():
     assert capitals == sorted(capitals)
     assert capitals[0] < capitals[1] < capitals[2]
     r = Decimal(str((1.07) ** (1 / 12) - 1))
-    expected_1y = Decimal("10000") * (Decimal("1") + r) ** 12 + Decimal("500") * ((Decimal("1") + r) ** 12 - Decimal("1")) / r
+    expected_1y = (
+        Decimal("10000") * (Decimal("1") + r) ** 12
+        + Decimal("500") * ((Decimal("1") + r) ** 12 - Decimal("1")) / r
+    )
     assert float(horizons[0].expected_capital) == pytest.approx(float(expected_1y), abs=0.01)
 
 

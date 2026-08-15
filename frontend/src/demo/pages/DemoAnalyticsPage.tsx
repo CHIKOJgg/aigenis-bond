@@ -358,11 +358,15 @@ function ScoreYtmChart({
   scoreLookup: (id: string) => DemoScore | undefined;
 }) {
   type Point = { internal_id: string; name: string; score: number; ytm: number; status?: ScoreStatus; ticker?: string; isin?: string | null; currency?: string; issuer_risk?: { level: string; score: number } | null; distressed?: boolean };
+  // Карта возможностей строится только по допущенным в портфель бумагам:
+  // дистрибуция (цена < 80%, YTM > 30%) и аномалии доходности (> 60%)
+  // исключаются — иначе один выброс растягивает ось и «ложит» весь график.
   const points: Point[] = useMemo(() => bonds
     .map<Point | null>((bond) => {
       const score = scoreLookup(bond.internal_id)?.score ?? null;
       const ytm = bond.yield_to_maturity ?? null;
       if (score == null || ytm == null || ytm <= 0) return null;
+      if (bond.distressed || ytm > 60) return null;
       return {
         internal_id: bond.internal_id,
         name: bond.name,
@@ -383,7 +387,7 @@ function ScoreYtmChart({
 
   const ytmMax = useMemo(() => {
     if (!points.length) return 30;
-    return Math.max(8, Math.ceil(Math.max(...points.map((p) => p.ytm)) / 5) * 5);
+    return Math.max(8, Math.min(Math.ceil(Math.max(...points.map((p) => p.ytm)) / 5) * 5, 60));
   }, [points]);
 
   const fullView: View = { scoreMin: 0, scoreMax: 100, ytmMin: 0, ytmMax };

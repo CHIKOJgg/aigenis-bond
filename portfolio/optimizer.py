@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
+from scoring.eligibility import filter_eligible
 from scoring.engine import score_bond
 from scoring.models import (
     BondScore,
@@ -62,7 +63,21 @@ def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) ->
         is_usd = (
             str(b.currency).upper() == "USD"
             or (b.indexation_currency and str(b.indexation_currency).upper() == "USD")
-            or any(t in name_l for t in ["usd", "$", "долл", "op49", "оп49", "op-49", "оп-49", "op50", "оп50", "валют"])
+            or any(
+                t in name_l
+                for t in [
+                    "usd",
+                    "$",
+                    "долл",
+                    "op49",
+                    "оп49",
+                    "op-49",
+                    "оп-49",
+                    "op50",
+                    "оп50",
+                    "валют",
+                ]
+            )
             or any(t in id_l for t in ["usd", "op49", "op50"])
         )
         weighted += 60.0 if is_usd else -50.0
@@ -73,23 +88,32 @@ def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) ->
         name_l = (b.name or "").lower()
         id_l = (b.internal_id or "").lower()
         issuer_l = (b.issuer or "").lower()
-        idx = (str(b.indexation_currency).upper() if b.indexation_currency else "")
+        idx = str(b.indexation_currency).upper() if b.indexation_currency else ""
         is_aig = "айгенис" in issuer_l or "aigenis" in issuer_l or "aigenis" in id_l
 
         is_gold = (
             idx in ["XAU", "GOLD"]
-            or (is_aig and any(t in name_l for t in ["золот", "gold", "xau", "op35", "оп35", "оп-35"]))
+            or (
+                is_aig
+                and any(t in name_l for t in ["золот", "gold", "xau", "op35", "оп35", "оп-35"])
+            )
             or any(t in id_l for t in ["op35-gold", "aigenis-op35"])
             or ("южуралзолото" in name_l or "селигдар" in name_l)
         )
         is_silver = (
             idx in ["XAG", "SILVER"]
-            or (is_aig and any(t in name_l for t in ["серебр", "silver", "xag", "op43", "оп43", "оп-43"]))
+            or (
+                is_aig
+                and any(t in name_l for t in ["серебр", "silver", "xag", "op43", "оп43", "оп-43"])
+            )
             or any(t in id_l for t in ["op43-silver", "aigenis-op43"])
         )
         is_platinum = (
             idx in ["XPT", "PLATINUM"]
-            or (is_aig and any(t in name_l for t in ["платин", "platinum", "xpt", "op42", "оп42", "оп-42"]))
+            or (
+                is_aig
+                and any(t in name_l for t in ["платин", "platinum", "xpt", "op42", "оп42", "оп-42"])
+            )
             or any(t in id_l for t in ["op42-platinum", "aigenis-op42"])
         )
 
@@ -107,8 +131,12 @@ def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) ->
 
 def rank_bonds(bonds: Iterable[Bond], strategy: StrategyName = "Balanced") -> list[BondScore]:
     weights = STRATEGY_WEIGHTS[strategy]
+    bond_list = list(bonds)
+    # Eligibility gate: дистрибуция, сверхвысокорисковые и аномалии в портфель
+    # не попадают ни при какой стратегии (см. scoring/eligibility.py).
+    eligible_bonds, _excluded = filter_eligible(bond_list)
     scored: list[BondScore] = []
-    for b in bonds:
+    for b in eligible_bonds:
         # Пропускаем явно неликвидные или просроченные бумаги
         if b.maturity_date and b.maturity_date <= date.today():
             continue

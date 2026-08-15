@@ -306,9 +306,7 @@ async def enrich_from_xlsx(xlsx_data=None) -> dict[str, int]:
                     updates["quantity"] = enrichment.quantity
                 if bond_orm.issue_volume is None and enrichment.issue_volume is not None:
                     updates["issue_volume"] = enrichment.issue_volume
-                if (
-                    bond_orm.coupon_rate is None or float(bond_orm.coupon_rate) <= 0
-                ):
+                if bond_orm.coupon_rate is None or float(bond_orm.coupon_rate) <= 0:
                     # Current-period coupon amount (indexed rate) is the most
                     # truthful estimate; fall back to the XLSX static rate.
                     rate = _current_period_coupon_rate(
@@ -420,9 +418,15 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                     )
                 ).scalar_one_or_none()
                 ytm_val = b.yield_to_maturity
-                if (ytm_val is None or float(ytm_val) <= 0) and b.price is not None and b.coupon_rate is not None and b.maturity_date is not None:
+                if (
+                    (ytm_val is None or float(ytm_val) <= 0)
+                    and b.price is not None
+                    and b.coupon_rate is not None
+                    and b.maturity_date is not None
+                ):
                     try:
                         from desk.ytm import to_price_pct, ytm_from_price
+
                         price_pct = to_price_pct(b.price, b.nominal)
                         if price_pct is not None:
                             solved = ytm_from_price(
@@ -602,9 +606,7 @@ def _periods_to_frequency(periods: list[dict[str, Any]]) -> int | None:
     return min(freq, 12) if freq >= 1 else None
 
 
-def _current_period_coupon_rate(
-    periods: list[dict[str, Any]], nominal: Any
-) -> Decimal | None:
+def _current_period_coupon_rate(periods: list[dict[str, Any]], nominal: Any) -> Decimal | None:
     """Annual coupon rate in percent points for the period running today.
 
     Indexed bonds («Оп*») have a coupon whose rate is not disclosed in the

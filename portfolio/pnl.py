@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from decimal import Decimal
+from typing import Any
 
 from scraper.models import Bond
 
@@ -49,7 +50,7 @@ class PositionPnL:
     def total_pnl(self) -> Decimal:
         return self.realized_pnl + self.unrealized_pnl + self.coupon_income
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "internal_id": self.internal_id,
             "realized_pnl": float(self.realized_pnl),
@@ -84,7 +85,7 @@ class PortfolioPnL:
         self.total_coupon_income = Decimal("0")
         self.total_value = Decimal("0")
         self.per_bond: list[PositionPnL] = []
-        self.daily_returns: list[dict] = []
+        self.daily_returns: list[dict[str, Any]] = []
         self.max_drawdown = Decimal("0")
         self.sharpe = Decimal("0")
 
@@ -96,7 +97,7 @@ class PortfolioPnL:
             return 0.0
         return round(float(self.total_pnl() / self.total_invested * 100), 2)
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "total_invested": float(self.total_invested),
             "total_value": float(self.total_value),
@@ -113,8 +114,8 @@ class PortfolioPnL:
 
 
 def compute_pnl(
-    transactions: list,
-    positions: list,
+    transactions: list[Any],
+    positions: list[Any],
     bonds_by_id: dict[str, Bond],
     *,
     coupon_data: dict[str, Decimal] | None = None,
@@ -136,13 +137,13 @@ def compute_pnl(
     result = PortfolioPnL()
 
     # Group transactions by bond
-    txs_by_bond: dict[str, list] = defaultdict(list)
+    txs_by_bond: dict[str, list[Any]] = defaultdict(list)
     for tx in transactions:
         txs_by_bond[tx.internal_id].append(tx)
 
     # Positions that have no transaction history still hold money: show them
     # with the current price as their mark, cost basis = invested money.
-    pos_by_id: dict[str, object] = {p.internal_id: p for p in positions}
+    pos_by_id: dict[str, Any] = {p.internal_id: p for p in positions}
     for iid in pos_by_id:
         txs_by_bond.setdefault(iid, [])
 
@@ -263,7 +264,7 @@ def compute_pnl(
     return result
 
 
-def compute_daily_returns(equity_curve: list[dict]) -> list[dict]:
+def compute_daily_returns(equity_curve: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Compute daily return % from a list of {date, value} dicts."""
     if len(equity_curve) < 2:
         return []
@@ -281,7 +282,7 @@ def compute_daily_returns(equity_curve: list[dict]) -> list[dict]:
     return returns
 
 
-def compute_max_drawdown(equity_curve: list[dict]) -> float:
+def compute_max_drawdown(equity_curve: list[dict[str, Any]]) -> float:
     """Compute maximum drawdown from equity curve."""
     if len(equity_curve) < 2:
         return 0.0
@@ -296,11 +297,11 @@ def compute_max_drawdown(equity_curve: list[dict]) -> float:
     return round(max_dd * 100, 2)
 
 
-def compute_sharpe(daily_returns: list[dict], rf_annual: float = 4.0) -> float:
+def compute_sharpe(daily_returns: list[dict[str, Any]], rf_annual: float = 4.0) -> float:
     """Annualized Sharpe ratio from daily returns."""
     if len(daily_returns) < 2:
         return 0.0
-    rets = [r["return_pct"] for r in daily_returns]
+    rets = [float(r["return_pct"]) for r in daily_returns]
     avg = sum(rets) / len(rets)
     var = sum((r - avg) ** 2 for r in rets) / len(rets)
     vol = math.sqrt(var)

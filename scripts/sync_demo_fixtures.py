@@ -31,9 +31,21 @@ ROOT = Path(__file__).resolve().parents[1]
 DEMO_DIR = ROOT / "demo-data" / "v1"
 FRONTEND_DIR = ROOT / "frontend" / "src" / "demo" / "data"
 
-TIER_STATUS = {"S": "attractive", "A": "attractive", "B": "neutral", "C": "review", "D": "high_risk"}
+TIER_STATUS = {
+    "S": "attractive",
+    "A": "attractive",
+    "B": "neutral",
+    "C": "review",
+    "D": "high_risk",
+}
 
-FILES = ("bonds_bcse.json", "bonds_moex.json", "scores.json", "market_summary.json", "explanations.json")
+FILES = (
+    "bonds_bcse.json",
+    "bonds_moex.json",
+    "scores.json",
+    "market_summary.json",
+    "explanations.json",
+)
 
 YTM_TOLERANCE_PP = 0.5
 
@@ -69,13 +81,17 @@ def fix_ytm(asof: date) -> tuple[list[dict], list[str]]:
             )
         stored_f = float(stored) if stored is not None else None
         if stored_f is not None and rec is not None and abs(stored_f - rec) > YTM_TOLERANCE_PP:
-            changes.append(f"{b['internal_id']}: ytm {stored_f} -> {round(rec, 2)} (diff {stored_f - rec:+.2f}pp)")
+            changes.append(
+                f"{b['internal_id']}: ytm {stored_f} -> {round(rec, 2)} (diff {stored_f - rec:+.2f}pp)"
+            )
             b["yield_to_maturity"] = round(rec, 2)
         elif stored_f is None and rec is not None:
             changes.append(f"{b['internal_id']}: ytm None -> {round(rec, 2)}")
             b["yield_to_maturity"] = round(rec, 2)
         elif rec is None:
-            changes.append(f"{b['internal_id']}: cannot recompute ytm (missing price/coupon/maturity)")
+            changes.append(
+                f"{b['internal_id']}: cannot recompute ytm (missing price/coupon/maturity)"
+            )
     return bonds, changes
 
 
@@ -134,7 +150,11 @@ def regenerate_explanations(bonds: list[dict]) -> list[dict]:
                         "label": f.label,
                         "direction": f.impact,
                         "plainText": f.detail,
-                        "importance": "high" if abs(f.points) >= 5.0 else "medium" if abs(f.points) >= 2.0 else "low",
+                        "importance": "high"
+                        if abs(f.points) >= 5.0
+                        else "medium"
+                        if abs(f.points) >= 2.0
+                        else "low",
                     }
                     for f in expl.factors
                 ],
@@ -152,9 +172,16 @@ def regenerate_market_summary(bonds: list[dict], scores: list[dict]) -> dict:
         mkey = "moex" if b.get("market") == "moex" else "bcse"
         stats = markets.setdefault(
             mkey,
-            {"total_bonds": 0, "attractive_ideas": 0, "needs_review": 0,
-             "neutral": 0, "high_risk": 0, "best_yield_pct": None,
-             "best_yield_id": None, "source": "demo snapshot"},
+            {
+                "total_bonds": 0,
+                "attractive_ideas": 0,
+                "needs_review": 0,
+                "neutral": 0,
+                "high_risk": 0,
+                "best_yield_pct": None,
+                "best_yield_id": None,
+                "source": "demo snapshot",
+            },
         )
         stats["total_bonds"] += 1
         status = score_by_id.get(b["internal_id"], {}).get("status", "no_data")
@@ -176,7 +203,8 @@ def regenerate_market_summary(bonds: list[dict], scores: list[dict]) -> dict:
     snapshot_time = bonds[0].get("fetched_at") if bonds else datetime.now(UTC).isoformat()
     best_global = (
         bcse["best_yield_pct"]
-        if bcse["best_yield_pct"] is not None and (moex["best_yield_pct"] is None or bcse["best_yield_pct"] >= moex["best_yield_pct"])
+        if bcse["best_yield_pct"] is not None
+        and (moex["best_yield_pct"] is None or bcse["best_yield_pct"] >= moex["best_yield_pct"])
         else moex["best_yield_pct"]
     )
     return {
@@ -202,11 +230,15 @@ def check_portfolio_benchmarks(bonds: list[dict]) -> None:
         invested = sum(float(p["weight_pct"]) for p in positions)
         if invested <= 0:
             continue
-        ytm_w = sum(
-            float(by_id[p["instrument_id"]]["yield_to_maturity"]) * float(p["weight_pct"])
-            for p in positions
-            if p["instrument_id"] in by_id and by_id[p["instrument_id"]].get("yield_to_maturity")
-        ) / invested
+        ytm_w = (
+            sum(
+                float(by_id[p["instrument_id"]]["yield_to_maturity"]) * float(p["weight_pct"])
+                for p in positions
+                if p["instrument_id"] in by_id
+                and by_id[p["instrument_id"]].get("yield_to_maturity")
+            )
+            / invested
+        )
         bench = template.get("benchmarks", {})
         print(
             f"portfolio {template['id']}: weighted_yield={ytm_w:.2f}% "

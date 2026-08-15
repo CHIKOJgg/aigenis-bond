@@ -11,13 +11,48 @@ Style notes:
 
 from __future__ import annotations
 
-import math
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
 
 from ml.models import RebalanceAction, RebalancePlan
+from portfolio.backtest import KNOWN_STRATEGIES, BacktestResult, run_backtest
+from portfolio.income import bond_cashflows, portfolio_income
+from portfolio.optimizer import STRATEGY_WEIGHTS, _apply_strategy_bonuses, allocate, rank_bonds
+from portfolio.pnl import (
+    PositionPnL,
+    compute_daily_returns,
+    compute_max_drawdown,
+    compute_pnl,
+    compute_sharpe,
+)
+from portfolio.positions_repository import (
+    get_position,
+    list_positions,
+    list_rebalance_history,
+    mark_rebalance_applied,
+    remove_position,
+    save_rebalance_plan,
+    total_value,
+    upsert_position,
+)
+from portfolio.rebalance import (
+    DEFAULT_DRIFT_THRESHOLD,
+    MIN_TRADE_AMOUNT,
+    _compute_weights,
+    build_plan,
+    maybe_auto_rebalance,
+)
+from portfolio.scenarios import run_all_scenarios, run_scenario
+from portfolio.transactions import (
+    delete_transaction,
+    get_bond_transactions,
+    list_transactions,
+    record_transaction,
+    total_bought_sold,
+)
+from scoring.models import UserPreferences
 from scraper.db import session_scope
 from scraper.models import Bond
 from scraper.orm import (
@@ -26,7 +61,6 @@ from scraper.orm import (
     RebalanceHistoryORM,
     TransactionORM,
 )
-from scoring.models import ScenarioName, UserPreferences
 
 # =========================================================================== #
 # Shared helpers
@@ -123,8 +157,6 @@ def _standard_history() -> dict[str, list[BondHistoryORM]]:
 # 1. portfolio/backtest.py
 # =========================================================================== #
 
-from portfolio.backtest import KNOWN_STRATEGIES, BacktestResult, run_backtest
-
 
 def test_backtest_unknown_strategy_raises():
     with pytest.raises(ValueError, match="Unknown strategy"):
@@ -150,14 +182,17 @@ def test_backtest_rebalance_days_less_than_one_raises():
 def test_backtest_start_after_end_raises():
     with pytest.raises(ValueError, match="start_date must not be after end_date"):
         run_backtest(
-            [], {},
-            start_date=date(2026, 2, 1), end_date=date(2026, 1, 1),
+            [],
+            {},
+            start_date=date(2026, 2, 1),
+            end_date=date(2026, 1, 1),
         )
 
 
 def test_backtest_empty_history_returns_initial_capital():
     result = run_backtest(
-        [], {},
+        [],
+        {},
         strategy="Balanced",
         initial_capital=Decimal("7777"),
         start_date=date(2026, 1, 1),
@@ -190,7 +225,9 @@ def test_backtest_happy_path_equity_and_positions():
     )
     # Equity curve: one point per simulated date.
     assert [pt["date"] for pt in result.equity_curve] == [
-        "2026-01-01", "2026-01-02", "2026-01-03",
+        "2026-01-01",
+        "2026-01-02",
+        "2026-01-03",
     ]
     # rebalance_days=1 => rebalances on every date => one entry per date.
     assert len(result.positions_history) == 3
@@ -254,7 +291,8 @@ def test_backtest_rebalance_only_when_days_since_threshold():
         ],
     }
     result = run_backtest(
-        bonds, history,
+        bonds,
+        history,
         strategy="Balanced",
         initial_capital=Decimal("10000"),
         start_date=date(2026, 1, 1),
@@ -280,7 +318,8 @@ def test_backtest_rebalance_only_when_days_since_threshold():
         ],
     }
     result2 = run_backtest(
-        bonds, history2,
+        bonds,
+        history2,
         strategy="Balanced",
         initial_capital=Decimal("10000"),
         start_date=date(2026, 1, 1),
@@ -327,7 +366,8 @@ def test_backtest_metrics_on_controlled_dataset():
     }
     bonds = [_make_bond("B1"), _make_bond("B2")]
     result = run_backtest(
-        bonds, history,
+        bonds,
+        history,
         strategy="Balanced",
         initial_capital=Decimal("1000"),
         start_date=date(2026, 1, 1),
@@ -351,12 +391,14 @@ def test_backtest_sharpe_none_when_single_point_or_flat():
         "B2": [_hist("B2", date(2026, 1, 1), 100)],
     }
     r1 = run_backtest(
-        bonds, single,
+        bonds,
+        single,
         strategy="Balanced",
         initial_capital=Decimal("1000"),
         start_date=date(2026, 1, 1),
         end_date=date(2026, 1, 1),
-        top_n=2, rebalance_days=1,
+        top_n=2,
+        rebalance_days=1,
     )
     assert r1.sharpe_ratio is None
     assert r1.annual_return_pct is None
@@ -372,12 +414,14 @@ def test_backtest_sharpe_none_when_single_point_or_flat():
         ],
     }
     r2 = run_backtest(
-        bonds, flat,
+        bonds,
+        flat,
         strategy="Balanced",
         initial_capital=Decimal("1000"),
         start_date=date(2026, 1, 1),
         end_date=date(2026, 1, 2),
-        top_n=2, rebalance_days=1,
+        top_n=2,
+        rebalance_days=1,
     )
     # Zero-volatility equity curve -> sharpe stays None.
     assert [pt["value"] for pt in r2.equity_curve] == [1000.0, 1000.0]
@@ -387,8 +431,6 @@ def test_backtest_sharpe_none_when_single_point_or_flat():
 # =========================================================================== #
 # 2. portfolio/scenarios.py
 # =========================================================================== #
-
-from portfolio.scenarios import run_all_scenarios, run_scenario
 
 
 def test_run_all_scenarios_shape():
@@ -507,13 +549,6 @@ def test_scenarios_negative_shares_tolerated():
 # 3. portfolio/transactions.py
 # =========================================================================== #
 
-from portfolio.transactions import (
-    delete_transaction,
-    get_bond_transactions,
-    list_transactions,
-    record_transaction,
-    total_bought_sold,
-)
 
 # NOTE: insert helpers (record_transaction) work in the test environment
 # because the root conftest compiles BigInteger PKs to INTEGER on SQLite,
@@ -541,12 +576,22 @@ async def test_record_transaction_creates_row_with_default_executed_at():
 async def test_record_transaction_duplicates_are_separate_rows():
     async with session_scope() as session:
         t1 = await record_transaction(
-            session, user_id=4202, internal_id="T2", side="buy",
-            amount=Decimal("1000"), price=Decimal("100"), currency="USD",
+            session,
+            user_id=4202,
+            internal_id="T2",
+            side="buy",
+            amount=Decimal("1000"),
+            price=Decimal("100"),
+            currency="USD",
         )
         t2 = await record_transaction(
-            session, user_id=4202, internal_id="T2", side="buy",
-            amount=Decimal("1000"), price=Decimal("100"), currency="USD",
+            session,
+            user_id=4202,
+            internal_id="T2",
+            side="buy",
+            amount=Decimal("1000"),
+            price=Decimal("100"),
+            currency="USD",
         )
         assert t1.id != t2.id
         rows = await list_transactions(session, 4202)
@@ -556,9 +601,7 @@ async def test_record_transaction_duplicates_are_separate_rows():
 async def test_list_transactions_limit_and_offset():
     async with session_scope() as session:
         for i in range(1, 6):
-            session.add(
-                _tx(6100 + i, "TX1", "buy", "100", "100", f"2026-01-0{i}")
-            )
+            session.add(_tx(6100 + i, "TX1", "buy", "100", "100", f"2026-01-0{i}"))
         # rows carry user_id=1 from the helper; ordered by executed_at desc
         rows = await list_transactions(session, 1, limit=2)
         assert [r.id for r in rows] == [6105, 6104]
@@ -571,13 +614,23 @@ async def test_delete_transaction_own_and_other_user():
         session.add_all(
             [
                 TransactionORM(
-                    id=6301, user_id=4301, internal_id="D1", side="buy",
-                    amount=Decimal("1000"), price=Decimal("100"), currency="USD",
+                    id=6301,
+                    user_id=4301,
+                    internal_id="D1",
+                    side="buy",
+                    amount=Decimal("1000"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 1, tzinfo=UTC),
                 ),
                 TransactionORM(
-                    id=6302, user_id=4302, internal_id="D1", side="buy",
-                    amount=Decimal("500"), price=Decimal("100"), currency="USD",
+                    id=6302,
+                    user_id=4302,
+                    internal_id="D1",
+                    side="buy",
+                    amount=Decimal("500"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 2, tzinfo=UTC),
                 ),
             ]
@@ -599,18 +652,33 @@ async def test_get_bond_transactions_filters_by_internal_id():
         session.add_all(
             [
                 TransactionORM(
-                    id=6401, user_id=4401, internal_id="G1", side="buy",
-                    amount=Decimal("1000"), price=Decimal("100"), currency="USD",
+                    id=6401,
+                    user_id=4401,
+                    internal_id="G1",
+                    side="buy",
+                    amount=Decimal("1000"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 1, tzinfo=UTC),
                 ),
                 TransactionORM(
-                    id=6402, user_id=4401, internal_id="G2", side="buy",
-                    amount=Decimal("2000"), price=Decimal("100"), currency="USD",
+                    id=6402,
+                    user_id=4401,
+                    internal_id="G2",
+                    side="buy",
+                    amount=Decimal("2000"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 2, tzinfo=UTC),
                 ),
                 TransactionORM(
-                    id=6403, user_id=4402, internal_id="G1", side="buy",
-                    amount=Decimal("3000"), price=Decimal("100"), currency="USD",
+                    id=6403,
+                    user_id=4402,
+                    internal_id="G1",
+                    side="buy",
+                    amount=Decimal("3000"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 3, tzinfo=UTC),
                 ),
             ]
@@ -627,18 +695,33 @@ async def test_total_bought_sold_aggregation():
         session.add_all(
             [
                 TransactionORM(
-                    id=6501, user_id=4501, internal_id="A1", side="buy",
-                    amount=Decimal("1000"), price=Decimal("100"), currency="USD",
+                    id=6501,
+                    user_id=4501,
+                    internal_id="A1",
+                    side="buy",
+                    amount=Decimal("1000"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 1, tzinfo=UTC),
                 ),
                 TransactionORM(
-                    id=6502, user_id=4501, internal_id="A1", side="buy",
-                    amount=Decimal("2000"), price=Decimal("100"), currency="USD",
+                    id=6502,
+                    user_id=4501,
+                    internal_id="A1",
+                    side="buy",
+                    amount=Decimal("2000"),
+                    price=Decimal("100"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 2, tzinfo=UTC),
                 ),
                 TransactionORM(
-                    id=6503, user_id=4501, internal_id="A1", side="sell",
-                    amount=Decimal("400"), price=Decimal("110"), currency="USD",
+                    id=6503,
+                    user_id=4501,
+                    internal_id="A1",
+                    side="sell",
+                    amount=Decimal("400"),
+                    price=Decimal("110"),
+                    currency="USD",
                     executed_at=datetime(2026, 1, 3, tzinfo=UTC),
                 ),
             ]
@@ -658,14 +741,6 @@ async def test_total_bought_sold_aggregation():
 # =========================================================================== #
 # 4. portfolio/rebalance.py
 # =========================================================================== #
-
-from portfolio.rebalance import (
-    MIN_TRADE_AMOUNT,
-    DEFAULT_DRIFT_THRESHOLD,
-    _compute_weights,
-    build_plan,
-    maybe_auto_rebalance,
-)
 
 
 def test_build_plan_actions_buy_sell_and_amounts():
@@ -703,7 +778,7 @@ def test_build_plan_returns_none_below_drift_threshold():
 
 
 def test_build_plan_min_trade_amount_50_blocks_small_deltas():
-    assert MIN_TRADE_AMOUNT == Decimal("50")
+    assert Decimal("50") == MIN_TRADE_AMOUNT
     bonds = [_make_bond("B1")]
     prefs = UserPreferences(user_id=1, initial_capital=Decimal("100"), strategy="Balanced")
     # delta = 100 - 70 = 30 < 50 -> drift 0.3 >= threshold 0.3, but no action.
@@ -738,8 +813,7 @@ def test_compute_weights_ignores_currency_fx():
     amount ratios (fx conversion is expected upstream, e.g. in total_value)."""
     positions = [_pos(1, "B1", "7000"), _pos(1, "B2", "3000")]
     target = {"B1": Decimal("5000"), "B2": Decimal("5000")}
-    deltas = _compute_weights(positions, target, Decimal("10000"),
-                              initial_capital=Decimal("10000"))
+    deltas = _compute_weights(positions, target, Decimal("10000"), initial_capital=Decimal("10000"))
     assert deltas["B1"] == (Decimal("-2000"), 0.7, 0.5)
     assert deltas["B2"] == (Decimal("2000"), 0.3, 0.5)
     # Mixed currencies: ratios still raw amounts.
@@ -769,13 +843,6 @@ async def test_maybe_auto_rebalance_with_real_db():
 # 5. portfolio/optimizer.py
 # =========================================================================== #
 
-from portfolio.optimizer import (
-    STRATEGY_WEIGHTS,
-    _apply_strategy_bonuses,
-    allocate,
-    rank_bonds,
-)
-
 
 def test_allocate_sum_matches_capital_and_positive():
     bonds = [
@@ -800,8 +867,13 @@ def test_allocate_all_seven_strategies_runnable():
     ]
     assert len(STRATEGY_WEIGHTS) == 7
     assert set(STRATEGY_WEIGHTS) == {
-        "Conservative", "Balanced", "Aggressive", "Carry Trade",
-        "Dollarization", "Maximum Reward/Risk", "Metals++",
+        "Conservative",
+        "Balanced",
+        "Aggressive",
+        "Carry Trade",
+        "Dollarization",
+        "Maximum Reward/Risk",
+        "Metals++",
     }
     for strategy in STRATEGY_WEIGHTS:
         prefs = UserPreferences(user_id=1, initial_capital=Decimal("10000"), strategy=strategy)
@@ -851,8 +923,6 @@ def test_carry_trade_price_under_70_penalty():
 # 6. portfolio/income.py
 # =========================================================================== #
 
-from portfolio.income import bond_cashflows, portfolio_income
-
 
 def _holding(iid: str = "B1", **kw) -> dict:
     base = {
@@ -872,8 +942,14 @@ def _holding(iid: str = "B1", **kw) -> dict:
 def test_portfolio_income_structure():
     result = portfolio_income([_holding()], from_date=date(2026, 7, 1))
     assert set(result) >= {
-        "total_invested", "annual_income", "yield_on_cost", "next_payment",
-        "monthly_calendar", "per_bond", "horizon_months", "income_next_horizon",
+        "total_invested",
+        "annual_income",
+        "yield_on_cost",
+        "next_payment",
+        "monthly_calendar",
+        "per_bond",
+        "horizon_months",
+        "income_next_horizon",
     }
     assert result["total_invested"] == 1000.0
     assert result["annual_income"] == 100.0
@@ -903,9 +979,7 @@ def test_portfolio_income_empty_holdings():
 
 
 def test_portfolio_income_coupon_frequency_none():
-    result = portfolio_income(
-        [_holding(coupon_frequency=None)], from_date=date(2026, 7, 1)
-    )
+    result = portfolio_income([_holding(coupon_frequency=None)], from_date=date(2026, 7, 1))
     pb = result["per_bond"][0]
     # No schedule -> no payments, but annual income is still computed.
     assert pb["next_payment"] is None
@@ -917,22 +991,16 @@ def test_portfolio_income_coupon_frequency_none():
 
 def test_portfolio_income_price_none_or_zero_falls_back_to_par():
     for price in (None, Decimal("0")):
-        result = portfolio_income(
-            [_holding(price=price)], from_date=date(2026, 7, 1)
-        )
+        result = portfolio_income([_holding(price=price)], from_date=date(2026, 7, 1))
         assert result["per_bond"][0]["annual_income"] == 100.0
         assert result["total_invested"] == 1000.0
 
 
 def test_portfolio_income_fx_rate_missing_currency_is_1():
-    result = portfolio_income(
-        [_holding()], from_date=date(2026, 7, 1), fx_rates={"BYN": 3.3}
-    )
+    result = portfolio_income([_holding()], from_date=date(2026, 7, 1), fx_rates={"BYN": 3.3})
     assert result["total_invested"] == 1000.0
     assert result["annual_income"] == 100.0
-    with_fx = portfolio_income(
-        [_holding()], from_date=date(2026, 7, 1), fx_rates={"USD": 3.3}
-    )
+    with_fx = portfolio_income([_holding()], from_date=date(2026, 7, 1), fx_rates={"USD": 3.3})
     assert with_fx["total_invested"] == 3300.0
     assert with_fx["annual_income"] == 330.0
     assert with_fx["monthly_calendar"][0]["amount"] == 165.0
@@ -950,19 +1018,20 @@ def test_portfolio_income_horizon_months_bounds():
 
 
 def test_bond_cashflows_from_date_is_exclusive():
-    kw = dict(
-        internal_id="B1",
-        amount_invested=Decimal("1000"),
-        coupon_rate=Decimal("10"),
-        coupon_frequency=2,
-        maturity_date=date(2027, 7, 1),
-        price=Decimal("100"),
-    )
+    kw = {
+        "internal_id": "B1",
+        "amount_invested": Decimal("1000"),
+        "coupon_rate": Decimal("10"),
+        "coupon_frequency": 2,
+        "maturity_date": date(2027, 7, 1),
+        "price": Decimal("100"),
+    }
     # A coupon falls exactly on 2026-07-01. With from_date == that date the
     # coupon is excluded; one day earlier it is included.
     at = bond_cashflows(from_date=date(2026, 7, 1), **kw)
     assert [f.date for f in at if f.kind == "coupon"] == [
-        date(2027, 1, 1), date(2027, 7, 1),
+        date(2027, 1, 1),
+        date(2027, 7, 1),
     ]
     before = bond_cashflows(from_date=date(2026, 6, 30), **kw)
     coupon_dates = [f.date for f in before if f.kind == "coupon"]
@@ -975,14 +1044,6 @@ def test_bond_cashflows_from_date_is_exclusive():
 # =========================================================================== #
 # 7. portfolio/pnl.py
 # =========================================================================== #
-
-from portfolio.pnl import (
-    PositionPnL,
-    compute_daily_returns,
-    compute_max_drawdown,
-    compute_pnl,
-    compute_sharpe,
-)
 
 
 def test_pnl_fifo_realized_unrealized():
@@ -1018,7 +1079,9 @@ def test_pnl_coupon_data_float_does_not_crash():
     positions = [_pos(1, "B1", "1000")]
     bonds = {"B1": _make_bond("B1", price=100.0)}
     pnl = compute_pnl(
-        transactions=txs, positions=positions, bonds_by_id=bonds,
+        transactions=txs,
+        positions=positions,
+        bonds_by_id=bonds,
         coupon_data={"B1": 15.5},
     )
     assert pnl.total_coupon_income == Decimal("15.5")
@@ -1030,7 +1093,9 @@ def test_pnl_coupon_none_value_is_zero():
     positions = [_pos(1, "B1", "1000")]
     bonds = {"B1": _make_bond("B1", price=100.0)}
     pnl = compute_pnl(
-        transactions=txs, positions=positions, bonds_by_id=bonds,
+        transactions=txs,
+        positions=positions,
+        bonds_by_id=bonds,
         coupon_data={"B1": None, "OTHER": 5.0},
     )
     assert pnl.total_coupon_income == Decimal("0")
@@ -1097,7 +1162,9 @@ def test_pnl_fx_rates_multiply_totals_and_weights():
         "N1": _make_bond("N1", price=105.0, currency="BYN"),
     }
     pnl = compute_pnl(
-        transactions=txs, positions=positions, bonds_by_id=bonds,
+        transactions=txs,
+        positions=positions,
+        bonds_by_id=bonds,
         fx_rates={"USD": 3.3},  # BYN missing -> rate 1.0
         coupon_data={"U1": 10.5, "N1": None},
     )
@@ -1152,16 +1219,6 @@ def test_compute_sharpe():
 # 8. portfolio/positions_repository.py
 # =========================================================================== #
 
-from portfolio.positions_repository import (
-    get_position,
-    list_positions,
-    list_rebalance_history,
-    mark_rebalance_applied,
-    remove_position,
-    save_rebalance_plan,
-    total_value,
-    upsert_position,
-)
 
 async def test_upsert_position_twice_updates_single_row():
     async with session_scope() as session:
@@ -1235,27 +1292,35 @@ async def _seed_rebalance_history(session, user_id: int) -> None:
         strategy="Balanced",
         drift_threshold=0.05,
         max_drift_observed=0.2,
-        actions=[RebalanceAction(
-            internal_id="B1", side="buy", amount=Decimal("100"),
-            weight_before=0.5, weight_after=0.6, reason="drift",
-        )],
+        actions=[
+            RebalanceAction(
+                internal_id="B1",
+                side="buy",
+                amount=Decimal("100"),
+                weight_before=0.5,
+                weight_after=0.6,
+                reason="drift",
+            )
+        ],
         expected_return=10.0,
         estimated_cost=100.0,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     for i, day in enumerate((1, 3, 2)):
-        session.add(RebalanceHistoryORM(
-            id=user_id * 10 + i,
-            user_id=user_id,
-            strategy=plan.strategy,
-            drift_threshold=Decimal("0.05"),
-            max_drift_observed=Decimal(str(0.1 + i / 10)),
-            expected_return=Decimal("10"),
-            estimated_cost=Decimal("100"),
-            actions=[a.model_dump(mode="json") for a in plan.actions],
-            created_at=datetime(2026, 1, day, tzinfo=UTC),
-            applied=False,
-        ))
+        session.add(
+            RebalanceHistoryORM(
+                id=user_id * 10 + i,
+                user_id=user_id,
+                strategy=plan.strategy,
+                drift_threshold=Decimal("0.05"),
+                max_drift_observed=Decimal(str(0.1 + i / 10)),
+                expected_return=Decimal("10"),
+                estimated_cost=Decimal("100"),
+                actions=[a.model_dump(mode="json") for a in plan.actions],
+                created_at=datetime(2026, 1, day, tzinfo=UTC),
+                applied=False,
+            )
+        )
     await session.flush()
 
 
@@ -1266,10 +1331,16 @@ async def test_save_rebalance_plan_returns_id():
         strategy="Balanced",
         drift_threshold=0.05,
         max_drift_observed=0.2,
-        actions=[RebalanceAction(
-            internal_id="B1", side="buy", amount=Decimal("100"),
-            weight_before=0.5, weight_after=0.6, reason="drift",
-        )],
+        actions=[
+            RebalanceAction(
+                internal_id="B1",
+                side="buy",
+                amount=Decimal("100"),
+                weight_before=0.5,
+                weight_after=0.6,
+                reason="drift",
+            )
+        ],
         expected_return=10.0,
         estimated_cost=100.0,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),

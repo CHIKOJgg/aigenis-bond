@@ -7,6 +7,8 @@ actionable for a non-professional investor. Pure functions, no I/O.
 
 from __future__ import annotations
 
+from typing import Any
+
 from scoring.models import BondScore, ScoreBreakdown
 
 __all__ = ["ExplainedScore", "ScoreFactor", "explain_score"]
@@ -24,7 +26,7 @@ class ScoreFactor:
         self.impact = "positive" if points > 0 else "negative" if points < 0 else "neutral"
         self.detail = detail
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "component": self.component,
             "label": self.label,
@@ -70,7 +72,7 @@ class ExplainedScore:
         self.weaknesses = weaknesses
         self.disclaimer = DISCLAIMER_FULL
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         from scoring.disclaimer import DISCLAIMER_FULL
 
         return {
