@@ -26,7 +26,7 @@ describe('demo-api', () => {
     it('возвращает Score для demo-bond-001', () => {
       const score = getScore('demo-bond-001');
       expect(score).toBeDefined();
-      expect(score!.score).toBe(61.44);
+      expect(score!.score).toBe(69.44);
       expect(score!.status).toBe('neutral');
     });
 

@@ -23,7 +23,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from desk.ytm import to_price_pct, ytm_from_price
+from desk.ytm import honest_yield, to_price_pct, ytm_from_price
+from desk.cashflow import accrued_interest
 from scoring.engine import score_bond
 from scoring.explain import explain_score
 
@@ -66,10 +67,26 @@ def fix_ytm(asof: date) -> tuple[list[dict], list[str]]:
     changes: list[str] = []
     bonds = _bonds()
     for b in bonds:
+        stored = b.get("yield_to_maturity")
+        stored_f = float(stored) if stored is not None else None
+
+        # Бескупонная индексируемая бумага (XAU/XAG/XPT): честная доходность
+        # 0% — нет купонного графика, который поддерживал бы положительный YTM.
+        honest = honest_yield(
+            stored_ytm_pct=stored_f,
+            coupon_rate_pct=float(b["coupon_rate"]) if b.get("coupon_rate") is not None else None,
+            indexation_currency=b.get("indexation_currency"),
+        )
+        if honest == 0.0 and stored_f != 0.0:
+            changes.append(
+                f"{b['internal_id']}: ytm {stored_f} -> 0.0 (бескупонная, индексируется к металлу)"
+            )
+            b["yield_to_maturity"] = 0.0
+            continue
+
         price_pct = to_price_pct(b.get("price"), b.get("nominal"))
         maturity = b.get("maturity_date")
         coupon = b.get("coupon_rate")
-        stored = b.get("yield_to_maturity")
         rec: float | None = None
         if price_pct is not None and coupon is not None and maturity:
             rec = ytm_from_price(
@@ -79,23 +96,30 @@ def fix_ytm(asof: date) -> tuple[list[dict], list[str]]:
                 maturity=date.fromisoformat(maturity),
                 asof=asof,
             )
-        stored_f = float(stored) if stored is not None else None
-        if stored_f is not None and rec is not None and abs(stored_f - rec) > YTM_TOLERANCE_PP:
+        if stored_f is not None and rec is not None and rec > 0 and abs(stored_f - rec) > YTM_TOLERANCE_PP:
             changes.append(
                 f"{b['internal_id']}: ytm {stored_f} -> {round(rec, 2)} (diff {stored_f - rec:+.2f}pp)"
             )
             b["yield_to_maturity"] = round(rec, 2)
-        elif stored_f is None and rec is not None:
+        elif stored_f is None and rec is not None and rec > 0:
             changes.append(f"{b['internal_id']}: ytm None -> {round(rec, 2)}")
             b["yield_to_maturity"] = round(rec, 2)
-        elif rec is None:
+        elif rec is None or rec <= 0:
+            # ytm_from_price возвращает отрицательное значение для бескупонных
+            # индексируемых бумаг (цена выше номинала) — это не решение, а срыв
+            # итераций; хранимый источником YTM остаётся источником истины.
             changes.append(
-                f"{b['internal_id']}: cannot recompute ytm (missing price/coupon/maturity)"
+                f"{b['internal_id']}: keep stored ytm {stored_f} (recomputed {rec} rejected)"
             )
     return bonds, changes
 
 
 def _score_inputs(b: dict, ytm):
+    if ytm is not None and float(ytm) == 0.0:
+        # Бескупонная индексируемая бумага: честная доходность 0% — движок
+        # трактует ytm <= 0 как «нет данных» и подставил бы дефолт 14% (Case 4);
+        # None + купон 0.001 -> Case 3 (par yield) даёт честные ~0%.
+        ytm = None
     return {
         "internal_id": b["internal_id"],
         "yield_to_maturity": ytm,
@@ -108,6 +132,48 @@ def _score_inputs(b: dict, ytm):
         "coupon_rate": float(b["coupon_rate"]) if b.get("coupon_rate") is not None else None,
         "market": str(b.get("market") or "bcse"),
     }
+
+
+def fix_aci(bonds: list[dict], asof: date) -> list[str]:
+    """Compute/recompute ``accrued_interest`` (НКД) per bond.
+
+    Matches api.demo._bond_analytics: same cashflow helper, face = nominal,
+    as-of date = the bond's own snapshot timestamp (``fetched_at``) so the
+    НКД shown in the demo is consistent with the snapshot moment.
+    """
+    changes: list[str] = []
+    for b in bonds:
+        coupon = b.get("coupon_rate")
+        freq = int(b.get("coupon_frequency") or 2)
+        maturity = b.get("maturity_date")
+        issue = b.get("start_date")
+        if not coupon or coupon <= 0 or not maturity or not issue:
+            if b.get("accrued_interest") is not None:
+                changes.append(f"{b['internal_id']}: accrued_interest -> None")
+            b["accrued_interest"] = None
+            continue
+        try:
+            fetched = b.get("fetched_at")
+            ref = date.fromisoformat(fetched[:10]) if fetched else asof
+            nominal = float(b.get("nominal") or 100.0)
+            aci = accrued_interest(
+                coupon_rate_pct=float(coupon),
+                coupon_frequency=freq,
+                issue_date=date.fromisoformat(issue),
+                maturity_date=date.fromisoformat(maturity),
+                asof=ref,
+                face=nominal,
+            )
+        except Exception:
+            aci = 0.0
+        rounded = round(aci, 4) if aci else 0.0
+        prev = b.get("accrued_interest")
+        if prev is None or abs(float(prev) - rounded) > 1e-9:
+            changes.append(
+                f"{b['internal_id']}: accrued_interest {prev} -> {rounded}"
+            )
+        b["accrued_interest"] = rounded
+    return changes
 
 
 def regenerate_scores(bonds: list[dict]) -> list[dict]:
@@ -251,12 +317,23 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--asof", default=str(date.today()))
     parser.add_argument("--write", action="store_true", help="write fixed files (default: dry run)")
+    parser.add_argument(
+        "--aci-only",
+        action="store_true",
+        help="only (re)write accrued_interest into the bonds files; "
+        "scores/explanations/market_summary stay untouched",
+    )
     args = parser.parse_args()
     asof = date.fromisoformat(args.asof)
 
     bonds, changes = fix_ytm(asof)
     print(f"YTM as of {asof.isoformat()}: {len(changes)} change(s)")
     for line in changes:
+        print(f"  {line}")
+
+    aci_changes = fix_aci(bonds, asof)
+    print(f"\nAccrued interest (НКД): {len(aci_changes)} change(s)")
+    for line in aci_changes:
         print(f"  {line}")
 
     scores = regenerate_scores(bonds)
@@ -281,6 +358,14 @@ def main() -> int:
 
     _dump(DEMO_DIR / "bonds_bcse.json", [b for b in bonds if b.get("market") != "moex"])
     _dump(DEMO_DIR / "bonds_moex.json", [b for b in bonds if b.get("market") == "moex"])
+    if args.aci_only:
+        for name in ("bonds_bcse.json", "bonds_moex.json"):
+            src = DEMO_DIR / name
+            dst = FRONTEND_DIR / name
+            dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+            print(f"synced {dst.relative_to(ROOT)}")
+        print("done (aci-only)")
+        return 0
     _dump(DEMO_DIR / "scores.json", scores)
     _dump(DEMO_DIR / "market_summary.json", summary)
     _dump(DEMO_DIR / "explanations.json", explanations)

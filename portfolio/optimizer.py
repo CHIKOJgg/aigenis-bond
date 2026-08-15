@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
+from desk.ytm import honest_yield
 from scoring.eligibility import filter_eligible
 from scoring.engine import score_bond
 from scoring.models import (
@@ -17,20 +18,31 @@ from scoring.models import (
 from scraper.models import Bond
 
 STRATEGY_WEIGHTS: dict[str, dict[str, float]] = {
-    "Conservative": {"score": 0.2, "yield": 0.1, "safety": 0.7},
-    "Balanced": {"score": 0.4, "yield": 0.3, "safety": 0.3},
-    "Aggressive": {"score": 0.5, "yield": 0.5, "safety": 0.0},
-    "Carry Trade": {"score": 0.3, "yield": 0.6, "safety": 0.1},
-    "Dollarization": {"score": 0.3, "yield": 0.2, "safety": 0.5},
+    "Conservative": {"score": 0.15, "yield": 0.05, "safety": 0.80},
+    "Balanced": {"score": 0.40, "yield": 0.15, "safety": 0.45},
+    "Aggressive": {"score": 0.15, "yield": 0.85, "safety": 0.00},
+    "Carry Trade": {"score": 0.30, "yield": 0.60, "safety": 0.10},
+    "Dollarization": {"score": 0.30, "yield": 0.20, "safety": 0.50},
     "Maximum Reward/Risk": {"score": 1.0, "yield": 0.0, "safety": 0.0},
-    "Metals++": {"score": 0.3, "yield": 0.1, "safety": 0.6},
+    "Metals++": {"score": 0.30, "yield": 0.10, "safety": 0.60},
 }
 
 
 def _bond_to_score(bond: Bond) -> BondScore:
+    raw_ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity is not None else None
+    honest = honest_yield(
+        stored_ytm_pct=raw_ytm,
+        coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+        indexation_currency=getattr(bond, "indexation_currency", None),
+    )
+    # Для бескупонных индексируемых бумаг честная доходность 0%: движок
+    # скоринга трактует ytm <= 0 как «нет данных» и подставляет дефолтную
+    # доходность по валюте (Case 4), что снова вернуло бы фиктивные 12-14%.
+    # None + купон 0.001 -> Case 3 (par yield) даёт честные ~0%.
+    ytm_input = None if honest == 0.0 else honest
     return score_bond(
         internal_id=bond.internal_id,
-        yield_to_maturity=bond.yield_to_maturity,
+        yield_to_maturity=ytm_input,
         currency=str(bond.currency),
         maturity_date=bond.maturity_date,
         status=str(bond.status),
@@ -42,9 +54,27 @@ def _bond_to_score(bond: Bond) -> BondScore:
 
 
 def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) -> float:
-    """Specialized overlay weights for Carry Trade, Dollarization and Metals++."""
+    """Specialized overlay weights per strategy (on top of STRATEGY_WEIGHTS).
+
+    Carry Trade, Dollarization and Metals++ filter by instrument type;
+    Conservative and Aggressive tilt by maturity/government/coupon so the two
+    strategies genuinely differ (Conservative = safety, Aggressive = yield).
+    """
+    # Conservative: короткий срок, госбумаги, без глубокого дисконта
+    if strategy == "Conservative":
+        if b.maturity_date:
+            days_to_mat = (b.maturity_date - date.today()).days
+            if days_to_mat > 5 * 365:
+                weighted -= 12.0  # длинная дюрация = больший rate-risk
+            elif days_to_mat <= 2 * 365:
+                weighted += 8.0  # короткие бумаги почти без rate-risk
+        if getattr(b, "is_government", False):
+            weighted += 8.0
+        if b.price is not None and float(b.price) < 95.0:
+            weighted -= 5.0  # глубокий дисконт — риск кредитного события
+
     # Carry Trade: купонный доход, отсечение дистресса (<70% цены) и дюрация 1-5 лет
-    if strategy == "Carry Trade":
+    elif strategy == "Carry Trade":
         if b.price is not None and float(b.price) < 70.0:
             weighted -= 40.0
         if b.coupon_rate is not None and float(b.coupon_rate) > 0:
@@ -126,6 +156,20 @@ def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) ->
         else:
             weighted = -50.0  # Штраф для обычных корпоративных и суверенных облигаций
 
+    # Aggressive: максимум доходности — купонные потоки и высокая YTM,
+    # сверхкороткие бумаги (<1 года) не дают carry и штрафуются
+    elif strategy == "Aggressive":
+        if b.yield_to_maturity is not None:
+            weighted += min(float(b.yield_to_maturity) * 0.25, 10.0)
+        if b.coupon_rate is not None and float(b.coupon_rate) > 0:
+            weighted += min(float(b.coupon_rate) * 0.15, 6.0)
+        if b.maturity_date:
+            days_to_mat = (b.maturity_date - date.today()).days
+            if days_to_mat < 365:
+                weighted -= 10.0
+            elif days_to_mat > 8 * 365:
+                weighted += 6.0
+
     return weighted
 
 
@@ -145,11 +189,17 @@ def rank_bonds(bonds: Iterable[Bond], strategy: StrategyName = "Balanced") -> li
         bd = s.breakdown
         safety_score = max(bd.credit_risk_component + bd.duration_component / 4.0, 0)
 
-        weighted = (
-            weights["score"] * s.score
-            + weights["yield"] * bd.yield_component
-            + weights["safety"] * safety_score
-        )
+        if strategy == "Maximum Reward/Risk":
+            # Название стратегии — обещание: максимум доходности на единицу
+            # риска. Ранжируем по efficiency-based risk-adjusted score вместо
+            # сырого взвешивания компонентов.
+            weighted = float(s.risk_adjusted_score or 0.0)
+        else:
+            weighted = (
+                weights["score"] * s.score
+                + weights["yield"] * bd.yield_component
+                + weights["safety"] * safety_score
+            )
 
         weighted = _apply_strategy_bonuses(b, strategy, weighted)
 
@@ -230,9 +280,16 @@ def _weighted_stats(
     wsum = 0.0
     for s in selected:
         bond = bonds_by_id.get(s.internal_id)
-        ytm = float(bond.yield_to_maturity) if bond and bond.yield_to_maturity is not None else None
+        raw_ytm = (
+            float(bond.yield_to_maturity) if bond and bond.yield_to_maturity is not None else None
+        )
+        ytm = honest_yield(
+            stored_ytm_pct=raw_ytm,
+            coupon_rate_pct=float(bond.coupon_rate) if bond and bond.coupon_rate is not None else None,
+            indexation_currency=getattr(bond, "indexation_currency", None) if bond else None,
+        )
         w = max(weights.get(s.internal_id, 0.0), 0.0)
-        if ytm is not None and ytm > 0:
+        if ytm is not None and ytm >= 0:
             ytm_weights.append((ytm, w))
             dur = 3.0
             if bond and bond.maturity_date:

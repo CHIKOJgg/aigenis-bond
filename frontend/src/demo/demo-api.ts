@@ -18,6 +18,73 @@ export const STRATEGY_LABELS: Record<string, string> = {
   'Metals++': 'Металлы++',
 };
 
+const STRATEGY_WEIGHTS: Record<string, { score: number; yield: number; safety: number }> = {
+  'Conservative': { score: 0.15, yield: 0.05, safety: 0.8 },
+  'Balanced': { score: 0.4, yield: 0.15, safety: 0.45 },
+  'Aggressive': { score: 0.15, yield: 0.85, safety: 0.0 },
+  'Carry Trade': { score: 0.3, yield: 0.6, safety: 0.1 },
+  'Dollarization': { score: 0.3, yield: 0.2, safety: 0.5 },
+  'Maximum Reward/Risk': { score: 1.0, yield: 0.0, safety: 0.0 },
+  'Metals++': { score: 0.3, yield: 0.1, safety: 0.6 },
+};
+
+const INDEXED_METAL_CURRENCIES = ['XAU', 'XAG', 'XPT', 'GOLD', 'SILVER', 'PLATINUM'];
+
+/** Честная доходность: бескупонная индексируемая бумага (XAU/XAG/XPT) не
+ * платит купона — её доходность формирует рост цены металла, а не купонный
+ * поток, поэтому при неизменной цене металла честная доходность = 0%. */
+export function honestYtm(bond: DemoBond): number | null {
+  const idx = (bond.indexation_currency || '').toUpperCase();
+  const coupon = bond.coupon_rate;
+  if (INDEXED_METAL_CURRENCIES.includes(idx) && (coupon == null || coupon <= 0.01)) {
+    return 0;
+  }
+  return bond.yield_to_maturity ?? null;
+}
+
+function daysToMaturity(bond: DemoBond): number | null {
+  if (bond.term_days != null) return bond.term_days;
+  if (!bond.maturity_date) return null;
+  return (new Date(bond.maturity_date).getTime() - Date.now()) / 86_400_000;
+}
+
+/** Зеркало portfolio/optimizer.py: стратегическое взвешивание + оверлеи. */
+function strategyRankScore(bond: DemoBond, strategy: string): number {
+  if (strategy === 'Maximum Reward/Risk') {
+    const eff = bond.breakdown?.efficiency_ratio ?? getScore(bond.internal_id)?.breakdown?.efficiency_ratio;
+    return eff != null ? eff * 6 : (bond.score ?? 50);
+  }
+  const weights = STRATEGY_WEIGHTS[strategy] ?? STRATEGY_WEIGHTS.Balanced;
+  const bd = bond.breakdown ?? getScore(bond.internal_id)?.breakdown;
+  const scoreVal = bond.score ?? getScore(bond.internal_id)?.score ?? 50;
+  const yieldVal = bd?.yield_component ?? honestYtm(bond) ?? 0;
+  const safety = Math.max((bd?.credit_risk_component ?? 30) + (bd?.duration_component ?? 0) / 4, 0);
+  let weighted = weights.score * scoreVal + weights.yield * yieldVal + weights.safety * safety;
+
+  if (strategy === 'Conservative') {
+    const days = daysToMaturity(bond);
+    if (days != null) {
+      if (days > 5 * 365) weighted -= 12;
+      else if (days <= 2 * 365) weighted += 8;
+    }
+    if (bond.is_government) weighted += 8;
+    if (bond.price != null && bond.price < 95) weighted -= 5;
+  } else if (strategy === 'Aggressive') {
+    const ytm = honestYtm(bond);
+    if (ytm != null) weighted += Math.min(ytm * 0.25, 10);
+    if (bond.coupon_rate != null && bond.coupon_rate > 0) {
+      weighted += Math.min(bond.coupon_rate * 0.15, 6);
+    }
+    const days = daysToMaturity(bond);
+    if (days != null) {
+      if (days < 365) weighted -= 10;
+      else if (days > 8 * 365) weighted += 6;
+    }
+  }
+
+  return Math.max(weighted, 0);
+}
+
 import bcseBonds from './data/bonds_bcse.json';
 import moexBonds from './data/bonds_moex.json';
 import scores from './data/scores.json';
@@ -375,6 +442,7 @@ export interface PortfolioOptimizationResponse {
   allocations: PortfolioOptimizationAllocation[];
   order_tickets: RebalanceOrderTicket[];
   available_strategies: string[];
+  notes?: string[];
   warning?: string | null;
 }
 
@@ -468,7 +536,9 @@ export function runPortfolioOptimizer(
     all = all.filter((b) => b.currency.toUpperCase() === currency.toUpperCase());
   }
 
-  const ranked = [...all].sort((a, b) => (b.score ?? 50) - (a.score ?? 50));
+  const ranked = [...all].sort(
+    (a, b) => strategyRankScore(b, strategy) - strategyRankScore(a, strategy),
+  );
   const selected = ranked.slice(0, topN);
 
   if (selected.length === 0 || capital <= 0) {
@@ -508,7 +578,7 @@ export function runPortfolioOptimizer(
     return {
       bond: b,
       priceMoney,
-      score: b.score ?? 50,
+      score: strategyRankScore(b, strategy),
       lots: 0,
     };
   }).filter((c) => c.priceMoney > 0);
@@ -588,8 +658,9 @@ export function runPortfolioOptimizer(
     const actualCost = +(c.lots * c.priceMoney).toFixed(2);
     const weightPct = +((actualCost / actualTotalCost) * 100).toFixed(1);
 
-    if (b.yield_to_maturity) {
-      weightedYtmSum += b.yield_to_maturity * (actualCost / actualTotalCost);
+    const ytm = honestYtm(b);
+    if (ytm != null) {
+      weightedYtmSum += ytm * (actualCost / actualTotalCost);
     }
 
     allocations.push({
@@ -601,7 +672,7 @@ export function runPortfolioOptimizer(
       currency: b.currency ?? currency,
       weight_pct: weightPct,
       lots: c.lots,
-      ytm: b.yield_to_maturity ?? null,
+      ytm,
     });
 
     orderTickets.push({
@@ -615,7 +686,7 @@ export function runPortfolioOptimizer(
     });
   }
 
-  const expectedReturn = +(weightedYtmSum || 14.5).toFixed(2);
+  const expectedReturn = +weightedYtmSum.toFixed(2);
   const vol = 4.2;
   const sharpe = +((expectedReturn - 4.0) / vol).toFixed(2);
 
@@ -643,6 +714,9 @@ export function runPortfolioOptimizer(
       'Maximum Reward/Risk',
       'Metals++',
     ],
+    notes: strategy === 'Metals++' && allocations.length > 0
+      ? ['Бескупонные индексируемые облигации (XAU/XAG/XPT) не платят купона: доходность формируется ростом цены металла, а не купонным потоком. При неизменной цене металла доходность близка к 0% годовых.']
+      : [],
     warning: null,
   };
 }

@@ -259,6 +259,17 @@ export default function DemoOptimizerPage() {
             </div>
           </div>
 
+          {res.notes && res.notes.length > 0 && (
+            <div style={{ background: '#fff8f0', border: '1px solid #f0c76a', borderRadius: 12, padding: 16, marginBottom: 24, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <AlertCircle size={18} color="#dc6803" style={{ marginTop: 2, flexShrink: 0 }} />
+              <div style={{ fontSize: 13, color: '#516c79', lineHeight: 1.5 }}>
+                {res.notes.map((note, idx) => (
+                  <div key={idx}>{note}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
             <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #d6e2e6', padding: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>

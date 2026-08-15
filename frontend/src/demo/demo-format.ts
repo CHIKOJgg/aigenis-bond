@@ -34,16 +34,21 @@ export function formatPrice(
     return `${pricePct}%`;
   }
   const cur = currency || 'BYN';
-  const moneyVal = (pricePct / 100) * nominal;
-  const dirtyVal = accruedInterest ? moneyVal + accruedInterest : moneyVal;
-  
-  if (nominal <= 100) {
-    const formattedMoney = dirtyVal.toFixed(2);
-    return `${pricePct}% (${formattedMoney} ${cur})`;
+  const cleanVal = (pricePct / 100) * nominal;
+  const aciVal = accruedInterest && accruedInterest > 0 ? accruedInterest : 0;
+  const totalVal = cleanVal + aciVal;
+
+  const fmt = (v: number): string => {
+    if (nominal <= 100) return v.toFixed(2);
+    return Math.round(v).toLocaleString('ru-RU').replace(/\s/g, ' ');
+  };
+
+  const total = `${fmt(totalVal)} ${cur}`;
+  if (aciVal > 0) {
+    // Общая цена (чистая цена + НКД) и в скобках цена самой облигации плюс НКД.
+    return `${pricePct}% · ${total} (${fmt(cleanVal)} + ${fmt(aciVal)} ${cur} НКД)`;
   }
-  
-  const formattedMoney = Math.round(dirtyVal).toLocaleString('ru-RU').replace(/\s/g, ' ');
-  return `${pricePct}% (${formattedMoney} ${cur})`;
+  return `${pricePct}% · ${total}`;
 }
 
 export function formatPoints(points: number | null | undefined): string {

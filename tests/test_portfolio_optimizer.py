@@ -11,6 +11,7 @@ from portfolio.optimizer import (
     _sortino,
     _var_95,
     _volatility,
+    _weighted_stats,
     allocate,
     rank_bonds,
     rebalance,
@@ -19,14 +20,22 @@ from scoring.models import BondScore, ScoreBreakdown, UserPreferences
 from scraper.models import Bond
 
 
-def _bond(iid, ytm=10.0, currency="USD", status="active", issuer="Treasury"):
+def _bond(
+    iid,
+    ytm=10.0,
+    currency="USD",
+    status="active",
+    issuer="Treasury",
+    coupon_rate=5.0,
+    coupon_frequency=2,
+):
     return Bond(
         internal_id=iid,
         name=f"Bond {iid}",
         currency=currency,
         yield_to_maturity=ytm,
-        coupon_rate=5.0,
-        coupon_frequency=2,
+        coupon_rate=coupon_rate,
+        coupon_frequency=coupon_frequency,
         maturity_date=None,
         price=100.0,
         status=status,
@@ -160,3 +169,100 @@ def test_metals_strategy_prioritizes_metal_bonds():
     assert scores["AIG_OP35"] == 58.0
     assert scores["AIG_OP43"] == 27.0
     assert scores["AIG_OP42"] == 15.0
+
+
+def _metal_bond(iid: str, idx: str, ytm: float = 10.0) -> Bond:
+    b = _bond(iid, ytm=ytm, currency="BYN", coupon_rate=0.001)
+    b.indexation_currency = idx
+    return b
+
+
+def test_honest_yield_zero_for_couponless_indexed():
+    from desk.ytm import honest_yield
+
+    assert honest_yield(
+        stored_ytm_pct=10.5,
+        coupon_rate_pct=0.001,
+        indexation_currency="XAU",
+    ) == 0.0
+    assert honest_yield(
+        stored_ytm_pct=9.8,
+        coupon_rate_pct=0.001,
+        indexation_currency="XAG",
+    ) == 0.0
+    assert honest_yield(
+        stored_ytm_pct=8.5,
+        coupon_rate_pct=None,
+        indexation_currency="XPT",
+    ) == 0.0
+    # Реальный купон (например, MOEX-золотодобытчики) — хранимый YTM честный.
+    assert honest_yield(
+        stored_ytm_pct=12.0,
+        coupon_rate_pct=10.0,
+        indexation_currency="XAU",
+    ) == 12.0
+    # Обычная облигация — без изменений.
+    assert honest_yield(
+        stored_ytm_pct=9.4,
+        coupon_rate_pct=8.0,
+        indexation_currency=None,
+    ) == 9.4
+
+
+def test_weighted_stats_uses_honest_ytm_for_metals():
+    gold = _metal_bond("GOLD", "XAU")
+    silver = _metal_bond("SILVER", "XAG")
+    bonds_by_id = {b.internal_id: b for b in [gold, silver]}
+    scores = [_score(10.5), _score(9.8)]
+    scores[0].internal_id = "GOLD"
+    scores[1].internal_id = "SILVER"
+    weights = {"GOLD": 0.6, "SILVER": 0.4}
+    exp, vol, _ret2, mdd, var95 = _weighted_stats(scores, weights, bonds_by_id)
+    # Бескупонные индексируемые: честная ожидаемая доходность = 0%, не 10%.
+    assert exp == 0.0
+
+
+def test_allocate_metals_expected_return_zero():
+    gold = _metal_bond("GOLD", "XAU")
+    silver = _metal_bond("SILVER", "XAG")
+    prefs = UserPreferences(user_id=1, initial_capital=Decimal("10000"), strategy="Metals++")
+    alloc = allocate([gold, silver], prefs, top_n=4)
+    assert len(alloc.items) == 2
+    assert alloc.expected_return == 0.0
+
+
+def test_balanced_and_aggressive_rankings_differ():
+    safe = _bond("MODERATE", ytm=8.0, coupon_rate=6.5, currency="BYN")
+    safe.maturity_date = datetime.now().date().replace(year=2031, month=6, day=1)
+    safe.price = 99.0
+    hotter = _bond("HOTTER", ytm=10.0, coupon_rate=8.5, currency="BYN")
+    hotter.maturity_date = datetime.now().date().replace(year=2035, month=6, day=1)
+    hotter.price = 99.0
+
+    bonds = [safe, hotter]
+    ranked_bal = rank_bonds(bonds, strategy="Balanced")
+    ranked_agg = rank_bonds(bonds, strategy="Aggressive")
+    # Оба скоринга близки, но Balanced взвешивает надёжность и общий score,
+    # а Aggressive гонится за доходностью — порядок топ-1 различается.
+    assert ranked_bal[0].internal_id == "MODERATE"
+    assert ranked_agg[0].internal_id == "HOTTER"
+
+
+def test_conservative_prefers_short_government_bonds():
+    from portfolio.optimizer import _apply_strategy_bonuses
+
+    long_corp = _bond("LC", ytm=12.0, coupon_rate=10.0)
+    long_corp.maturity_date = datetime.now().date().replace(year=2040, month=1, day=1)
+    long_corp.price = 100.0
+    long_corp.is_government = False
+    short_gov = _bond("SG", ytm=8.0, coupon_rate=7.0)
+    short_gov.maturity_date = datetime.now().date().replace(year=2027, month=6, day=1)
+    short_gov.price = 101.0
+    short_gov.is_government = True
+
+    ranked = rank_bonds([long_corp, short_gov], strategy="Conservative")
+    assert ranked[0].internal_id == "SG"
+    assert ranked[0].score > ranked[1].score
+    # Агрессивная стратегия оверлеем купона/доходности вознаграждает
+    # длинную высокодоходную бумагу.
+    assert _apply_strategy_bonuses(long_corp, "Aggressive", 0.0) > 0.0

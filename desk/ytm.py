@@ -18,6 +18,36 @@ from typing import Any
 
 _DEFAULT_TOLERANCE_PP = 15.0
 
+# Валюты-индексаторы драгоценных металлов. Облигации, индексированные к ним,
+# не платят купона (coupon_rate <= 0.01 — технический «нулевой» купон).
+INDEXED_METAL_CURRENCIES = frozenset({"XAU", "XAG", "XPT", "GOLD", "SILVER", "PLATINUM"})
+
+
+def honest_yield(
+    *,
+    stored_ytm_pct: float | None,
+    coupon_rate_pct: float | None,
+    indexation_currency: str | None,
+) -> float | None:
+    """Честная доходность для бескупонных индексируемых облигаций.
+
+    Бескупонная облигация, привязанная к цене металла (XAU/XAG/XPT/...),
+    не даёт купонного потока: её единственный источник дохода — рост индекса.
+    Рынок котирует такие бумаги по текущей индексации, поэтому при плоской
+    индексации честная годовая доходность равна 0%. Любой положительный
+    «хранимый» YTM у таких бумаг — артефакт (нет купонного графика, который
+    его бы обеспечивал), и его нельзя показывать как доход.
+
+    Для бумаг с реальным купоном (например, MOEX-золотодобытчики) и для
+    обычных облигаций возвращается хранимый YTM без изменений.
+    """
+    idx = (indexation_currency or "").upper()
+    if idx in INDEXED_METAL_CURRENCIES:
+        cp = coupon_rate_pct
+        if cp is None or float(cp) <= 0.01:
+            return 0.0
+    return stored_ytm_pct
+
 
 def to_price_pct(price: Any, nominal: Any) -> float | None:
     """Normalize a raw source price to percent-of-face (100.0 = par).

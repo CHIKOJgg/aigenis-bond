@@ -114,6 +114,7 @@ export interface LiveOptimizeResponse {
     rationale: string;
   }>;
   available_strategies: string[];
+  notes?: string[];
   warning?: string | null;
 }
 

@@ -55,14 +55,16 @@ describe('formatPrice', () => {
   });
 
   it('рассчитывает цену в валюте от реального номинала', () => {
-    expect(formatPrice(100.71, 'BYN', 200)).toBe('100.71% (201 BYN)');
-    expect(formatPrice(100.09, 'BYN', 100)).toBe('100.09% (100.09 BYN)');
-    expect(formatPrice(104.38, 'BYN', 1000)).toBe('104.38% (1 044 BYN)');
+    expect(formatPrice(100.71, 'BYN', 200)).toBe('100.71% · 201 BYN');
+    expect(formatPrice(100.09, 'BYN', 100)).toBe('100.09% · 100.09 BYN');
+    expect(formatPrice(104.38, 'BYN', 1000)).toBe('104.38% · 1 044 BYN');
   });
 
-  it('добавляет НКД к стоимости лота', () => {
-    expect(formatPrice(100.0, 'BYN', 1000, 25.5)).toBe('100% (1 026 BYN)');
-    expect(formatPrice(100.0, 'BYN', 100, 2.5)).toBe('100% (102.50 BYN)');
+  it('показывает общую цену с разбивкой на цену облигации и НКД', () => {
+    // Облигация продаётся за 505 BYN, НКД 10 BYN — итого 515 BYN.
+    expect(formatPrice(101, 'BYN', 500, 10)).toBe('101% · 515 BYN (505 + 10 BYN НКД)');
+    expect(formatPrice(100.0, 'BYN', 1000, 25.5)).toBe('100% · 1 026 BYN (1 000 + 26 BYN НКД)');
+    expect(formatPrice(100.0, 'BYN', 100, 2.5)).toBe('100% · 102.50 BYN (100.00 + 2.50 BYN НКД)');
   });
 
   it('возвращает прочерк для null/undefined', () => {

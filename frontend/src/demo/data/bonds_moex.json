@@ -57,7 +57,8 @@
     "market": "moex",
     "status": "active",
     "is_government": true,
-    "fetched_at": "2026-08-06T09:42:00+03:00"
+    "fetched_at": "2026-08-06T09:42:00+03:00",
+    "accrued_interest": 16.9158
   },
   {
     "internal_id": "demo-bond-008",
@@ -105,7 +106,8 @@
     "market": "moex",
     "status": "active",
     "is_government": false,
-    "fetched_at": "2026-08-06T09:42:00+03:00"
+    "fetched_at": "2026-08-06T09:42:00+03:00",
+    "accrued_interest": 46.4503
   },
   {
     "internal_id": "demo-bond-009",
@@ -153,7 +155,8 @@
     "market": "moex",
     "status": "active",
     "is_government": false,
-    "fetched_at": "2026-08-06T09:42:00+03:00"
+    "fetched_at": "2026-08-06T09:42:00+03:00",
+    "accrued_interest": 12.7717
   },
   {
     "internal_id": "demo-bond-010",
@@ -225,6 +228,7 @@
     "market": "moex",
     "status": "active",
     "is_government": false,
-    "fetched_at": "2026-08-06T09:42:00+03:00"
+    "fetched_at": "2026-08-06T09:42:00+03:00",
+    "accrued_interest": 24.6995
   }
 ]

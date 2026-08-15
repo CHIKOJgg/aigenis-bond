@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runStressTest, runPortfolioOptimizer } from '../demo-api';
+import { runStressTest, runPortfolioOptimizer, honestYtm, getBonds } from '../demo-api';
 
 describe('runStressTest (fixture fallback)', () => {
   it('parallel_+100bp даёт убыток, параллельное -100bp — прибыль', () => {
@@ -86,5 +86,35 @@ describe('runPortfolioOptimizer (fixture fallback)', () => {
     const res = runPortfolioOptimizer(50, 'Balanced', 'BYN', 8, 'BCSE');
     expect(res.allocations).toEqual([]);
     expect(res.warning).toBeTruthy();
+  });
+
+  it('бескупонные индексируемые металлы показывают честную доходность 0%', () => {
+    const metals = getBonds('BCSE').filter((b) =>
+      ['XAU', 'XAG', 'XPT', 'GOLD', 'SILVER', 'PLATINUM'].includes((b.indexation_currency || '').toUpperCase()),
+    );
+    expect(metals.length).toBeGreaterThan(0);
+    for (const m of metals) {
+      expect(honestYtm(m)).toBe(0);
+    }
+  });
+
+  it('Metals++ не показывает фиктивные 12%: ожидаемая доходность = 0%', () => {
+    const res = runPortfolioOptimizer(50000, 'Metals++', 'BYN', 8, 'BCSE');
+    expect(res.allocations.length).toBeGreaterThan(0);
+    expect(res.metrics.expected_return).toBe(0);
+    expect(res.notes?.length ?? 0).toBeGreaterThan(0);
+    for (const a of res.allocations) {
+      expect(a.ytm).toBe(0);
+    }
+  });
+
+  it('стратегии Balanced и Aggressive дают разное ранжирование', () => {
+    const bal = runPortfolioOptimizer(50000, 'Balanced', 'BYN', 8, 'BCSE');
+    const agg = runPortfolioOptimizer(50000, 'Aggressive', 'BYN', 8, 'BCSE');
+    const balOrder = bal.allocations.map((a) => a.internal_id);
+    const aggOrder = agg.allocations.map((a) => a.internal_id);
+    expect(balOrder.length).toBeGreaterThan(0);
+    expect(aggOrder.length).toBeGreaterThan(0);
+    expect(balOrder).not.toEqual(aggOrder);
   });
 });

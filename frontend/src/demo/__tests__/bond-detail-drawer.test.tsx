@@ -64,7 +64,7 @@ describe('BondDetailDrawer', () => {
 
   it('показывает Score, вердикт и плюсы/минусы из фикстурного объяснения', () => {
     renderDrawer();
-    expect(screen.getByText('61')).toBeInTheDocument();
+    expect(screen.getByText('69')).toBeInTheDocument();
     expect(screen.getByText(/Нейтральна/)).toBeInTheDocument();
     expect(screen.getByText(/Умеренно интересна/)).toBeInTheDocument();
     expect(screen.getByText('Плюсы и минусы')).toBeInTheDocument();

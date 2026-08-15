@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 
-from desk.ytm import to_price_pct, ytm_from_price
+from desk.ytm import honest_yield, to_price_pct, ytm_from_price
 from scraper.db import session_scope
 from scraper.logging import get_logger
 from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
@@ -47,6 +47,17 @@ _STRATEGY_RU = {
     "Maximum Reward/Risk": "Макс. доходность/риск",
     "Metals++": "Металлы++",
 }
+
+
+def _strategy_notes(strategy: str, allocations: list[dict[str, Any]]) -> list[str]:
+    """Честные пояснения к результату оптимизатора, если они нужны."""
+    if strategy == "Metals++" and allocations:
+        return [
+            "Бескупонные индексируемые облигации (XAU/XAG/XPT) не платят купона: "
+            "доходность формируется ростом цены металла, а не купонным потоком. "
+            "При неизменной цене металла доходность близка к 0% годовых."
+        ]
+    return []
 
 
 def _issuer_risk_payload(
@@ -106,10 +117,17 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
     the score stays None so the UI can honestly show "недостаточно данных".
     """
     ref = date.today()
-    ytm: float | None = None
+    stored_ytm = (
+        float(bond.yield_to_maturity)
+        if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0
+        else None
+    )
+    ytm: float | None = honest_yield(
+        stored_ytm_pct=stored_ytm,
+        coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+        indexation_currency=bond.indexation_currency,
+    )
     computed_ytm = False
-    if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0:
-        ytm = float(bond.yield_to_maturity)
     price_pct = to_price_pct(bond.price, bond.nominal)
     if (
         ytm is None
@@ -166,9 +184,12 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         try:
             from scoring.engine import score_bond
 
+            # Бескупонная индексируемая бумага: честная доходность 0% — движок
+            # трактует ytm <= 0 как «нет данных» и подставил бы дефолт 14%
+            # (Case 4), поэтому передаём None и даём Case 3 (par yield ~0%).
             bs = score_bond(
                 internal_id=bond.internal_id,
-                yield_to_maturity=ytm,
+                yield_to_maturity=None if ytm == 0.0 else ytm,
                 currency=bond.currency,
                 maturity_date=bond.maturity_date,
                 status=str(bond.status or "active"),
@@ -251,10 +272,15 @@ DATA_ROOT = Path(__file__).resolve().parents[1] / "demo-data" / "v1"
 def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[str, Any]:
     """Lightweight payload for the list endpoint — reads pre-computed scores."""
     ref = date.today()
-    ytm = (
+    stored_ytm = (
         float(bond.yield_to_maturity)
         if bond.yield_to_maturity and float(bond.yield_to_maturity) > 0
         else None
+    )
+    ytm = honest_yield(
+        stored_ytm_pct=stored_ytm,
+        coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+        indexation_currency=bond.indexation_currency,
     )
     price_pct = to_price_pct(bond.price, bond.nominal)
     computed_ytm = False
@@ -340,7 +366,7 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
 
             bs = score_bond(
                 internal_id=bond.internal_id,
-                yield_to_maturity=ytm,
+                yield_to_maturity=None if ytm == 0.0 else ytm,
                 currency=bond.currency,
                 maturity_date=bond.maturity_date,
                 status=str(bond.status or "active"),
@@ -353,7 +379,7 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
             expl = explain_score(
                 bs,
                 currency=bond.currency,
-                ytm_pct=ytm,
+                ytm_pct=None if ytm == 0.0 else ytm,
                 coupon_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
             )
             explanation = {
@@ -1334,7 +1360,13 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             if dirty_price_money <= 0:
                 continue
 
-            ytm_val = float(b.yield_to_maturity) if b.yield_to_maturity else 10.0
+            ytm_val = honest_yield(
+                stored_ytm_pct=float(b.yield_to_maturity) if b.yield_to_maturity else None,
+                coupon_rate_pct=float(b.coupon_rate) if b.coupon_rate is not None else None,
+                indexation_currency=b.indexation_currency,
+            )
+            if ytm_val is None:
+                ytm_val = 0.0
             score_weight = float(alloc.items.get(b.internal_id, Decimal("0"))) if alloc else 1.0
 
             candidates.append(
@@ -1449,7 +1481,15 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                     "currency": bond.currency if bond.currency else req.currency.upper(),
                     "weight_pct": real_weight_pct,
                     "lots": c["lots"],
-                    "ytm": float(bond.yield_to_maturity) if bond.yield_to_maturity else None,
+                    "ytm": honest_yield(
+                        stored_ytm_pct=float(bond.yield_to_maturity)
+                        if bond.yield_to_maturity
+                        else None,
+                        coupon_rate_pct=float(bond.coupon_rate)
+                        if bond.coupon_rate is not None
+                        else None,
+                        indexation_currency=bond.indexation_currency,
+                    ),
                 }
             )
 
@@ -1473,7 +1513,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 2,
             )
             if allocated
-            else (alloc.expected_return if alloc else 12.0)
+            else (alloc.expected_return if alloc else 0.0)
         )
         vol = alloc.volatility if alloc else 3.5
         sharpe = round((exp_ret - 4.0) / vol, 2) if vol > 0 else 0.0
@@ -1503,5 +1543,6 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "Maximum Reward/Risk",
                 "Metals++",
             ],
+            "notes": _strategy_notes(strategy, items_payload),
             "warning": None,
         }
