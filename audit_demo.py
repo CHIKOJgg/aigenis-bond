@@ -14,9 +14,11 @@ from __future__ import annotations
 import json
 import re
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from desk.cashflow import accrued_interest
+from desk.duration import duration_report
 
 REPO = Path(__file__).resolve().parent
 DATA_DIRS = [
@@ -211,32 +213,55 @@ def process(data_dir: Path) -> None:
         print(f"  explanations: {n} status updates")
 
     # ---- portfolio_templates: fix benchmark duration ----
+    # The benchmark ``duration_years`` is the portfolio's rate-risk measure and
+    # MUST equal the cashflow-based modified duration the engine reports for the
+    # same holdings — not a weighted time-to-maturity proxy, which systematically
+    # overstates rate sensitivity for coupon-paying bonds. We recompute it here
+    # from ``desk.duration`` so the Portfolio Impact "before" card agrees with
+    # the per-bond duration the rest of the platform shows.
     pt_path = data_dir / "portfolio_templates.json"
     if pt_path.exists():
         pt = load_resolved(pt_path, keep="stashed")
+        ref = parse_date(pt.get("as_of") or "2026-08-06") or date(2026, 8, 6)
         for key, tpl in pt.items():
             positions = tpl.get("positions", [])
             total = tpl.get("total_value_byn", 0)
             if not positions or not total:
                 continue
             wsum = 0.0
-            term_acc = 0.0
+            dur_acc = 0.0
             for p in positions:
                 bid = p.get("instrument_id")
                 bond = all_bonds.get(bid)
                 if not bond:
                     continue
                 w = p.get("value_byn", 0) / total
-                term_y = (bond.get("term_days") or 0) / 365.25
-                term_acc += w * term_y
+                maturity = parse_date(bond.get("maturity_date"))
+                start = parse_date(bond.get("start_date"))
+                if maturity is None or start is None:
+                    continue
+
+                class _B:
+                    pass
+
+                fb = _B()
+                fb.internal_id = bid
+                fb.maturity_date = maturity
+                fb.yield_to_maturity = float(bond.get("yield_to_maturity") or 0.0)
+                fb.coupon_rate = bond.get("coupon_rate")
+                fb.coupon_frequency = bond.get("coupon_frequency") or 2
+                fb.nominal = Decimal(str(bond.get("nominal") or 1000))
+                fb.start_date = start
+                rep = duration_report(fb, asof=ref)
+                dur_acc += w * rep.modified_duration
                 wsum += w
             if wsum > 0:
-                new_dur = round(term_acc / wsum, 1)
+                new_dur = round(dur_acc / wsum, 1)
                 old = tpl.get("benchmarks", {}).get("duration_years")
                 if old is not None and abs(old - new_dur) > 0.05:
                     print(
                         f"  [portfolio] {key}: duration_years {old} -> {new_dur} "
-                        f"(weighted term of positions)"
+                        f"(weighted modified duration of positions)"
                     )
                 tpl.setdefault("benchmarks", {})["duration_years"] = new_dur
         (pt_path).write_text(

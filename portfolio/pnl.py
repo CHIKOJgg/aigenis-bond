@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from desk.cashflow import DEFAULT_DAY_COUNT, accrued_interest
 from scraper.models import Bond
 
 _Q = Decimal("0.01")
@@ -193,20 +195,46 @@ def compute_pnl(
                 if current_price_val < 0:
                     current_price_val = Decimal("0")
 
+        # Accrued interest per 100 of face as of today. Market value is the
+        # DIRTY price (clean + accrued): a buyer pays clean plus accrued, so the
+        # position is worth face * (clean + accrued)/100, not face*clean/100.
+        accrued_pct = Decimal("0")
+        if (
+            bond is not None
+            and getattr(bond, "coupon_rate", None)
+            and getattr(bond, "coupon_rate", 0) > 0
+            and getattr(bond, "start_date", None) is not None
+            and getattr(bond, "maturity_date", None) is not None
+        ):
+            accrued_pct = Decimal(
+                str(
+                    accrued_interest(
+                        coupon_rate_pct=float(bond.coupon_rate),
+                        coupon_frequency=int(bond.coupon_frequency) if bond.coupon_frequency else 2,
+                        issue_date=bond.start_date,
+                        maturity_date=bond.maturity_date,
+                        asof=date.today(),
+                        convention=DEFAULT_DAY_COUNT,
+                        face=100.0,
+                    )
+                )
+            )
+
         unrealized = Decimal("0")
         current_value = Decimal("0")
 
         if pos is not None:
             if txs:
                 # Mark the remaining FIFO lots at market: face is tracked in
-                # the lots, money value = face * price / 100. (The /100 factor
-                # is required — amount is money, price is % of face.)
+                # the lots, money value = face * dirty_price / 100. (The /100
+                # factor is required — amount is money, price is % of face.)
                 remaining_face = sum(lot_face for lot_face, _ in buys)
                 cost_basis = total_invested
                 if is_defaulted or (has_price and current_price_val == 0):
                     current_value = Decimal("0")
                 elif has_price and current_price_val > 0:
-                    current_value = remaining_face * current_price_val / Decimal("100")
+                    dirty_price = current_price_val + accrued_pct
+                    current_value = remaining_face * dirty_price / Decimal("100")
                 else:
                     current_value = cost_basis
             else:
@@ -217,7 +245,8 @@ def compute_pnl(
                 if is_defaulted or (has_price and current_price_val == 0):
                     current_value = Decimal("0")
                 elif has_price and current_price_val > 0:
-                    current_value = pos.amount * current_price_val / Decimal("100")
+                    dirty_price = current_price_val + accrued_pct
+                    current_value = pos.amount * dirty_price / Decimal("100")
                 else:
                     current_value = cost_basis
             unrealized = current_value - cost_basis

@@ -260,6 +260,23 @@ def _var_95(scores: list[BondScore]) -> float:
     return _volatility(scores) * 1.645
 
 
+def _bond_duration_years(bond: Bond | None) -> float:
+    """Rate-risk duration (years): cashflow engine, else time-to-maturity proxy."""
+    if not bond or not bond.maturity_date:
+        return 3.0
+    try:
+        from desk.duration import bond_modified_duration
+
+        real_dur = bond_modified_duration(bond)
+        if real_dur is not None and real_dur > 0:
+            return real_dur
+    except Exception:
+        pass
+    from datetime import date
+
+    return max((bond.maturity_date - date.today()).days / 365.25, 0.5)
+
+
 def _weighted_stats(
     selected: list[BondScore],
     weights: dict[str, float],
@@ -273,8 +290,6 @@ def _weighted_stats(
     among the selected bonds; ``var_95`` is the 5th-percentile YTM shortfall.
     Falls back to score components when YTM data is missing.
     """
-    from datetime import date
-
     ytm_weights: list[tuple[float, float]] = []
     proxy_vols: list[float] = []
     wsum = 0.0
@@ -291,9 +306,7 @@ def _weighted_stats(
         w = max(weights.get(s.internal_id, 0.0), 0.0)
         if ytm is not None and ytm >= 0:
             ytm_weights.append((ytm, w))
-            dur = 3.0
-            if bond and bond.maturity_date:
-                dur = max((bond.maturity_date - date.today()).days / 365.25, 0.5)
+            dur = _bond_duration_years(bond)
             proxy_vols.append(dur * 1.5 + s.breakdown.risk_subtotal * 0.2)
             wsum += w
 

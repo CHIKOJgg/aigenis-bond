@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import statistics
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 # 1. Дистрибуция: цена < 80% номинала при YTM > 30%
@@ -84,11 +85,14 @@ def check_eligibility(
     ytm_pct: float | None = None,
     status: str | None = None,
     peer_ytms: list[float] | None = None,
+    maturity_date: date | None = None,
 ) -> EligibilityResult:
     """Проверить одну бумагу по всем правилам eligibility gate.
 
     ``price_pct`` — цена в процентах от номинала (100 = паритет).
     ``peer_ytms`` — YTM аналогов в той же валюте для детекции аномалий.
+    ``maturity_date`` — дата погашения; просроченные бумаги исключаются даже
+    при статусе 'active' (источник может не обновить статус вовремя).
     """
     status_l = (status or "").strip().lower()
     if status_l in EXCLUDED_STATUSES:
@@ -97,6 +101,16 @@ def check_eligibility(
             eligible=False,
             kind="status",
             reason=f"Статус '{status}' — бумага не допускается в портфель",
+        )
+
+    # Просроченная бумага: рынок уже закрыл позицию, держать её в портфеле
+    # нельзя (нулевая ликвидность, купон не платится).
+    if maturity_date is not None and maturity_date <= date.today():
+        return EligibilityResult(
+            internal_id=internal_id,
+            eligible=False,
+            kind="expired",
+            reason=f"Бумага погашена {maturity_date.isoformat()} — исключена из портфеля",
         )
 
     # No usable market data: a bond with neither a price nor a yield cannot be
@@ -108,6 +122,17 @@ def check_eligibility(
             eligible=False,
             kind="no_data",
             reason="Нет рыночных данных (ни цены, ни доходности) — бумага не может быть оценена",
+        )
+
+    # Отрицательная доходность — артефакт источника; портфельные метрики (YTM,
+    # Sharpe) на таком значении дают абсурдные результаты. 0% допустим (например,
+    # индексируемые металлические облигации без купона).
+    if ytm_pct is not None and ytm_pct < 0:
+        return EligibilityResult(
+            internal_id=internal_id,
+            eligible=False,
+            kind="extreme_risk",
+            reason=f"Отрицательная доходность {ytm_pct:.1f}% — ошибка данных",
         )
 
     if (
@@ -223,6 +248,7 @@ def filter_eligible(
             ytm_pct=ytm_pct,
             status=str(status) if status is not None else None,
             peer_ytms=peers_by_currency.get(str(currency or "").upper()),
+            maturity_date=_field(b, "maturity_date"),
         )
         if res.eligible:
             eligible.append(b)

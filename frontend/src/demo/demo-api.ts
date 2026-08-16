@@ -379,11 +379,11 @@ export function runStressTest(
     if (sc.kind === 'parallel') {
       // Снижение ставок (-100bp) даёт рост цен: знак шока отрицательный.
       shock = scenarioKey.includes('-100') ? -1.0 : (scenarioKey.includes('300') ? 3.0 : 1.0);
-    } else if (sc.kind === 'steepener') shock = dur > 3 ? 1.5 : 0.5;
-    else if (sc.kind === 'flattener') shock = dur > 3 ? 0.5 : 1.5;
-    else if (sc.kind === 'inversion') shock = dur > 3 ? -0.5 : 2.0;
-    else if (sc.kind === 'credit_shock') shock = 1.5;
-    else if (sc.kind === 'fx_shock') shock = b.currency === 'BYN' ? 2.5 : -1.0;
+    } else if (sc.kind === 'steepener') shock = dur > 3 ? 1.5 : -0.5;
+    else if (sc.kind === 'flattener') shock = dur > 3 ? -0.5 : 1.5;
+    else if (sc.kind === 'inversion') shock = dur > 3 ? -0.5 : 1.0;
+    else if (sc.kind === 'credit_shock') shock = b.is_government ? 0 : 1.5;
+    else if (sc.kind === 'fx_shock') shock = b.currency === 'USD' ? -1.0 : (b.currency === 'BYN' ? 1.0 : 0.0);
 
     const nominal = b.nominal && b.nominal > 0 ? b.nominal : 100;
     const pricePct = b.price && b.price > 0 ? b.price : 100;

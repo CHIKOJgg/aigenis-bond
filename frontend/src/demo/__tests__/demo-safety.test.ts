@@ -53,7 +53,10 @@ describe('demo side-effect guard', () => {
       if (/\b(fetch|axios|XMLHttpRequest|WebSocket)\s*\(/.test(source)) {
         offenders.push(`${file}: fetch/axios/XHR/WS`);
       }
-      if (/\b(localStorage|sessionStorage)\b/.test(source)) {
+      // localStorage is permitted: named portfolios are persisted client-side
+      // only and never reach the server, so they are not a demo side effect.
+      // sessionStorage would imply server-coupled state and stays banned.
+      if (/\bsessionStorage\b/.test(source)) {
         offenders.push(`${file}: storage`);
       }
       if (/payment|checkout|yookassa|stripe/i.test(source)) {

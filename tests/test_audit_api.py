@@ -1680,10 +1680,12 @@ def test_desk_stress_presets_and_fx_shock_spot_check():
                         "fx_shock",
                     }
 
-                # FX shock -20% on a BYN bond worth 1000: exactly -200.00 / -20.0%.
+                # FX shock -20%: the local (BYN) currency is the base for a
+                # BCSE portfolio, so a BYN-denominated bond is unaffected (the
+                # shock only reprices foreign-currency bonds vs USD).
                 fx = next(s for s in scenarios if s["scenario"] == "fx_shock_-20%")
-                assert fx["pnl"] == -200.0
-                assert fx["pnl_pct"] == -20.0
+                assert fx["pnl"] == 0.0
+                assert fx["pnl_pct"] == 0.0
 
                 # Invariant: pnl_pct == pnl / 1000 * 100 for this 1000 portfolio.
                 for s in scenarios:

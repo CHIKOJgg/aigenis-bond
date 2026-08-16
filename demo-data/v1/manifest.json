@@ -14,7 +14,20 @@
   "demo_bonds": [
     "demo-bond-001",
     "demo-bond-002",
-    "demo-bond-003"
+    "demo-bond-003",
+    "demo-bond-004",
+    "demo-bond-005",
+    "demo-bond-006",
+    "demo-bond-007",
+    "demo-bond-008",
+    "demo-bond-009",
+    "demo-bond-010",
+    "demo-bond-aigenis-op49",
+    "demo-bond-aigenis-op50",
+    "demo-bond-minfin-usd-0310",
+    "demo-bond-aigenis-op35-gold",
+    "demo-bond-aigenis-op43-silver",
+    "demo-bond-aigenis-op42-platinum"
   ],
   "source_policy": "fixtures-only",
   "live_data_used": false,

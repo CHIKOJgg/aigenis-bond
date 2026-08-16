@@ -280,7 +280,8 @@ def test_stress_testing_fx_shock():
     )
 
     assert res.by_position["USD1"] == Decimal("0.00")
-    # BYN suffered -20% FX shock
+    # With USD as the base currency the BYN (non-USD) bond depreciates by 20%
+    # versus the USD anchor → -2000 on a 10000 position.
     assert res.by_position["BYN1"] == Decimal("-2000.00")
 
 

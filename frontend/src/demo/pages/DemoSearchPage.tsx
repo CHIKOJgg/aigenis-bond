@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { fetchLiveSearch } from '../live-demo-api';
-import { scoreFromLiveBond, searchAllBonds } from '../demo-api';
+import { scoreFromLiveBond, searchAllBonds, getScore } from '../demo-api';
 import { bondDrawerStore } from '../drawer-store';
 import { formatPrice, formatYtm, formatBondDisplayName } from '../demo-format';
 import BondScoreBadge from '../components/BondScoreBadge';
@@ -153,7 +153,7 @@ export default function DemoSearchPage() {
             </thead>
             <tbody>
               {results.map((bond) => {
-                const score = scoreFromLiveBond(bond);
+                const score = scoreFromLiveBond(bond) ?? getScore(bond.internal_id);
                 const status: ScoreStatus = score?.status ?? 'no_data';
                 return (
                   <tr

@@ -1,4 +1,4 @@
-import { getBonds, scoreFromLiveBond } from '../demo-api';
+import { getBonds, scoreFromLiveBond, getScore } from '../demo-api';
 import BondScoreBadge from './BondScoreBadge';
 import { formatPrice, formatYtm, formatBondDisplayName } from '../demo-format';
 import type { DemoScore } from '../types';
@@ -39,7 +39,7 @@ export default function MarketTable({ market, bonds: liveBonds, loading, onSelec
 
   const scoreLookup = (id: string): DemoScore | undefined => {
     const bond = bonds.find((b) => b.internal_id === id);
-    return bond ? scoreFromLiveBond(bond) : undefined;
+    return bond ? scoreFromLiveBond(bond) ?? getScore(id) : undefined;
   };
 
   return (

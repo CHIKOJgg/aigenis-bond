@@ -99,7 +99,8 @@ def test_matured_bond_has_no_future_flows():
 
 def test_bond_cashflows_day_count_uses_issue_schedule():
     # When issue_date is known, coupons follow the issue-anchored schedule and
-    # per-coupon amounts are day-count adjusted (30/360 keeps the familiar value).
+    # per-coupon amounts are day-count adjusted under the canonical ACT/365
+    # convention (so a 182-day half-year is not the naive 500.00 of 30/360).
     issue = date(2024, 1, 31)
     maturity = date(2026, 1, 31)
     flows = bond_cashflows(
@@ -114,7 +115,11 @@ def test_bond_cashflows_day_count_uses_issue_schedule():
     )
     coupons = [f for f in flows if f.kind == "coupon"]
     assert len(coupons) == 4  # 2024-07-31, 2025-01-31, 2025-07-31, 2026-01-31
-    assert all(c.amount == Decimal("500.00") for c in coupons)
+    # 182-day first half-year under ACT/365: 10000 * 10% * 182/365.
+    first = coupons[0].amount
+    assert first == Decimal("498.63")
+    # Day-count adjustment makes the figure differ from the 30/360 naive value.
+    assert first != Decimal("500.00")
 
 
 def test_bond_cashflows_act365_differs_from_naive():

@@ -51,6 +51,7 @@ export default function DemoStressPage() {
 
   const res = data ?? runStressTest(scenarioKey, market, capital);
   const positionsCount = Math.max(Object.keys(res.by_position).length, 1);
+  const pnlColor = (v: number) => (v >= 0 ? '#0a7d3b' : '#e03400');
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
@@ -185,13 +186,13 @@ export default function DemoStressPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
             <div style={{ background: '#fff', padding: 20, borderRadius: 12, border: '1px solid #d6e2e6' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#717680', fontSize: 13, fontWeight: 500 }}>
-                <TrendingDown size={18} color="#e03400" />
+                <TrendingDown size={18} color={pnlColor(res.pnl_amount)} />
                 Ожидаемый P&L (убыток/прибыль)
               </div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: '#e03400', marginTop: 8 }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: pnlColor(res.pnl_amount), marginTop: 8 }}>
                 {res.pnl_amount.toLocaleString('ru-RU')} {currency}
               </div>
-              <div style={{ fontSize: 13, color: '#e03400', fontWeight: 600, marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: pnlColor(res.pnl_amount), fontWeight: 600, marginTop: 2 }}>
                 {res.pnl_pct}% от капитала
               </div>
             </div>
@@ -265,7 +266,7 @@ export default function DemoStressPage() {
                         <td style={{ padding: '12px', textAlign: 'right', color: '#516c79' }}>
                           {pos.invested.toLocaleString('ru-RU')} {currency}
                         </td>
-                        <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#e03400' }}>
+                        <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: pnlColor(pos.pnl) }}>
                           {pos.pnl.toLocaleString('ru-RU')} {currency}
                         </td>
                       </tr>
@@ -280,7 +281,7 @@ export default function DemoStressPage() {
                       <td style={{ padding: '12px', textAlign: 'right', color: '#516c79' }}>
                         {(capital / positionsCount).toLocaleString('ru-RU')} {currency}
                       </td>
-                      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: '#e03400' }}>
+                      <td style={{ padding: '12px', textAlign: 'right', fontWeight: 700, color: pnlColor(pnl) }}>
                         {pnl.toLocaleString('ru-RU')} {currency}
                       </td>
                     </tr>

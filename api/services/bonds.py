@@ -14,6 +14,7 @@ from decimal import Decimal
 from api.analytics._helpers import _all_bonds, _get_bond_or_404, _score_for_bond
 from api.dto import analytics as dto
 from desk import relative_value as desk_rv
+from desk.cashflow import DEFAULT_DAY_COUNT
 from desk.cashflow import accrued_interest as dc_accrued
 from ml.repository import predictions_for_bond
 from portfolio.income import bond_cashflows
@@ -223,7 +224,7 @@ class BondService:
                 issue_date=bond.start_date,
                 maturity_date=bond.maturity_date,
                 asof=settlement,
-                convention="30/360",
+                convention=DEFAULT_DAY_COUNT,
                 face=100.0,
             )
             accrued = float(accrued_per_face) * float(face) / 100.0

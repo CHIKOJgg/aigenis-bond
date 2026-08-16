@@ -84,7 +84,7 @@ def run_stress(
     scenario: StressScenario,
     bonds_with_amounts: Iterable[tuple[Bond, Decimal]],
     *,
-    base_currency: str = "USD",
+    base_currency: str = "BYN",
     asof: date | None = None,
 ) -> StressResult:
     """Прогнать стресс-сценарий: оценить P&L портфеля."""
@@ -130,8 +130,22 @@ def run_stress(
         new_price = base_price * (1.0 + price_change_pct)
 
         fx_impact = 1.0
-        if scenario.fx_shock_pct != 0 and str(bond.currency).upper() != base_currency.upper():
-            fx_impact = 1.0 + scenario.fx_shock_pct / 100.0
+        if scenario.fx_shock_pct != 0:
+            # ``fx_shock_pct`` is the devaluation of the national (BYN/RUB)
+            # currency versus the USD anchor. USD-denominated assets therefore
+            # appreciate in local terms, while a non-USD asset held against a
+            # USD base loses the same devaluation. The old code applied
+            # ``1+shock`` to *every* non-base bond, which both no-op'd
+            # single-currency books and gave a USD bond a -20% loss.
+            shock = scenario.fx_shock_pct / 100.0
+            ccy = str(bond.currency).upper()
+            base = base_currency.upper()
+            if ccy == base:
+                fx_impact = 1.0
+            elif ccy == "USD":
+                fx_impact = 1.0 / (1.0 + shock) if (1.0 + shock) != 0 else 1.0
+            else:
+                fx_impact = (1.0 + shock) if base == "USD" else 1.0
 
         cur_value = amount * Decimal(str(new_price / 100.0)) * Decimal(str(fx_impact))
         baseline_value = amount * Decimal(str(base_price / 100.0))

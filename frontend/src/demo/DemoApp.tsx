@@ -10,6 +10,7 @@ const DemoStressPage = lazy(() => import('./pages/DemoStressPage'));
 const DemoOptimizerPage = lazy(() => import('./pages/DemoOptimizerPage'));
 const DemoPortfolioImpactPage = lazy(() => import('./pages/DemoPortfolioImpactPage'));
 const DemoSearchPage = lazy(() => import('./pages/DemoSearchPage'));
+const DemoPortfolioLabPage = lazy(() => import('./pages/DemoPortfolioLabPage'));
 
 function Page({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageFallback />}>{children}</Suspense>;
@@ -27,6 +28,7 @@ export default function DemoApp() {
         <Route path="stress" element={<Page><DemoStressPage /></Page>} />
         <Route path="optimizer" element={<Page><DemoOptimizerPage /></Page>} />
         <Route path="search" element={<Page><DemoSearchPage /></Page>} />
+        <Route path="portfolio-lab" element={<Page><DemoPortfolioLabPage /></Page>} />
         <Route path="portfolio-impact/:internalId" element={<Page><DemoPortfolioImpactPage /></Page>} />
       </Route>
     </Routes>

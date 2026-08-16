@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from desk.cashflow import pricing_cashflows
 from desk.models import DurationReport
@@ -199,6 +200,51 @@ def key_rate_durations(
         krd = -(bumped_price - base_price) / (base_price * bump)
         out[_krd_label(t)] = round(krd, 4)
     return out
+
+
+def bond_modified_duration(bond: Any, *, asof: date | None = None) -> float | None:
+    """Cashflow-based modified (rate-risk) duration for a bond-like row.
+
+    Returns ``None`` when duration cannot be derived (missing maturity/YTM,
+    zero/negative yield, or a numeric failure) so callers can fall back to a
+    time-to-maturity proxy. This is the single source of truth for "duration"
+    across the platform — do not substitute ``(maturity - today)`` for it.
+    """
+    ref = asof or date.today()
+    maturity = getattr(bond, "maturity_date", None)
+    if maturity is None:
+        return None
+    ytm = getattr(bond, "yield_to_maturity", None)
+    if ytm is None:
+        return None
+    try:
+        ytm_pct = float(ytm)
+    except (TypeError, ValueError):
+        return None
+    if ytm_pct <= 0:
+        # Zero yield (e.g. indexed-metal zero-coupons) has no meaningful rate
+        # duration; let the caller fall back. Negative yields are invalid input.
+        return None
+    nominal = getattr(bond, "nominal", None) or Decimal("1000")
+    try:
+        nominal_d = Decimal(str(nominal))
+    except (TypeError, ValueError):
+        nominal_d = Decimal("1000")
+    coupon = float(getattr(bond, "coupon_rate", None) or ytm_pct)
+    freq = int(getattr(bond, "coupon_frequency", None) or 2)
+    issue = getattr(bond, "start_date", None)
+    try:
+        return modified_duration(
+            nominal=nominal_d,
+            coupon_rate_pct=coupon,
+            coupon_frequency=freq,
+            ytm_pct=ytm_pct,
+            maturity=maturity,
+            ref=ref,
+            issue_date=issue,
+        )
+    except Exception:
+        return None
 
 
 def duration_report(

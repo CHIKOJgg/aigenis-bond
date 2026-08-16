@@ -341,7 +341,15 @@ export default function BondDetailDrawer({
                 <KeyValue label="Номинал" value={`${Number(bond.nominal.toFixed(0)).toLocaleString('ru-RU')} ${bond.currency}`} />
               )}
               {(bond.term_days != null || bond.duration_years != null) && (
-                <KeyValue label="Дюрация" value={bond.duration_years != null ? formatYears(bond.duration_years) : formatTermDays(bond.term_days)} />
+                <KeyValue
+                  label="Дюрация"
+                  value={bond.duration_years != null ? formatYears(bond.duration_years) : formatTermDays(bond.term_days)}
+                  hint={
+                    bond.duration_years != null
+                      ? 'Модифицированная дюрация — средневзвешенное время (в годах) получения денежных потоков облигации, дисконтированное по YTM. Приблизительно равна изменению цены в % при изменении доходности на 1 п.п.'
+                      : 'Срок до погашения (точная дюрация недоступна без доходности).'
+                  }
+                />
               )}
               {bond.maturity_date && (
                 <KeyValue label="Погашение" value={bond.maturity_date} />
@@ -534,11 +542,16 @@ function CouponScheduleTable({ schedule }: { schedule: Record<string, unknown> }
   );
 }
 
-function KeyValue({ label, value }: { label: string; value: string }) {
+function KeyValue({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
       <span style={{ color: '#717680' }}>{label}: </span>
       <span style={{ fontWeight: 500 }}>{value}</span>
+      {hint && (
+        <div style={{ fontSize: 11, lineHeight: 1.35, color: '#94a3a8', marginTop: 2 }}>
+          {hint}
+        </div>
+      )}
     </div>
   );
 }

@@ -178,3 +178,117 @@ export async function fetchLiveStress(
   if (!response.ok) throw new Error(`live stress request failed: ${response.status}`);
   return response.json() as Promise<LiveStressResponse>;
 }
+
+export interface CustomMetrics {
+  expected_return: number;
+  volatility: number;
+  sharpe: number;
+  sortino: number;
+  var_95: number;
+  max_drawdown: number;
+  calmar: number;
+  weighted_duration: number;
+  weighted_current_yield: number;
+  concentration_by_issuer: Record<string, number>;
+}
+
+export interface CustomAllocation {
+  internal_id: string;
+  name: string;
+  issuer: string;
+  isin: string;
+  amount: number;
+  currency?: string;
+  weight_pct: number;
+  lots: number;
+  ytm: number;
+  duration_years: number;
+  current_yield: number;
+}
+
+export interface CustomOrderTicket {
+  action: string;
+  internal_id: string;
+  name: string;
+  lots: number;
+  est_cost: number;
+  currency?: string;
+  rationale: string;
+}
+
+export interface CustomExcluded {
+  internal_id: string;
+  name: string;
+  reason: string;
+}
+
+export interface CustomOptimizeResponse {
+  mode: 'optimize';
+  objective: string;
+  objective_ru: string;
+  capital: number;
+  currency: string;
+  metrics: CustomMetrics;
+  allocations: CustomAllocation[];
+  order_tickets: CustomOrderTicket[];
+  excluded: CustomExcluded[];
+  warning?: string | null;
+}
+
+export interface CustomHoldingBreakdown {
+  internal_id: string;
+  name: string;
+  issuer: string | null;
+  currency: string | null;
+  amount: number;
+  weight_pct: number;
+  ytm: number;
+  duration_years: number;
+  current_yield: number;
+}
+
+export interface CustomCalculateResponse {
+  mode: 'calculate';
+  currency: string;
+  metrics: CustomMetrics & { holdings: CustomHoldingBreakdown[] };
+  excluded?: CustomExcluded[];
+  warning?: string | null;
+}
+
+export interface CustomOptimizeRequest {
+  internal_ids: string[];
+  capital: number;
+  currency: string;
+  objective: string;
+  market?: string;
+}
+
+export async function fetchCustomOptimize(
+  params: CustomOptimizeRequest,
+): Promise<CustomOptimizeResponse> {
+  const response = await fetch('/api/v1/demo/portfolio/custom/optimize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!response.ok) throw new Error(`custom optimize request failed: ${response.status}`);
+  return response.json() as Promise<CustomOptimizeResponse>;
+}
+
+export interface CustomCalculateHolding {
+  internal_id: string;
+  amount: number;
+}
+
+export async function fetchCustomCalculate(
+  holdings: CustomCalculateHolding[],
+  currency = 'BYN',
+): Promise<CustomCalculateResponse> {
+  const response = await fetch('/api/v1/demo/portfolio/custom/calculate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ holdings, currency }),
+  });
+  if (!response.ok) throw new Error(`custom calculate request failed: ${response.status}`);
+  return response.json() as Promise<CustomCalculateResponse>;
+}

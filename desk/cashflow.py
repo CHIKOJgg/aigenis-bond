@@ -14,6 +14,11 @@ from datetime import date
 
 CONVENTIONS = ("30/360", "ACT/360", "ACT/365", "ACT/ACT")
 
+# Canonical accrual day-count for the platform. Every accrued-interest and
+# coupon-projection path must use this (or the bond's own convention when one is
+# stored) so the same bond shows one consistent accrued figure everywhere.
+DEFAULT_DAY_COUNT = "ACT/365"
+
 
 def _is_leap(year: int) -> bool:
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
@@ -73,7 +78,7 @@ def accrued_interest(
     issue_date: date | None,
     maturity_date: date | None,
     asof: date,
-    convention: str = "ACT/365",
+    convention: str = DEFAULT_DAY_COUNT,
     face: float = 100.0,
 ) -> float:
     """Accrued interest per ``face`` of par as of ``asof`` (ex-coupon=0)."""
@@ -117,7 +122,7 @@ def pricing_cashflows(
     maturity: date,
     asof: date,
     issue_date: date | None = None,
-    convention: str = "ACT/365",
+    convention: str = DEFAULT_DAY_COUNT,
 ) -> list[tuple[float, float]]:
     """Future cashflows as ``(years_from_asof, amount)`` for pricing/duration.
 

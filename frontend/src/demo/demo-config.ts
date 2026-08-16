@@ -18,6 +18,7 @@ export const DEMO_PERSONA = {
   name: 'Марина К.',
   label: 'Частный инвестор',
   portfolio_byn: 50000,
+  portfolio_rub: 1500000,
   goal: 'Регулярный доход при умеренном риске',
 };
 

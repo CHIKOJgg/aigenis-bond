@@ -12,6 +12,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from desk.cashflow import DEFAULT_DAY_COUNT
+
 __all__ = [
     "CashFlow",
     "annual_income",
@@ -72,7 +74,7 @@ def bond_cashflows(
     from_date: date | None = None,
     include_redemption: bool = True,
     issue_date: date | None = None,
-    day_count: str = "30/360",
+    day_count: str = DEFAULT_DAY_COUNT,
     settlement: date | None = None,
 ) -> list[CashFlow]:
     """Project future cashflows for a single holding.

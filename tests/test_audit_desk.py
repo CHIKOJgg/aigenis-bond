@@ -823,8 +823,9 @@ def test_run_stress_duration5_100bp_about_minus_5pct():
 
 
 def test_run_stress_fx_shock_hand_numbers():
-    # No rate shock; BYN bond vs USD base: fx_impact = 1 - 20% = 0.8.
-    # cur_value = amount * new_price/100 * 0.8 = 1000*1.0*0.8 = 800 → P&L -200.
+    # FX shock: local (BYN) depreciates 20% vs USD. A BYN-based investor's
+    # base is BYN, so the BYN bond is unaffected (fx_impact = 1.0) while the
+    # USD bond appreciates by 1/(1-0.20) = 1.25 → P&L +250 on 1000.
     usd = _zero_coupon("USD-1", maturity="2030-01-01", ytm=8.0, currency="USD")
     byn = _zero_coupon("BYN-1", maturity="2030-01-01", ytm=8.0, currency="BYN")
     res = run_stress(
@@ -832,11 +833,11 @@ def test_run_stress_fx_shock_hand_numbers():
         [(usd, Decimal("1000")), (byn, Decimal("1000"))],
         asof=ASOF,
     )
-    assert res.by_position["USD-1"] == Decimal("0.00")
-    assert res.by_position["BYN-1"] == Decimal("-200.00")
-    assert res.pnl == Decimal("-200.00")
-    # pnl -200 over a 2000 portfolio (both bonds) → -10.0%.
-    assert res.pnl_pct == -10.0
+    assert res.by_position["USD-1"] == Decimal("250.00")
+    assert res.by_position["BYN-1"] == Decimal("0.00")
+    assert res.pnl == Decimal("250.00")
+    # pnl +250 over a 2000 portfolio (both bonds) → +12.5%.
+    assert res.pnl_pct == 12.5
 
 
 def test_run_stress_by_tenor_buckets():

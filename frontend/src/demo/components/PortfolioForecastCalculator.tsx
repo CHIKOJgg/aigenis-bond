@@ -67,7 +67,7 @@ export default function PortfolioForecastCalculator({
       cumulativeCoupons: number;
     }> = [];
 
-    const monthlyRate = netYtm / 100 / 12;
+    const monthlyRate = Math.pow(1 + netYtm / 100, 1 / 12) - 1;
     let currentNominal = effectiveCapital;
     let totalInvested = effectiveCapital;
     let totalCouponsPaidOut = 0;

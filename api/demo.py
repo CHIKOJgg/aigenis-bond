@@ -28,6 +28,16 @@ from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
 
 logger = get_logger("api.demo")
 
+# The demo fixtures are a static snapshot taken on this date (see audit_demo.py
+# and demo-data/v1/*). Every time-dependent calc in the demo blueprint — bond
+# duration, accrued interest, maturity checks, and the Portfolio Impact
+# "before/after" comparison — must use THIS date, not ``date.today()``.
+# Otherwise the displayed analytics drift away from the frozen snapshot the
+# moment the demo runs on a later day, and the Portfolio Impact "before"
+# duration (a stored snapshot value) would no longer be comparable to the
+# live-computed "after" duration.
+DEMO_ASOF = date(2026, 8, 6)
+
 router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
 
 _TIER_STATUS = {
@@ -202,6 +212,18 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
             ytm = round(solved, 4)
             computed_ytm = True
 
+    # Guard against impossible feed values: a demanding client must never see
+    # YTM > 100% or a negative price. Treat as "no data" instead of serving noise.
+    if ytm is not None and (ytm > 100.0 or ytm < -5.0):
+        ytm = None
+        computed_ytm = False
+    if price_pct is not None and price_pct <= 0:
+        price_pct = None
+    if bond.maturity_date is not None and bond.maturity_date < ref:
+        # Matured bond: no live market analytics to show.
+        ytm = None
+        price_pct = None
+
     duration_years: float | None = None
     if bond.maturity_date is not None:
         raw_dur: float | None = None
@@ -356,6 +378,16 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
                 computed_ytm = True
         except Exception:
             pass
+
+    # Guard against impossible feed values (see _bond_analytics).
+    if ytm is not None and (ytm > 100.0 or ytm < -5.0):
+        ytm = None
+        computed_ytm = False
+    if price_pct is not None and price_pct <= 0:
+        price_pct = None
+    if bond.maturity_date is not None and bond.maturity_date < ref:
+        ytm = None
+        price_pct = None
 
     duration_years = None
     if bond.maturity_date is not None:
@@ -798,8 +830,64 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
         before_concentration = {"demo": 100.0}
 
     alloc = req.allocation_pct / 100.0
-    bond_yield = float(bond.get("yield_to_maturity") or 0)
-    bond_duration = float(bond.get("duration_years") or 3.0)
+
+    # Normalize YTM the same way the rest of the demo does (metal-indexed
+    # zero-coupons -> 0%, not a phantom double-digit yield).
+    raw_ytm = bond.get("yield_to_maturity")
+    bond_yield = honest_yield(
+        stored_ytm_pct=float(raw_ytm) if raw_ytm is not None else None,
+        coupon_rate_pct=float(bond.get("coupon_rate"))
+        if bond.get("coupon_rate") is not None
+        else None,
+        indexation_currency=bond.get("indexation_currency"),
+    )
+    if bond_yield is None:
+        bond_yield = 0.0
+
+    # Real cashflow-based modified duration (fixtures carry no duration_years,
+    # so the old `or 3.0` gave every bond 3y and made the >4y branch dead).
+    from datetime import date as _date
+    from types import SimpleNamespace
+
+    def _as_date(v: Any) -> _date | None:
+        if v is None or isinstance(v, _date):
+            return v
+        try:
+            return _date.fromisoformat(v)
+        except Exception:
+            return None
+
+    bond_obj = SimpleNamespace(
+        internal_id=bond.get("internal_id"),
+        yield_to_maturity=bond.get("yield_to_maturity"),
+        coupon_rate=bond.get("coupon_rate"),
+        coupon_frequency=bond.get("coupon_frequency") or 2,
+        maturity_date=_as_date(bond.get("maturity_date")),
+        start_date=_as_date(bond.get("start_date")),
+        nominal=bond.get("nominal") or 1000,
+    )
+    # Prefer an explicit duration_years from the fixtures/live payload; only
+    # fall back to a real cashflow-based modified duration when it is absent.
+    # Both the stored benchmark ("before") and this bond ("after") must be
+    # measured as of the SAME snapshot date (DEMO_ASOF) so the comparison is
+    # apples-to-apples — never date.today(), which would let the two sides
+    # drift apart as the demo runs on later days.
+    provided_dur = bond.get("duration_years")
+    if provided_dur is not None and provided_dur > 0:
+        bond_duration = float(provided_dur)
+    else:
+        try:
+            from desk.duration import bond_modified_duration
+
+            real_dur = bond_modified_duration(bond_obj, asof=DEMO_ASOF)
+        except Exception:
+            real_dur = None
+        if real_dur is None or real_dur <= 0:
+            md = _as_date(bond.get("maturity_date"))
+            real_dur = (
+                max((md - DEMO_ASOF).days / 365.25, 0.5) if md is not None else 3.0
+            )
+        bond_duration = real_dur
 
     after_yield = before_yield * (1.0 - alloc) + bond_yield * alloc
     after_duration = before_duration * (1.0 - alloc) + bond_duration * alloc
@@ -1024,7 +1112,7 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
                     continue
 
                 lots = int(per_bond_target / dirty_price_money)
-                invested = round(lots * dirty_price_money, 2)
+                invested = round(lots * price_money, 2)
                 amount = Decimal(str(round(lots * nom, 2)))
                 if lots > 0:
                     bonds_with_amounts.append((b, amount))
@@ -1048,7 +1136,7 @@ async def demo_desk_stress(req: StressTestRequest) -> dict[str, Any]:
                     dirty_price_money = price_money
                     if req.capital >= dirty_price_money > 0:
                         lots = 1
-                        invested = round(lots * dirty_price_money, 2)
+                        invested = round(lots * price_money, 2)
                         amount = Decimal(str(round(lots * nom, 2)))
                         bonds_with_amounts.append((b, amount))
                         position_amounts.append(
@@ -1349,15 +1437,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "strategy": req.strategy,
                 "capital": req.capital,
                 "currency": req.currency.upper(),
-                "metrics": {
-                    "expected_return": STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])["baseReturn"],
-                    "volatility": 0.0,
-                    "sharpe": 0.0,
-                    "sortino": 0.0,
-                    "calmar": 0.0,
-                    "max_drawdown": 0.0,
-                    "var_95": 0.0,
-                },
+                "metrics": _empty_metrics(),
                 "allocations": [],
                 "order_tickets": [],
                 "excluded": excluded_payload,
@@ -1379,15 +1459,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "strategy": req.strategy,
                 "capital": req.capital,
                 "currency": req.currency.upper(),
-                "metrics": {
-                    "expected_return": STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])["baseReturn"],
-                    "volatility": 0.0,
-                    "sharpe": 0.0,
-                    "sortino": 0.0,
-                    "calmar": 0.0,
-                    "max_drawdown": 0.0,
-                    "var_95": 0.0,
-                },
+                "metrics": _empty_metrics(),
                 "allocations": [],
                 "order_tickets": [],
                 "available_strategies": [
@@ -1596,21 +1668,33 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 }
             )
 
-        # Ожидаемая доходность привязана к профилю стратегии (а не к сырому
-        # средневзвешенному YTM, который для бескупонных металлических бумаг
-        # даёт ~0% и ломал бы упорядоченность стратегий). Поправка на реальный
-        # YTM портфеля ограничена половиной зазора до соседней стратегии, что
-        # гарантирует: пассивная стратегия всегда < агрессивной.
+        # Metrics reflect the ACTUAL selected basket (real YTMs, durations and
+        # weights from ``allocate``), not static strategy-table constants — a
+        # client must see numbers that match the listed holdings. Fall back to
+        # the strategy profile only when allocation failed / no lots were bought.
         profile = STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])
-        portfolio_ytm = (alloc.expected_return if alloc else profile["baseReturn"]) or profile["baseReturn"]
-        exp_ret = _guarded_expected_return(strategy, portfolio_ytm)
-        vol = float(profile["volatility"])
-        max_dd = float(profile["maxDrawdown"])
-        var95 = float(profile["var95"])
         rf = float(profile["riskFree"])
-        sharpe = round((exp_ret - rf) / vol, 2) if vol > 0 else 0.0
-        sortino = round(sharpe * 1.35, 2)
-        calmar = round(exp_ret / max_dd, 2) if max_dd > 0 else 0.0
+        if alloc is not None and allocated:
+            exp_ret = float(alloc.expected_return)
+            vol = float(alloc.volatility)
+            max_dd = float(alloc.max_drawdown)
+            var95 = float(alloc.var_95)
+            sharpe = round(float(alloc.sharpe), 2)
+            sortino = round(float(alloc.sortino), 2)
+            calmar = (
+                round(float(alloc.calmar), 2)
+                if alloc.calmar
+                else (round(exp_ret / max_dd, 2) if max_dd > 0 else 0.0)
+            )
+        else:
+            portfolio_ytm = profile["baseReturn"]
+            exp_ret = _guarded_expected_return(strategy, portfolio_ytm)
+            vol = float(profile["volatility"])
+            max_dd = float(profile["maxDrawdown"])
+            var95 = float(profile["var95"])
+            sharpe = round((exp_ret - rf) / vol, 2) if vol > 0 else 0.0
+            sortino = round(sharpe * 1.35, 2)
+            calmar = round(exp_ret / max_dd, 2) if max_dd > 0 else 0.0
 
         return {
             "strategy": req.strategy,
@@ -1640,3 +1724,267 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             "notes": _strategy_notes(strategy, items_payload),
             "warning": None,
         }
+
+
+# ---------------------------------------------------------------------------
+# User-defined portfolio optimizer & calculator (no fixed strategies)
+# ---------------------------------------------------------------------------
+
+class CustomOptimizeRequest(BaseModel):
+    internal_ids: list[str] = Field(
+        ..., description="Bonds the user wants in their custom portfolio"
+    )
+    capital: float = Field(50000.0, description="Total capital to allocate")
+    currency: str = Field("BYN", description="Reporting/order currency")
+    objective: str = Field(
+        "equal_weight",
+        description="equal_weight | min_variance | risk_parity | max_sharpe",
+    )
+    market: str = Field("bcse", description="bcse or moex")
+
+
+class CustomCalculateHolding(BaseModel):
+    internal_id: str
+    amount: float
+
+
+class CustomCalculateRequest(BaseModel):
+    holdings: list[CustomCalculateHolding] = Field(
+        ..., description="Fixed basket: bond + amount the user already holds"
+    )
+    currency: str = Field("BYN", description="Reporting currency")
+
+
+_OBJECTIVE_RU = {
+    "equal_weight": "Равные веса",
+    "min_variance": "Минимум дисперсии",
+    "risk_parity": "Risk Parity (равный риск)",
+    "max_sharpe": "Максимум коэф. Шарпа",
+}
+
+
+@router.post("/portfolio/custom/optimize")
+async def demo_custom_optimize(req: CustomOptimizeRequest) -> dict[str, Any]:
+    """Optimize allocation across a USER-SPECIFIED basket of bonds.
+
+    Unlike ``/portfolio/optimize`` (fixed strategies), this takes the bonds the
+    user actually picked and allocates capital by an objective, returning real
+    YTM-based metrics, per-bond allocation and exchange order tickets.
+    """
+    from portfolio.custom_optimizer import (
+        compute_portfolio_metrics,
+        discrete_allocate,
+        optimize_weights,
+    )
+    from scoring.eligibility import filter_eligible
+
+    objective = req.objective if req.objective in _OBJECTIVE_RU else "equal_weight"
+    objective_ru = _OBJECTIVE_RU[objective]
+    currency = (req.currency or "BYN").upper()
+
+    if not req.internal_ids:
+        return {
+            "mode": "optimize",
+            "objective": objective,
+            "objective_ru": objective_ru,
+            "capital": req.capital,
+            "currency": currency,
+            "metrics": _empty_metrics(),
+            "allocations": [],
+            "order_tickets": [],
+            "excluded": [],
+            "warning": "Не выбрано ни одной облигации для портфеля.",
+        }
+
+    if req.capital <= 0:
+        return {
+            "mode": "optimize",
+            "objective": objective,
+            "objective_ru": objective_ru,
+            "capital": req.capital,
+            "currency": currency,
+            "metrics": _empty_metrics(),
+            "allocations": [],
+            "order_tickets": [],
+            "excluded": [],
+            "warning": "Сумма инвестиций должна быть больше 0.",
+        }
+
+    async with session_scope() as session:
+        bonds = await _fetch_bonds_by_ids_async(session, req.internal_ids)
+        universe = await _fetch_market_universe_async(session, currency, req.market)
+
+    found_ids = {b.internal_id for b in bonds}
+    excluded_payload = [
+        {"internal_id": iid, "name": iid, "reason": "not_found", "kind": "not_found"}
+        for iid in req.internal_ids
+        if iid not in found_ids
+    ]
+
+    # Compare each pick against the whole market of the same currency so anomaly
+    # detection works for a small, hand-picked basket (not just the user's picks).
+    bonds, eligibility_excluded = filter_eligible(bonds, peer_bonds=universe)
+    for iid, res in eligibility_excluded.items():
+        excluded_payload.append(
+            {"internal_id": iid, "name": iid, "reason": res.reason, "kind": res.kind}
+        )
+
+    if not bonds:
+        return {
+            "mode": "optimize",
+            "objective": objective,
+            "objective_ru": objective_ru,
+            "capital": req.capital,
+            "currency": currency,
+            "metrics": _empty_metrics(),
+            "allocations": [],
+            "order_tickets": [],
+            "excluded": excluded_payload,
+            "warning": "По выбранным идентификаторам не найдено активных ликвидных облигаций.",
+        }
+
+    weights = optimize_weights(bonds, objective)
+    metrics = compute_portfolio_metrics(bonds, weights)
+    items, orders = discrete_allocate(
+        bonds, weights, float(req.capital), currency=currency, label=objective_ru
+    )
+
+    warning_parts: list[str] = []
+    if not items:
+        warning_parts.append(
+            "Недостаточно капитала для покупки хотя бы одного лота по выбранным бумагам. "
+            "Увеличьте сумму инвестиций."
+        )
+    other_ccy = sorted(
+        {str(getattr(b, "currency", "") or "").upper() for b in bonds} - {currency}
+    )
+    if other_ccy:
+        warning_parts.append(
+            f"В портфеле есть бумаги в валюте, отличной от {currency}: "
+            f"{', '.join(other_ccy)}. Метрики и лоты пересчитаны в {currency} без конвертации."
+        )
+    warning = "; ".join(warning_parts) if warning_parts else None
+
+    return {
+        "mode": "optimize",
+        "objective": objective,
+        "objective_ru": objective_ru,
+        "capital": req.capital,
+        "currency": currency,
+        "metrics": metrics,
+        "allocations": items,
+        "order_tickets": orders,
+        "excluded": excluded_payload,
+        "warning": warning,
+    }
+
+
+@router.post("/portfolio/custom/calculate")
+async def demo_custom_calculate(req: CustomCalculateRequest) -> dict[str, Any]:
+    """Calculator: real YTM + all metrics for a FIXED user basket (no reallocation)."""
+    from portfolio.custom_optimizer import calculate_fixed
+    from scoring.eligibility import filter_eligible
+
+    currency = (req.currency or "BYN").upper()
+    internal_ids = [h.internal_id for h in req.holdings]
+
+    if not internal_ids:
+        return {
+            "mode": "calculate",
+            "currency": currency,
+            "metrics": _empty_metrics(),
+            "excluded": [],
+            "warning": "Список позиций пуст.",
+        }
+
+    async with session_scope() as session:
+        bonds = await _fetch_bonds_by_ids_async(session, internal_ids)
+        universe = await _fetch_market_universe_async(session, currency)
+
+    # Keep only bonds we actually found; map amounts by id.
+    found_ids = {b.internal_id for b in bonds}
+    excluded_payload = [
+        {"internal_id": iid, "name": iid, "reason": "not_found", "kind": "not_found"}
+        for iid in internal_ids
+        if iid not in found_ids
+    ]
+
+    bonds, eligibility_excluded = filter_eligible(bonds, peer_bonds=universe)
+    for iid, res in eligibility_excluded.items():
+        excluded_payload.append(
+            {"internal_id": iid, "name": iid, "reason": res.reason, "kind": res.kind}
+        )
+
+    if not bonds:
+        return {
+            "mode": "calculate",
+            "currency": currency,
+            "metrics": _empty_metrics(),
+            "excluded": excluded_payload,
+            "warning": "По выбранным идентификаторам не найдено активных ликвидных облигаций.",
+        }
+
+    holdings = [(h.internal_id, float(h.amount)) for h in req.holdings if h.internal_id in found_ids]
+    if not holdings:
+        return {
+            "mode": "calculate",
+            "currency": currency,
+            "metrics": _empty_metrics(),
+            "excluded": excluded_payload,
+            "warning": "Ни одна из указанных позиций не найдена или исключена (дистресс/аномалия доходности).",
+        }
+
+    result = calculate_fixed(bonds, holdings)
+    return {
+        "mode": "calculate",
+        "currency": currency,
+        "metrics": result,
+        "excluded": excluded_payload,
+        "warning": None,
+    }
+
+
+async def _fetch_bonds_by_ids_async(session: Any, internal_ids: list[str]) -> list[Any]:
+    from sqlalchemy import select as _select
+
+    # Fetch regardless of status so a bond that exists but is inactive/matured
+    # is excluded with a proper ``status`` reason (not mislabeled ``not_found``).
+    # ``filter_eligible`` then drops non-active bonds with kind="status".
+    stmt = (
+        _select(BondORM)
+        .where(BondORM.internal_id.in_(internal_ids))
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def _fetch_market_universe_async(
+    session: Any, currency: str, market: str | None = None
+) -> list[Any]:
+    """Active same-currency (optionally same-market) universe, for anomaly peers."""
+    from sqlalchemy import select as _select
+
+    stmt = (
+        _select(BondORM)
+        .where(BondORM.status == "active")
+        .where(BondORM.currency == currency.upper())
+    )
+    if market:
+        stmt = stmt.where(func.lower(BondORM.market) == market.lower())
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+def _empty_metrics() -> dict[str, Any]:
+    return {
+        "expected_return": 0.0,
+        "volatility": 0.0,
+        "sharpe": 0.0,
+        "sortino": 0.0,
+        "var_95": 0.0,
+        "max_drawdown": 0.0,
+        "calmar": 0.0,
+        "weighted_duration": 0.0,
+        "weighted_current_yield": 0.0,
+        "concentration_by_issuer": {},
+    }

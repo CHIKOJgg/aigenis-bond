@@ -22,7 +22,10 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
     allocation_pct: allocationPct,
   });
   const allocation = allocationPct / 100;
-  const positionAmount = DEMO_PERSONA.portfolio_byn * allocation;
+  const currency = bond?.currency ?? 'BYN';
+  const personaCapital =
+    currency === 'RUB' ? DEMO_PERSONA.portfolio_rub : DEMO_PERSONA.portfolio_byn;
+  const positionAmount = personaCapital * allocation;
   const headlineYield = bond?.yield_to_maturity ?? 0;
   const effectiveYield = bond?.distressed
     ? Math.min(headlineYield, DISTRESSED_YIELD_CAP)
@@ -75,7 +78,7 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>
         <div>После добавления {allocationPct}% позиции</div>
         <div style={{ fontSize: 12, color: '#516c79', fontWeight: 400, marginTop: 4 }}>
-          {positionAmount.toLocaleString('ru-RU')} BYN из портфеля {DEMO_PERSONA.portfolio_byn.toLocaleString('ru-RU')} BYN
+          {positionAmount.toLocaleString('ru-RU')} {currency} из портфеля {personaCapital.toLocaleString('ru-RU')} {currency}
           {allocationLabel && allocationLabel !== `${allocationPct}%` ? ` · ${allocationLabel}` : ''}
         </div>
       </div>
@@ -106,7 +109,7 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
           <LiveMetric label="Дюрация" value={bond.duration_years != null ? `${bond.duration_years.toFixed(1)} г.` : '—'} />
           <LiveMetric
             label="Доход на позиции/год"
-            value={effectiveYield > 0 ? `${Math.round(positionAmount * effectiveYield / 100).toLocaleString('ru-RU')} BYN` : '—'}
+            value={effectiveYield > 0 ? `${Math.round(positionAmount * effectiveYield / 100).toLocaleString('ru-RU')} ${currency}` : '—'}
           />
         </div>
       )}
