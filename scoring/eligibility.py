@@ -99,6 +99,17 @@ def check_eligibility(
             reason=f"Статус '{status}' — бумага не допускается в портфель",
         )
 
+    # No usable market data: a bond with neither a price nor a yield cannot be
+    # priced, yield-assessed or allocated. Keep it out of the portfolio instead
+    # of letting it be scored/allocated on a phantom signal.
+    if price_pct is None and ytm_pct is None:
+        return EligibilityResult(
+            internal_id=internal_id,
+            eligible=False,
+            kind="no_data",
+            reason="Нет рыночных данных (ни цены, ни доходности) — бумага не может быть оценена",
+        )
+
     if (
         price_pct is not None
         and ytm_pct is not None

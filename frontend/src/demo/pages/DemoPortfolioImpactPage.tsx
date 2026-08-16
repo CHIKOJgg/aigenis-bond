@@ -127,7 +127,7 @@ export default function DemoPortfolioImpactPage() {
                         {item.issuer ?? 'Эмитент не указан'} · {item.isin ?? item.internal_id}
                       </div>
                       <div style={{ fontSize: 11, color: '#0B526B', marginTop: 3 }}>
-                        {item.market.toUpperCase()} · {item.currency} · Score {item.score?.toFixed(1) ?? '—'} · YTM {item.yield_to_maturity ?? '—'}%
+                        {item.market.toUpperCase()} · {item.currency} · Score {item.score?.toFixed(1) ?? '—'} · YTM {item.yield_to_maturity != null ? item.yield_to_maturity.toFixed(2) : '—'}%
                       </div>
                     </button>
                   ))}

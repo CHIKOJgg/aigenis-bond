@@ -124,16 +124,18 @@ def test_portfolio_optimizer_with_missing_ytms_does_not_crash():
     assert sum(alloc.items.values()) == Decimal("50000")
 
 
-def test_portfolio_optimizer_all_missing_ytm_fallback():
-    """Verify allocate falls back to score breakdown when all YTMs are missing."""
+def test_portfolio_optimizer_all_missing_data_excluded():
+    """Bonds with no price AND no yield have no usable market data and must be
+    excluded from the portfolio. The allocator returns an empty allocation
+    rather than deploying capital into an un-pricable instrument."""
     bonds = [
         _make_bond("B1", ytm=None, price=None, coupon_rate=None),
         _make_bond("B2", ytm=None, price=None, coupon_rate=None),
     ]
     prefs = UserPreferences(user_id=1, initial_capital=Decimal("10000"), strategy="Conservative")
     alloc = allocate(bonds, prefs, top_n=2)
-    assert alloc.expected_return >= 0.0
-    assert sum(alloc.items.values()) == Decimal("10000")
+    assert alloc.items == {}
+    assert sum(alloc.items.values()) == Decimal("0")
 
 
 def test_portfolio_optimizer_zero_and_huge_capital():

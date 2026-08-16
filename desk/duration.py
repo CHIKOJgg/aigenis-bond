@@ -149,6 +149,10 @@ def dv01(
     return float(p_now - p_up)
 
 
+def _krd_label(tenor: float) -> str:
+    return f"{int(tenor)}Y" if tenor >= 1 else f"{int(tenor * 12)}M"
+
+
 def key_rate_durations(
     *,
     nominal: Decimal,
@@ -160,6 +164,14 @@ def key_rate_durations(
     issue_date: date | None = None,
     tenors: Iterable[float] = (0.25, 1, 2, 3, 5, 7, 10, 20, 30),
 ) -> dict[str, float]:
+    """Key-rate (bucket) durations.
+
+    Each future cashflow is attributed to its nearest tenor bucket; bumping a
+    bucket's rate moves exactly the cashflows assigned to it. This guarantees
+    every cashflow is covered (the old ±0.5y window left mid-bucket flows
+    unbumped) and the bucket durations sum to (approximately) the total
+    modified duration.
+    """
     flows = _cashflows(
         nominal=nominal,
         coupon_rate_pct=coupon_rate_pct,
@@ -168,19 +180,24 @@ def key_rate_durations(
         ref=ref,
         issue_date=issue_date,
     )
+    tenor_list = list(tenors)
+    out = {_krd_label(t): 0.0 for t in tenor_list}
     if not flows:
-        return {f"{int(t)}Y": 0.0 for t in tenors}
+        return out
     freq = coupon_frequency
     base_price = _price_from_yield(flows, ytm_pct, freq=freq)
-    out: dict[str, float] = {}
-    for t in tenors:
-        bumped: list[tuple[float, float]] = []
+    if not base_price:
+        return out
+    y0 = ytm_pct / 100
+    for t in tenor_list:
+        bump = 0.0001
+        bumped_price = 0.0
         for time, cf in flows:
-            bump = 0.0001 if abs(time - t) < 0.5 else 0.0
-            bumped.append((time, cf / ((1 + (ytm_pct / 100 + bump) / freq) ** (freq * time))))
-        bumped_price = sum(cf for _, cf in bumped)
-        krd = -(bumped_price - base_price) / (base_price * 0.0001) if base_price else 0.0
-        out[f"{int(t)}Y" if t >= 1 else f"{int(t * 12)}M"] = round(krd, 4)
+            nearest = min(tenor_list, key=lambda x: abs(x - time))
+            rate = (y0 + bump) if nearest == t else y0
+            bumped_price += cf / ((1 + rate / freq) ** (freq * time))
+        krd = -(bumped_price - base_price) / (base_price * bump)
+        out[_krd_label(t)] = round(krd, 4)
     return out
 
 
@@ -254,6 +271,7 @@ def duration_report(
         issue_date=issue,
         maturity_date=bond.maturity_date,
         asof=ref,
+        face=float(nominal),
     )
 
     return DurationReport(

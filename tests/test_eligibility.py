@@ -181,9 +181,10 @@ def test_anomaly_needs_enough_peers():
     assert res.eligible is True
 
 
-def test_missing_price_and_ytm_eligible():
+def test_missing_price_and_ytm_ineligible():
     res = check_eligibility(internal_id="NONE-1", status="active")
-    assert res.eligible is True
+    assert res.eligible is False
+    assert res.kind == "no_data"
 
 
 # =========================================================================== #

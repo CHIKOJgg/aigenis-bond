@@ -153,7 +153,7 @@ export function OnboardingFlow({ onDone, onNavigate }: { onDone: () => void; onN
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           {c.sector && <span className="px-2 py-0.5 rounded text-xs bg-[#eef3f5] text-[#516c79]">{c.sector}</span>}
                           <span className="text-xs text-[#717680]">{c.bond_count} выпусков</span>
-                          {c.avg_yield_to_maturity != null && <span className="text-xs text-[#004b65]">YTM {c.avg_yield_to_maturity}%</span>}
+                          {c.avg_yield_to_maturity != null && <span className="text-xs text-[#004b65]">YTM {c.avg_yield_to_maturity.toFixed(2)}%</span>}
                         </div>
                       </button>
                     ))}

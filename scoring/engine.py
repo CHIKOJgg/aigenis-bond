@@ -481,10 +481,14 @@ def score_bond(
             if (ytm_pct is None or ytm_pct <= 0) and coupon_pct is not None and coupon_pct > 0:
                 ytm_pct = coupon_pct
 
-            # Case 4: Nominal default yield
+            # Case 4: No usable yield could be derived from price, coupon or
+            # maturity. Do NOT invent an attractive default yield (14/16/6%) —
+            # that would silently inflate the score of a bond we have no real
+            # data for. Leave ytm_pct as None so the yield component contributes
+            # nothing; eligibility gating keeps such no-data bonds out of
+            # portfolios/recommendations entirely.
             if ytm_pct is None or ytm_pct <= 0:
-                cur = (currency or "").upper()
-                ytm_pct = 14.0 if cur == "BYN" else (16.0 if cur == "RUB" else 6.0)
+                ytm_pct = None
         except Exception:
             pass
 
