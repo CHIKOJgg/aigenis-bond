@@ -1,1 +1,0 @@
-import{r as a}from"./index-BZEuqoxe.js";function m(t,n){a.useEffect(()=>{if(document.title=t?`Aigenis Bonds — ${t}`:"Aigenis Bonds",!n)return;let e=document.head.querySelector('meta[name="description"]');e||(e=document.createElement("meta"),e.name="description",document.head.appendChild(e)),e.content=n},[t,n])}export{m as u};

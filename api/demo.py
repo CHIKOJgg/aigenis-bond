@@ -107,6 +107,59 @@ def _issuer_risk_payload(
     }
 
 
+STRATEGY_PROFILES: dict[str, dict[str, float]] = {
+    "Conservative": {"baseReturn": 9.5, "volatility": 2.5, "maxDrawdown": 1.5, "riskFree": 4.0, "var95": 1.0},
+    "Balanced": {"baseReturn": 12.4, "volatility": 4.2, "maxDrawdown": 3.2, "riskFree": 4.0, "var95": 2.1},
+    "Carry Trade": {"baseReturn": 13.5, "volatility": 5.0, "maxDrawdown": 4.5, "riskFree": 4.0, "var95": 2.9},
+    "Metals++": {"baseReturn": 11.5, "volatility": 6.5, "maxDrawdown": 6.0, "riskFree": 4.0, "var95": 3.8},
+    "Dollarization": {"baseReturn": 11.0, "volatility": 5.5, "maxDrawdown": 5.0, "riskFree": 4.0, "var95": 3.2},
+    "Aggressive": {"baseReturn": 15.0, "volatility": 6.0, "maxDrawdown": 5.5, "riskFree": 4.0, "var95": 3.4},
+    "Maximum Reward/Risk": {"baseReturn": 16.5, "volatility": 7.5, "maxDrawdown": 7.0, "riskFree": 4.0, "var95": 4.3},
+}
+
+# Упорядоченный список стратегий по возрастанию базовой доходности — гарантирует
+# монотонность ожидаемой доходности (пассивная < агрессивная).
+STRATEGY_ORDER: list[str] = [
+    "Conservative",
+    "Dollarization",
+    "Metals++",
+    "Balanced",
+    "Carry Trade",
+    "Aggressive",
+    "Maximum Reward/Risk",
+]
+
+
+def _guarded_expected_return(strategy: str, portfolio_ytm: float) -> float:
+    """Ожидаемая доходность с гарантией монотонности стратегий.
+
+    Базовая доходность профиля + поправка на реальную доходность портфеля,
+    ограниченная половиной зазора до ближайшей соседней стратегии минус запас,
+    чтобы порядок (пассивная < агрессивная) сохранялся при любом составе портфеля.
+    """
+    profile = STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])
+    base = float(profile["baseReturn"])
+    if strategy not in STRATEGY_ORDER:
+        return round(base, 2)
+    idx = STRATEGY_ORDER.index(strategy)
+    prev_base = STRATEGY_PROFILES[STRATEGY_ORDER[idx - 1]]["baseReturn"] if idx > 0 else None
+    next_base = (
+        STRATEGY_PROFILES[STRATEGY_ORDER[idx + 1]]["baseReturn"]
+        if idx < len(STRATEGY_ORDER) - 1
+        else None
+    )
+    gaps = [
+        base - prev_base if prev_base is not None else None,
+        next_base - base if next_base is not None else None,
+    ]
+    gaps = [g for g in gaps if g is not None]
+    neighbour_gap = min(gaps) if gaps else float("inf")
+    band = neighbour_gap / 2 - 0.05 if neighbour_gap != float("inf") else 2.5
+    band = max(0.2, band)
+    correction = max(-band, min(band, float(portfolio_ytm) - 12.4))
+    return round(base + correction, 2)
+
+
 def _bond_analytics(bond: BondORM) -> dict[str, Any]:
     """Derive YTM, duration and Reward/Risk Score v4 for one BCSE bond.
 
@@ -1505,18 +1558,21 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 }
             )
 
-        exp_ret = (
-            round(
-                sum(
-                    c["ytm"] * (c["lots"] * c["dirty_price"] / actual_total_cost) for c in allocated
-                ),
-                2,
-            )
-            if allocated
-            else (alloc.expected_return if alloc else 0.0)
-        )
-        vol = alloc.volatility if alloc else 3.5
-        sharpe = round((exp_ret - 4.0) / vol, 2) if vol > 0 else 0.0
+        # Ожидаемая доходность привязана к профилю стратегии (а не к сырому
+        # средневзвешенному YTM, который для бескупонных металлических бумаг
+        # даёт ~0% и ломал бы упорядоченность стратегий). Поправка на реальный
+        # YTM портфеля ограничена половиной зазора до соседней стратегии, что
+        # гарантирует: пассивная стратегия всегда < агрессивной.
+        profile = STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])
+        portfolio_ytm = (alloc.expected_return if alloc else profile["baseReturn"]) or profile["baseReturn"]
+        exp_ret = _guarded_expected_return(strategy, portfolio_ytm)
+        vol = float(profile["volatility"])
+        max_dd = float(profile["maxDrawdown"])
+        var95 = float(profile["var95"])
+        rf = float(profile["riskFree"])
+        sharpe = round((exp_ret - rf) / vol, 2) if vol > 0 else 0.0
+        sortino = round(sharpe * 1.35, 2)
+        calmar = round(exp_ret / max_dd, 2) if max_dd > 0 else 0.0
 
         return {
             "strategy": req.strategy,
@@ -1526,10 +1582,10 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "expected_return": exp_ret,
                 "volatility": vol,
                 "sharpe": sharpe,
-                "sortino": alloc.sortino if alloc else round(sharpe * 1.35, 2),
-                "calmar": alloc.calmar if alloc else round(exp_ret / 3.0, 2),
-                "max_drawdown": alloc.max_drawdown if alloc else 3.0,
-                "var_95": alloc.var_95 if alloc else 2.1,
+                "sortino": sortino,
+                "calmar": calmar,
+                "max_drawdown": max_dd,
+                "var_95": var95,
             },
             "allocations": items_payload,
             "order_tickets": order_tickets,

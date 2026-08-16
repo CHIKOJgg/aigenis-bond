@@ -60,7 +60,7 @@
     "coupon_frequency": 2,
     "maturity_date": "2029-03-20",
     "price": 95.0,
-    "yield_to_maturity": 12.0,
+    "yield_to_maturity": 12.28,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2024-03-20",
@@ -130,6 +130,9 @@
     "maturity_term_text": "2 года",
     "coupon_description": "Фиксированный купон 11.0% годовых, ежеквартально",
     "coupon_schedule": {
+      "2026-08-10": [
+        "2.75 BYN"
+      ],
       "2026-11-10": [
         "2.75 BYN"
       ],
@@ -210,7 +213,7 @@
     "coupon_frequency": 2,
     "maturity_date": "2030-12-01",
     "price": 82.0,
-    "yield_to_maturity": 14.0,
+    "yield_to_maturity": 14.21,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2023-12-01",
@@ -314,7 +317,7 @@
     "coupon_frequency": 4,
     "maturity_date": "2028-11-25",
     "price": 100.0,
-    "yield_to_maturity": 7.71,
+    "yield_to_maturity": 7.5,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2024-11-25",
@@ -329,6 +332,9 @@
     "maturity_term_text": "4 года",
     "coupon_description": "Фиксированный купон 7.5% USD годовых, ежеквартально",
     "coupon_schedule": {
+      "2026-08-25": [
+        "1.88 USD"
+      ],
       "2026-11-25": [
         "1.88 USD"
       ],
@@ -339,6 +345,18 @@
         "1.88 USD"
       ],
       "2027-08-25": [
+        "1.88 USD"
+      ],
+      "2027-11-25": [
+        "1.88 USD"
+      ],
+      "2028-02-25": [
+        "1.88 USD"
+      ],
+      "2028-05-25": [
+        "1.88 USD"
+      ],
+      "2028-08-25": [
         "1.88 USD"
       ],
       "2028-11-25": [
@@ -381,6 +399,9 @@
     "maturity_term_text": "5 лет",
     "coupon_description": "Фиксированный купон 8.0% USD годовых, ежеквартально",
     "coupon_schedule": {
+      "2026-08-15": [
+        "2.00 USD"
+      ],
       "2026-11-15": [
         "2.00 USD"
       ],
@@ -388,6 +409,27 @@
         "2.00 USD"
       ],
       "2027-05-15": [
+        "2.00 USD"
+      ],
+      "2027-08-15": [
+        "2.00 USD"
+      ],
+      "2027-11-15": [
+        "2.00 USD"
+      ],
+      "2028-02-15": [
+        "2.00 USD"
+      ],
+      "2028-05-15": [
+        "2.00 USD"
+      ],
+      "2028-08-15": [
+        "2.00 USD"
+      ],
+      "2028-11-15": [
+        "2.00 USD"
+      ],
+      "2029-02-15": [
         "2.00 USD"
       ],
       "2029-05-15": [
@@ -430,6 +472,9 @@
     "maturity_term_text": "5 лет",
     "coupon_description": "Государственные валютные облигации (ВГДО), купон 5.5% USD",
     "coupon_schedule": {
+      "2026-10-25": [
+        "27.50 USD"
+      ],
       "2027-04-25": [
         "27.50 USD"
       ],
@@ -447,7 +492,7 @@
     "status": "active",
     "is_government": true,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 15.4781
+    "accrued_interest": 1.5478
   },
   {
     "internal_id": "demo-bond-aigenis-op35-gold",
@@ -487,7 +532,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0012
+    "accrued_interest": 0.0004
   },
   {
     "internal_id": "demo-bond-aigenis-op43-silver",
@@ -527,7 +572,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.004
+    "accrued_interest": 0.0008
   },
   {
     "internal_id": "demo-bond-aigenis-op42-platinum",
@@ -567,6 +612,6 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0013
+    "accrued_interest": 0.0008
   }
 ]

@@ -567,8 +567,8 @@
   },
   {
     "internal_id": "demo-bond-aigenis-op35-gold",
-    "status": "high_risk",
-    "verdict": "Слабая / избегать",
+    "status": "attractive",
+    "verdict": "Привлекательная",
     "summary": "Риски перевешивают доходность — лучше поискать альтернативу. Валюта BYN — локальный рублёвый рынок с предсказуемой динамикой ставок.",
     "factors": [
       {
@@ -697,8 +697,8 @@
   },
   {
     "internal_id": "demo-bond-aigenis-op43-silver",
-    "status": "high_risk",
-    "verdict": "Слабая / избегать",
+    "status": "attractive",
+    "verdict": "Привлекательная",
     "summary": "Риски перевешивают доходность — лучше поискать альтернативу. Валюта BYN — локальный рублёвый рынок с предсказуемой динамикой ставок.",
     "factors": [
       {
@@ -762,8 +762,8 @@
   },
   {
     "internal_id": "demo-bond-aigenis-op49",
-    "status": "review",
-    "verdict": "Средняя",
+    "status": "attractive",
+    "verdict": "Привлекательная",
     "summary": "Ничем особо не выделяется — подходит скорее для диверсификации. Валюта USD — защита от девальвации рубля.",
     "factors": [
       {
@@ -820,8 +820,8 @@
   },
   {
     "internal_id": "demo-bond-aigenis-op50",
-    "status": "review",
-    "verdict": "Средняя",
+    "status": "attractive",
+    "verdict": "Привлекательная",
     "summary": "Ничем особо не выделяется — подходит скорее для диверсификации. Валюта USD — защита от девальвации рубля.",
     "factors": [
       {
@@ -878,8 +878,8 @@
   },
   {
     "internal_id": "demo-bond-minfin-usd-0310",
-    "status": "neutral",
-    "verdict": "Умеренно интересна",
+    "status": "attractive",
+    "verdict": "Привлекательная",
     "summary": "Разумный вариант, но есть заметные компромиссы. Валюта USD — защита от девальвации рубля.",
     "factors": [
       {

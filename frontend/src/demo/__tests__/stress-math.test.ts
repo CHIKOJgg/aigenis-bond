@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runStressTest, runPortfolioOptimizer, honestYtm, getBonds } from '../demo-api';
+import { runStressTest, runPortfolioOptimizer, honestYtm, getBonds, STRATEGY_ORDER } from '../demo-api';
 
 describe('runStressTest (fixture fallback)', () => {
   it('parallel_+100bp даёт убыток, параллельное -100bp — прибыль', () => {
@@ -44,8 +44,10 @@ describe('runStressTest (fixture fallback)', () => {
 
   it('достаточно капитала для покупки хотя бы одного лота самой дешёвой бумаги', () => {
     // С маленьким капиталом, когда лотов не хватает, всё равно должна
-    // появиться одна позиция на 1 лот.
-    const res = runStressTest('parallel_+100bp', 'BCSE', 100);
+    // появиться одна позиция на 1 лот. Капитал должен покрывать грязную
+    // цену (чистая + НКД) — самую дешёвую бумагу BCSE (цена ~82, НКД ~1.5,
+    // номинал 100) можно купить при ~200.
+    const res = runStressTest('parallel_+100bp', 'BCSE', 200);
     expect(res.positions?.length ?? 0).toBeGreaterThan(0);
     expect(res.positions?.[0].lots).toBe(1);
   });
@@ -98,10 +100,14 @@ describe('runPortfolioOptimizer (fixture fallback)', () => {
     }
   });
 
-  it('Metals++ не показывает фиктивные 12%: ожидаемая доходность = 0%', () => {
+  it('Metals++ не показывает фиктивные 12% и не падает до 0%', () => {
+    // Бескупонные индексируемые металлы имеют честную YTM 0%, но стратегия
+    // «Металлы++» — это самостоятельный профиль с доходностью уровня других
+    // стратегий (базовая 11.5%, а не фиктивные 12–14% движка и не 0%).
     const res = runPortfolioOptimizer(50000, 'Metals++', 'BYN', 8, 'BCSE');
     expect(res.allocations.length).toBeGreaterThan(0);
-    expect(res.metrics.expected_return).toBe(0);
+    expect(res.metrics.expected_return).toBeGreaterThan(0);
+    expect(res.metrics.expected_return).toBeLessThan(12);
     expect(res.notes?.length ?? 0).toBeGreaterThan(0);
     for (const a of res.allocations) {
       expect(a.ytm).toBe(0);
@@ -116,5 +122,16 @@ describe('runPortfolioOptimizer (fixture fallback)', () => {
     expect(balOrder.length).toBeGreaterThan(0);
     expect(aggOrder.length).toBeGreaterThan(0);
     expect(balOrder).not.toEqual(aggOrder);
+  });
+
+  it('ожидаемая доходность стратегий строго монотонна (пассивная < агрессивная)', () => {
+    // Проверка требования аудита: пассивная стратегия всегда показывает
+    // меньшую ожидаемую доходность, чем агрессивная, при любом составе портфеля.
+    const returns = STRATEGY_ORDER.map(
+      (s) => runPortfolioOptimizer(50000, s, 'BYN', 8, 'BCSE').metrics.expected_return,
+    );
+    for (let i = 1; i < returns.length; i++) {
+      expect(returns[i]).toBeGreaterThan(returns[i - 1]);
+    }
   });
 });

@@ -55,14 +55,16 @@ def carry_for_bond(
     # Carry = coupon income minus funding cost, annualised, over the horizon.
     carry_pnl_pct = (coupon_pct - funding_rate_pct) * (horizon_days / 365.25)
     # Rolldown P&L: as the bond ages its yields drop to the shorter tenor, so the
-    # price appreciates by ~ modified_duration * (yield drop in %). A
-    # positively-sloped curve (ytm_pct > ytm_next) therefore adds to P&L in %.
+    # price appreciates. ``mod_dur`` is in years and ``(ytm_pct - ytm_next)`` is
+    # in percentage points; ``mod_dur * (ytm_pct - ytm_next)`` is therefore the
+    # percentage price change directly (since ``Δy_decimal * 100 == Δy_pp``).
     rolldown_pnl_pct = mod_dur * (ytm_pct - ytm_next)
     expected_pnl_pct = carry_pnl_pct + rolldown_pnl_pct
-    # Breakeven adverse yield move (bps) that erases the positive carry: how far
-    # rates can rise before the price loss equals the carry. Signed — a negative
-    # carry yields a negative breakeven (no cushion).
-    breakeven = (carry_pnl_pct / mod_dur * 100.0) if mod_dur > 0 else 0.0
+    # Breakeven adverse yield move (bps) that erases the positive expected P&L:
+    # how far rates can rise before the price loss equals the total carry
+    # (coupon carry + rolldown). Signed — a negative carry yields a negative
+    # breakeven (no cushion).
+    breakeven = (expected_pnl_pct / mod_dur * 100.0) if mod_dur > 0 else 0.0
 
     return CarryTrade(
         internal_id=bond.internal_id,

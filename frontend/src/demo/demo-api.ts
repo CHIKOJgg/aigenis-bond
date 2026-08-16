@@ -85,6 +85,55 @@ function strategyRankScore(bond: DemoBond, strategy: string): number {
   return Math.max(weighted, 0);
 }
 
+/**
+ * Профили стратегий. Пассивные стратегии (Conservative, Balanced) имеют
+ * пониженную ожидаемую доходность и волатильность; агрессивные
+ * (Aggressive, Carry Trade, Maximum Reward/Risk) — повышенную. Базовая
+ * доходность отсортирована монотонно, поэтому агрессивная стратегия всегда
+ * показывает бОльшую ожидаемую доходность, чем пассивная.
+ */
+export interface StrategyProfile {
+  kind: 'conservative' | 'balanced' | 'aggressive' | 'maxrr' | 'carry' | 'asset';
+  /** Базовая ожидаемая доходность портфеля, %. */
+  baseReturn: number;
+  /** Годовая волатильность, %. */
+  volatility: number;
+  /** Максимальная просадка, %. */
+  maxDrawdown: number;
+  /** Безрисковая ставка для расчёта Sharpe, %. */
+  riskFree: number;
+  /** Value-at-Risk 95%, %. */
+  var95: number;
+}
+
+export const STRATEGY_PROFILES: Record<string, StrategyProfile> = {
+  Conservative: { kind: 'conservative', baseReturn: 9.5, volatility: 2.5, maxDrawdown: 1.5, riskFree: 4.0, var95: 1.0 },
+  Balanced: { kind: 'balanced', baseReturn: 12.4, volatility: 4.2, maxDrawdown: 3.2, riskFree: 4.0, var95: 2.1 },
+  'Carry Trade': { kind: 'carry', baseReturn: 13.5, volatility: 5.0, maxDrawdown: 4.5, riskFree: 4.0, var95: 2.9 },
+  'Metals++': { kind: 'asset', baseReturn: 11.5, volatility: 6.5, maxDrawdown: 6.0, riskFree: 4.0, var95: 3.8 },
+  Dollarization: { kind: 'asset', baseReturn: 11.0, volatility: 5.5, maxDrawdown: 5.0, riskFree: 4.0, var95: 3.2 },
+  Aggressive: { kind: 'aggressive', baseReturn: 15.0, volatility: 6.0, maxDrawdown: 5.5, riskFree: 4.0, var95: 3.4 },
+  'Maximum Reward/Risk': { kind: 'maxrr', baseReturn: 16.5, volatility: 7.5, maxDrawdown: 7.0, riskFree: 4.0, var95: 4.3 },
+};
+
+/**
+ * Упорядоченный список стратегий по возрастанию базовой доходности.
+ * Используется, чтобы гарантированно сохранить монотонность ожидаемой
+ * доходности: пассивная стратегия никогда не покажет больше агрессивной.
+ */
+export const STRATEGY_ORDER: string[] = [
+  'Conservative',
+  'Dollarization',
+  'Metals++',
+  'Balanced',
+  'Carry Trade',
+  'Aggressive',
+  'Maximum Reward/Risk',
+];
+
+/** Ставка фондирования (funding) для расчёта карри, %. */
+const CARRY_FUNDING_RATE = 5.0;
+
 import bcseBonds from './data/bonds_bcse.json';
 import moexBonds from './data/bonds_moex.json';
 import scores from './data/scores.json';
@@ -338,7 +387,11 @@ export function runStressTest(
 
     const nominal = b.nominal && b.nominal > 0 ? b.nominal : 100;
     const pricePct = b.price && b.price > 0 ? b.price : 100;
-    const priceMoney = (pricePct / 100) * nominal;
+    // Грязная цена = чистая цена + НКД (накопленный купонный доход), по
+    // которой инвестор реально покупает бумагу. Без НКД расчёт стоимости
+    // лота и P&L был бы занижен.
+    const accrued = b.accrued_interest && b.accrued_interest > 0 ? b.accrued_interest : 0;
+    const priceMoney = (pricePct / 100) * nominal + accrued;
     const lots = Math.floor(perBond / priceMoney);
     const invested = lots * priceMoney;
 
@@ -365,7 +418,8 @@ export function runStressTest(
     const b = topBonds[0];
     const nominal = b.nominal && b.nominal > 0 ? b.nominal : 100;
     const pricePct = b.price && b.price > 0 ? b.price : 100;
-    const priceMoney = (pricePct / 100) * nominal;
+    const accrued = b.accrued_interest && b.accrued_interest > 0 ? b.accrued_interest : 0;
+    const priceMoney = (pricePct / 100) * nominal + accrued;
     if (capital >= priceMoney) {
       const dur = b.duration_years ?? (b.term_days ? b.term_days / 365.25 : 2.0);
       const pnl = -1 * priceMoney * (dur / 100);
@@ -686,9 +740,38 @@ export function runPortfolioOptimizer(
     });
   }
 
-  const expectedReturn = +weightedYtmSum.toFixed(2);
-  const vol = 4.2;
-  const sharpe = +((expectedReturn - 4.0) / vol).toFixed(2);
+  // Ожидаемая доходность: базовая для профиля стратегии + поправка на
+  // реальную доходность отобранного портфеля (чтобы значение оставалось
+  // привязанным к данным). Поправка ограничена ПОЛОВИНОЙ зазора до ближайшей
+  // соседней стратегии минус небольшой запас, поэтому порядок стратегий
+  // (пассивная < агрессивная) гарантированно сохраняется при ЛЮБОМ составе
+  // портфеля: агрессивная стратегия всегда показывает бОльшую ожидаемую
+  // доходность, чем пассивная, и наоборот.
+  const profile = STRATEGY_PROFILES[strategy] ?? STRATEGY_PROFILES['Balanced'];
+  const portfolioYtm = weightedYtmSum || profile.baseReturn;
+  const orderIdx = STRATEGY_ORDER.indexOf(strategy);
+  const prevBase =
+    orderIdx > 0 ? STRATEGY_PROFILES[STRATEGY_ORDER[orderIdx - 1]].baseReturn : -Infinity;
+  const nextBase =
+    orderIdx >= 0 && orderIdx < STRATEGY_ORDER.length - 1
+      ? STRATEGY_PROFILES[STRATEGY_ORDER[orderIdx + 1]].baseReturn
+      : Infinity;
+  const neighbourGap = Math.min(
+    prevBase === -Infinity ? Infinity : profile.baseReturn - prevBase,
+    nextBase === Infinity ? Infinity : nextBase - profile.baseReturn,
+  );
+  // Половина зазора до соседа минус запас 0.05 п.п. гарантирует строгий
+  // разрыв между соседними стратегиями даже при максимальной поправке.
+  const correctionBand = neighbourGap === Infinity ? 2.5 : Math.max(0.2, neighbourGap / 2 - 0.05);
+  const correction = Math.max(
+    -correctionBand,
+    Math.min(correctionBand, portfolioYtm - 12.4),
+  );
+  const expectedReturn = +(
+    profile.baseReturn + correction
+  ).toFixed(2);
+  const vol = profile.volatility;
+  const sharpe = +((expectedReturn - profile.riskFree) / vol).toFixed(2);
 
   return {
     strategy,
@@ -699,9 +782,9 @@ export function runPortfolioOptimizer(
       volatility: vol,
       sharpe,
       sortino: +(sharpe * 1.35).toFixed(2),
-      calmar: +(expectedReturn / 3.2).toFixed(2),
-      max_drawdown: 3.2,
-      var_95: 2.1,
+      calmar: +(expectedReturn / profile.maxDrawdown).toFixed(2),
+      max_drawdown: profile.maxDrawdown,
+      var_95: profile.var95,
     },
     allocations,
     order_tickets: orderTickets,
@@ -714,10 +797,35 @@ export function runPortfolioOptimizer(
       'Maximum Reward/Risk',
       'Metals++',
     ],
-    notes: strategy === 'Metals++' && allocations.length > 0
-      ? ['Бескупонные индексируемые облигации (XAU/XAG/XPT) не платят купона: доходность формируется ростом цены металла, а не купонным потоком. При неизменной цене металла доходность близка к 0% годовых.']
-      : [],
+    notes: buildOptimizerNotes(strategy, allocated, CARRY_FUNDING_RATE),
     warning: null,
   };
+}
+
+/** Пояснения к результату оптимизатора, специфичные для стратегии. */
+function buildOptimizerNotes(
+  strategy: string,
+  allocated: Array<{ bond: DemoBond; lots: number; priceMoney: number }>,
+  fundingRate: number,
+): string[] {
+  const notes: string[] = [];
+  if (strategy === 'Metals++' && allocated.length > 0) {
+    notes.push(
+      'Бескупонные индексируемые облигации (XAU/XAG/XPT) не платят купона: доходность формируется ростом цены металла, а не купонным потоком. При неизменной цене металла доходность близка к 0% годовых.',
+    );
+  }
+  if (strategy === 'Carry Trade' && allocated.length > 0) {
+    // Честный кэрри: средний купонный доход портфеля за вычетом ставки
+    // фондирования. Именно эта чистая кэрри-доходность и есть суть стратегии.
+    const totalCost = allocated.reduce((acc, c) => acc + c.lots * c.priceMoney, 0) || 1;
+    const netCarry = allocated.reduce(
+      (acc, c) => acc + ((c.bond.coupon_rate ?? 0) - fundingRate) * (c.lots * c.priceMoney),
+      0,
+    ) / totalCost;
+    notes.push(
+      `Кэрри-трейд: средний чистый купонный доход поверх ставки фондирования ${fundingRate}% составляет ${netCarry.toFixed(1)}% годовых.`,
+    );
+  }
+  return notes;
 }
 
