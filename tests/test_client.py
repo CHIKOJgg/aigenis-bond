@@ -348,8 +348,11 @@ class TestToPricePct:
 
     @pytest.mark.asyncio
     async def test_fx_unavailable(self, monkeypatch):
+        # Without an FX anchor for a non-BYN issue we cannot normalize the raw
+        # settlement amount to percent-of-face, so we report "insufficient data"
+        # (None) rather than persisting a corrupt percentile.
         monkeypatch.setattr(client_mod, "_byn_per_ccy", AsyncMock(return_value=None))
-        assert await _to_price_pct("100", 1000, "USD") == "100"
+        assert await _to_price_pct("100", 1000, "USD") is None
 
     @pytest.mark.asyncio
     async def test_success(self, monkeypatch):
@@ -420,60 +423,86 @@ class TestSaneYield:
 
 
 class TestNormalizeHistoryItem:
-    def test_full(self):
-        assert AigenisClient._normalize_history_item(
+    @pytest.mark.asyncio
+    async def test_full(self):
+        assert await AigenisClient._normalize_history_item(
             {"date": "2024-01-01", "price": 101.5, "yield": 3.2, "coupon": 7.5, "status": "active"}
-        ) == {"date": "2024-01-01", "price": 101.5, "yield": 3.2, "coupon": 7.5, "status": "active"}
+        ) == {
+            "date": "2024-01-01",
+            "price": 101.5,
+            "yield": Decimal("3.2"),
+            "coupon": 7.5,
+            "status": "active",
+        }
 
-    def test_timestamp(self):
-        assert AigenisClient._normalize_history_item({"timestamp": "t", "price": 1})["date"] == "t"
+    @pytest.mark.asyncio
+    async def test_timestamp(self):
+        assert (await AigenisClient._normalize_history_item({"timestamp": "t", "price": 1}))["date"] == "t"
 
-    def test_trade_date(self):
+    @pytest.mark.asyncio
+    async def test_trade_date(self):
         assert (
-            AigenisClient._normalize_history_item({"trade_date": "td", "price": 1})["date"] == "td"
+            (await AigenisClient._normalize_history_item({"trade_date": "td", "price": 1}))["date"]
+            == "td"
         )
 
-    def test_dt(self):
-        assert AigenisClient._normalize_history_item({"dt": "dt", "price": 1})["date"] == "dt"
+    @pytest.mark.asyncio
+    async def test_dt(self):
+        assert (await AigenisClient._normalize_history_item({"dt": "dt", "price": 1}))["date"] == "dt"
 
-    def test_day(self):
-        assert AigenisClient._normalize_history_item({"day": "d", "price": 1})["date"] == "d"
+    @pytest.mark.asyncio
+    async def test_day(self):
+        assert (await AigenisClient._normalize_history_item({"day": "d", "price": 1}))["date"] == "d"
 
-    def test_no_date(self):
-        assert AigenisClient._normalize_history_item({"price": 1}) is None
+    @pytest.mark.asyncio
+    async def test_no_date(self):
+        assert await AigenisClient._normalize_history_item({"price": 1}) is None
 
-    def test_price_close_fallback(self):
-        item = AigenisClient._normalize_history_item({"date": "d", "close": 5})
+    @pytest.mark.asyncio
+    async def test_price_close_fallback(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "close": 5})
         assert item["price"] == 5
 
-    def test_price_last_fallback(self):
-        item = AigenisClient._normalize_history_item({"date": "d", "last": 6})
+    @pytest.mark.asyncio
+    async def test_price_last_fallback(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "last": 6})
         assert item["price"] == 6
 
-    def test_price_market_fallback(self):
-        item = AigenisClient._normalize_history_item({"date": "d", "market_price": 7})
+    @pytest.mark.asyncio
+    async def test_price_market_fallback(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "market_price": 7})
         assert item["price"] == 7
 
-    def test_price_all_missing(self):
-        item = AigenisClient._normalize_history_item({"date": "d"})
+    @pytest.mark.asyncio
+    async def test_price_all_missing(self):
+        item = await AigenisClient._normalize_history_item({"date": "d"})
         assert item["price"] is None
 
-    def test_yield_instr_fallback(self):
-        item = AigenisClient._normalize_history_item({"date": "d", "price": 1, "instr_yield": 4})
-        assert item["yield"] == 4
+    @pytest.mark.asyncio
+    async def test_yield_instr_fallback(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "price": 1, "instr_yield": 4})
+        assert item["yield"] == Decimal("4")
 
-    def test_yield_ytm_fallback(self):
-        item = AigenisClient._normalize_history_item(
+    @pytest.mark.asyncio
+    async def test_yield_ytm_fallback(self):
+        item = await AigenisClient._normalize_history_item(
             {"date": "d", "price": 1, "yield_to_maturity": 4}
         )
-        assert item["yield"] == 4
+        assert item["yield"] == Decimal("4")
 
-    def test_yield_negative_none(self):
-        item = AigenisClient._normalize_history_item({"date": "d", "price": 1, "yield": -3})
+    @pytest.mark.asyncio
+    async def test_yield_negative_none(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "price": 1, "yield": -3})
         assert item["yield"] is None
 
-    def test_coupon_rate_fallback(self):
-        item = AigenisClient._normalize_history_item({"date": "d", "price": 1, "coupon_rate": 8})
+    @pytest.mark.asyncio
+    async def test_yield_extreme_none(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "price": 1, "yield": 1545})
+        assert item["yield"] is None
+
+    @pytest.mark.asyncio
+    async def test_coupon_rate_fallback(self):
+        item = await AigenisClient._normalize_history_item({"date": "d", "price": 1, "coupon_rate": 8})
         assert item["coupon"] == 8
 
 
@@ -1227,7 +1256,7 @@ class TestNormalizeListingItem:
         assert result["currency"] == "USD"
         assert result["issuer_logo"] == client_mod.SITE_BASE + "/logos/logo.png"
         assert result["price"] == 101.5
-        assert result["yield_to_maturity"] == "7.2"
+        assert result["yield_to_maturity"] == Decimal("7.2")
         assert result["maturity_term_text"] == "3.5"
         assert result["fetched_at"]
 

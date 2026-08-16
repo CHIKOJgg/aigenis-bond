@@ -5,7 +5,7 @@ import random
 import sys
 import time
 from contextlib import asynccontextmanager, suppress
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -29,11 +29,17 @@ from ...errors import (
     TransientError,
 )
 from ...logging import get_logger
+from desk.ytm import honest_yield, sane_yield, ytm_from_price
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page, Playwright  # noqa: F401
 
 logger = get_logger("scraper.client")
+
+# Yields at/above this are either data errors or extreme distress and must not
+# be presented as a real, investable yield (consistent with
+# scoring.eligibility.EXTREME_MAX_YTM_PCT).
+MAX_DISPLAY_YTM_PCT = 100.0
 
 API_BASE = "https://invest.aigenis.by/api"
 SITE_BASE = "https://invest.aigenis.by"
@@ -133,7 +139,10 @@ async def _to_price_pct(value: Any, nominal: Any, currency: Any) -> Any:
             # BYN issues are quoted in BYN: the rate is identity, no FX lookup.
             fx = Decimal("1")
         else:
-            return value
+            # No FX anchor and not a BYN issue: we cannot normalize the raw
+            # settlement amount to percent-of-face, so report "insufficient
+            # data" instead of persisting a corrupt percentile.
+            return None
     # Return a JSON-safe float: the raw payload lands in the JSONB `raw`
     # column, and a Decimal would break json.dumps during the upsert.
     result = float(price / (nom * Decimal(str(fx))) * Decimal("100"))
@@ -161,6 +170,112 @@ def _sane_yield(value: Any) -> Any:
     except (ValueError, ArithmeticError):
         return value
     return value if v > 0 else None
+
+
+def _parse_date(v: Any) -> date | None:
+    """Best-effort parse of a maturity/issue date from mixed source formats."""
+    if v is None or v == "":
+        return None
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    if isinstance(v, datetime):
+        return v.date()
+    from datetime import datetime as _dt
+
+    s = str(v).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return _dt.strptime(s[:19], fmt[:19]).date()
+        except ValueError:
+            continue
+    try:
+        return _dt.fromisoformat(s.replace("Z", "+00:00")).date()
+    except Exception:
+        return None
+
+
+def _safe_float(v: Any) -> float | None:
+    if v is None or v == "":
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _sanitize_yield(
+    value: Any,
+    *,
+    price_raw: Any,
+    nominal: Any,
+    currency: Any,
+    coupon_rate: Any,
+    coupon_frequency: Any,
+    maturity_date: Any,
+    indexation_currency: Any = None,
+) -> Any:
+    """Cross-check a source YTM against the price/coupon-implied yield.
+
+    Mirrors the MOEX ``_quote_and_yield`` guard: a source yield is only kept
+    when it agrees (within tolerance) with the yield the coupon schedule and
+    price imply. Otherwise we fall back to our own Newton-Raphson estimate, or
+    ``None`` so the product honestly shows "no data" instead of a 1374%-style
+    artifact. Indexed-metal zero-coupon bonds carry no real yield (0%).
+    """
+    if value is None or value == "":
+        return None
+    try:
+        v = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+    if v <= 0:
+        return None
+
+    idx = (str(indexation_currency or "")).upper()
+    if (
+        honest_yield(
+            stored_ytm_pct=float(v),
+            coupon_rate_pct=_safe_float(coupon_rate),
+            indexation_currency=idx,
+        )
+        == 0.0
+    ):
+        return Decimal("0")
+
+    price_pct = await _to_price_pct(price_raw, nominal, currency)
+    cr = _safe_float(coupon_rate)
+    freq = int(coupon_frequency) if coupon_frequency not in (None, "") else None
+    mat = _parse_date(maturity_date)
+
+    computed = None
+    if price_pct is not None and cr is not None and freq and mat and mat > date.today():
+        computed = ytm_from_price(
+            price_pct=float(price_pct),
+            coupon_rate_pct=cr,
+            coupon_frequency=freq,
+            maturity=mat,
+        )
+    if computed is not None and sane_yield(float(v), computed):
+        return v
+    if computed is not None and computed > 0:
+        return Decimal(str(round(computed, 4)))
+    # Cannot validate from price; keep only plausible yields. Values at/above
+    # the extreme-risk threshold are data errors or distress and must not be
+    # presented as a real yield.
+    return v if float(v) < MAX_DISPLAY_YTM_PCT else None
+
+
+async def _sanitize_history_yield(value: Any) -> Any:
+    """Guard a historical yield quote: drop non-positive and extreme values."""
+    if value is None or value == "":
+        return None
+    try:
+        v = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+    if v <= 0 or float(v) >= MAX_DISPLAY_YTM_PCT:
+        return None
+    return v
 
 
 def _sane_coupon_rate(value: Any) -> Any:
@@ -681,7 +796,16 @@ class AigenisClient:
             "price": await _to_price_pct(
                 defn.get("price"), defn.get("nominal"), defn.get("currency") or currency
             ),
-            "yield_to_maturity": _sane_yield(defn.get("instr_yield")),
+            "yield_to_maturity": await _sanitize_yield(
+                defn.get("instr_yield"),
+                price_raw=defn.get("price"),
+                nominal=defn.get("nominal"),
+                currency=defn.get("currency") or currency,
+                coupon_rate=defn.get("coupon_rate"),
+                coupon_frequency=defn.get("coupon_frequency"),
+                maturity_date=defn.get("maturity_date"),
+                indexation_currency=defn.get("indexation_currency"),
+            ),
             "market_price": defn.get("market_price") or item.get("market_price"),
             "best_bid": item.get("best_bid") or defn.get("best_bid"),
             "best_offer": item.get("best_offer") or defn.get("best_offer"),
@@ -746,7 +870,16 @@ class AigenisClient:
                 defn.get("nominal"),
                 defn.get("currency") or data.get("settl_currency"),
             ),
-            "yield_to_maturity": _sane_yield(defn.get("instr_yield")),
+            "yield_to_maturity": await _sanitize_yield(
+                defn.get("instr_yield"),
+                price_raw=defn.get("price"),
+                nominal=defn.get("nominal"),
+                currency=defn.get("currency") or data.get("settl_currency"),
+                coupon_rate=defn.get("coupon_rate"),
+                coupon_frequency=defn.get("coupon_frequency"),
+                maturity_date=defn.get("maturity_date"),
+                indexation_currency=defn.get("indexation_currency"),
+            ),
             "offer_date": None,
             "start_date": defn.get("issue_date"),
             "end_date": defn.get("maturity_date"),
@@ -840,7 +973,7 @@ class AigenisClient:
                     break
                 for it in items:
                     if isinstance(it, dict):
-                        normalized = self._normalize_history_item(it)
+                        normalized = await self._normalize_history_item(it)
                         if normalized:
                             rows.append(normalized)
                 if len(items) < 500:
@@ -859,7 +992,7 @@ class AigenisClient:
             raise HistoryUnavailable(f"history fetch failed for {internal_id}") from e
 
     @staticmethod
-    def _normalize_history_item(it: dict[str, Any]) -> dict[str, Any] | None:
+    async def _normalize_history_item(it: dict[str, Any]) -> dict[str, Any] | None:
         """Map an API quote/candle row to the parser's ``{date, price, yield,
         coupon, status}`` schema, tolerating several common field names."""
         d = (
@@ -887,7 +1020,7 @@ class AigenisClient:
             if it.get("instr_yield") is not None
             else it.get("yield_to_maturity")
         )
-        yield_val = _sane_yield(yield_val)
+        yield_val = await _sanitize_history_yield(yield_val)
         return {
             "date": d,
             "price": price,

@@ -438,22 +438,57 @@ export function runStressTest(
     }
   }
 
+  // Средневзвешенная дюрация и средневзвешенная YTM по реальным позициям
+  // стресс-портфеля (тем же бумагам, что участвуют в P&L). Так дюрация портфеля
+  // всегда согласована с отображаемыми позициями, а не берётся «из воздуха».
+  const bondLookup = new Map(
+    getBonds(market.toUpperCase()).map((b) => [b.internal_id, b]),
+  );
+  let totalInvested = 0;
+  let durWeighted = 0;
+  let ytmWeighted = 0;
+  for (const p of positions) {
+    const b = bondLookup.get(p.internal_id);
+    const dur = b && b.duration_years != null
+      ? b.duration_years
+      : b && b.term_days
+        ? b.term_days / 365.25
+        : 2.0;
+    const ytm = b ? (honestYtm(b) ?? 0) : 0;
+    durWeighted += dur * p.invested;
+    ytmWeighted += ytm * p.invested;
+    totalInvested += p.invested;
+  }
+  const durationBefore = totalInvested > 0 ? +(durWeighted / totalInvested).toFixed(2) : 0.0;
+  const avgYtm = totalInvested > 0 ? ytmWeighted / totalInvested : 12.4;
+
   // Сдвиг дюрации: после роста ставок дюрация уменьшается, после снижения —
-  // увеличивается (формула api/demo.py: D*(1+y)/(1+y+s), s = ±1% при y ≈ 12.4%).
-  // Для остальных сценариев дюрация остаётся на месте.
-  const durationAfter = sc.kind === 'parallel'
-    ? (scenarioKey.includes('-100') ? 2.83 : 2.77)
-    : 2.8;
+  // увеличивается (формула api/demo.py: D*(1+y)/(1+y+s)). Для не-параллельных
+  // сценариев дюрация остаётся на месте.
+  let shockDecimal = 0;
+  if (sc.kind === 'parallel') {
+    if (scenarioKey.includes('+300')) shockDecimal = 0.03;
+    else if (scenarioKey.includes('-100')) shockDecimal = -0.01;
+    else shockDecimal = 0.01;
+  }
+  const durationAfter = shockDecimal !== 0
+    ? +(durationBefore * (1 + avgYtm / 100) / (1 + avgYtm / 100 + shockDecimal)).toFixed(2)
+    : durationBefore;
+
+  // VaR 95% (один торговый день): дюрация портфеля × 95-й перцентиль дневного
+  // движения доходностей (~0.75% для BYN-кривой) — согласовано с api/demo.py.
+  const var95 = +(durationBefore * 0.75).toFixed(2);
 
   return {
     scenario: sc,
     pnl_amount: +totalPnl.toFixed(2),
     pnl_pct: capital > 0 ? +((totalPnl / capital) * 100).toFixed(2) : 0.0,
-    duration_before: 2.8,
+    duration_before: durationBefore,
     duration_after: durationAfter,
     by_tenor: byTenor,
     by_position: byPosition,
     positions,
+    var_95: var95,
     available_scenarios: Object.values(scenarios),
   };
 }
@@ -601,7 +636,7 @@ export function runPortfolioOptimizer(
       capital,
       currency,
       metrics: {
-        expected_return: 0.0,
+        expected_return: STRATEGY_PROFILES[strategy]?.baseReturn ?? 12.4,
         volatility: 0.0,
         sharpe: 0.0,
         sortino: 0.0,
@@ -624,11 +659,15 @@ export function runPortfolioOptimizer(
     };
   }
 
-  // Вычисляем цену за лот для каждой бумаги
+  // Вычисляем цену за лот для каждой бумаги. Грязная цена = чистая цена +
+  // НКД (накопленный купонный доход), по которой инвестор реально покупает
+  // бумагу. Без НКД стоимость лота и аллокации были бы занижены (как в
+  // стресс-тесте и бэкенде).
   const candidates = selected.map((b) => {
     const nominal = b.nominal && b.nominal > 0 ? b.nominal : 1000;
     const pricePct = b.price && b.price > 0 ? b.price : 100;
-    const priceMoney = (pricePct / 100) * nominal;
+    const accrued = b.accrued_interest && b.accrued_interest > 0 ? b.accrued_interest : 0;
+    const priceMoney = (pricePct / 100) * nominal + accrued;
     return {
       bond: b,
       priceMoney,
@@ -645,7 +684,7 @@ export function runPortfolioOptimizer(
       capital,
       currency,
       metrics: {
-        expected_return: 0.0,
+        expected_return: STRATEGY_PROFILES[strategy]?.baseReturn ?? 12.4,
         volatility: 0.0,
         sharpe: 0.0,
         sortino: 0.0,

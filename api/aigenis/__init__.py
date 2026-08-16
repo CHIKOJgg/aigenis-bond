@@ -212,11 +212,35 @@ def _score_for(bond: BondORM) -> BondScoreDTO | None:
     return BondScoreDTO(value=value, status=status, version=_SCORE_VERSION)
 
 
-def _years_to_maturity(maturity: date | None) -> float | None:
-    """Простая оценка дюрации: годы до погашения (без купонной динамики)."""
-    if maturity is None:
+def _bond_duration_years(bond: Any) -> float | None:
+    """Modified duration of a bond (years), the standard price-sensitivity measure.
+
+    Falls back to time-to-maturity only when the coupon schedule / yield needed
+    to compute a real duration is unavailable. Duration is independent of the
+    nominal (it is a ratio), so a missing nominal does not bias the result.
+    """
+    if bond.maturity_date is None:
         return None
-    return round(max((maturity - date.today()).days / 365.25, 0.0), 2)
+    try:
+        from decimal import Decimal
+
+        from desk.duration import modified_duration
+
+        ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity is not None else 0.0
+        coupon = float(bond.coupon_rate) if bond.coupon_rate is not None else ytm
+        freq = int(bond.coupon_frequency or 2)
+        dur = modified_duration(
+            nominal=bond.nominal or Decimal("1000"),
+            coupon_rate_pct=coupon,
+            coupon_frequency=freq,
+            ytm_pct=ytm,
+            maturity=bond.maturity_date,
+            ref=date.today(),
+            issue_date=getattr(bond, "start_date", None),
+        )
+        return round(dur, 2)
+    except Exception:
+        return round(max((bond.maturity_date - date.today()).days / 365.25, 0.0), 2)
 
 
 def _to_item(bond: BondORM, score: BondScoreDTO | None) -> BondItemDTO:
@@ -228,7 +252,7 @@ def _to_item(bond: BondORM, score: BondScoreDTO | None) -> BondItemDTO:
         currency=bond.currency,
         ytm_pct=float(bond.yield_to_maturity) if bond.yield_to_maturity is not None else None,
         maturity_date=bond.maturity_date.isoformat() if bond.maturity_date else None,
-        duration_years=_years_to_maturity(bond.maturity_date),
+        duration_years=_bond_duration_years(bond),
         score=score,
     )
 

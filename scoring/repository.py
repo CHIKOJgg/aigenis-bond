@@ -96,19 +96,44 @@ async def recompute_all(session: AsyncSession) -> int:
     """Пересчитать Score для всех облигаций в БД."""
     from datetime import date
 
-    from desk.ytm import to_price_pct, ytm_from_price
+    from desk.ytm import sane_yield, to_price_pct, ytm_from_price
 
     result = await session.execute(select(BondORM))
     bonds = list(result.scalars().all())
     scores: list[BondScore] = []
     for b in bonds:
-        ytm = (
-            float(b.yield_to_maturity)
-            if b.yield_to_maturity is not None and float(b.yield_to_maturity) > 0
-            else None
-        )
+        raw_ytm = b.yield_to_maturity
+        ytm = None
+        if raw_ytm is not None and float(raw_ytm) > 0:
+            ytm_val = float(raw_ytm)
+            price_pct = to_price_pct(b.price, b.nominal)
+            computed = None
+            if price_pct is not None and b.coupon_rate is not None and b.maturity_date is not None:
+                try:
+                    computed = ytm_from_price(
+                        price_pct=price_pct,
+                        coupon_rate_pct=float(b.coupon_rate),
+                        coupon_frequency=int(b.coupon_frequency or 2),
+                        maturity=b.maturity_date,
+                        asof=date.today(),
+                    )
+                except Exception:
+                    computed = None
+            if computed is not None and sane_yield(ytm_val, computed):
+                ytm = ytm_val
+            elif computed is not None and computed > 0:
+                # Source yield disagrees with the coupon/price-implied yield:
+                # trust our own estimate instead of the garbage value.
+                ytm = round(computed, 4)
+            elif ytm_val < 100:
+                # No price to cross-check; keep only plausible stored yields.
+                ytm = ytm_val
+            else:
+                # Unvalidatable extreme yield — treat as missing data.
+                ytm = None
         if (
             ytm is None
+            and raw_ytm is None
             and b.price is not None
             and b.coupon_rate is not None
             and b.maturity_date is not None
@@ -125,9 +150,14 @@ async def recompute_all(session: AsyncSession) -> int:
                     )
                     if solved is not None and solved > 0:
                         ytm = round(solved, 4)
-                        b.yield_to_maturity = Decimal(str(ytm))
             except Exception:
                 pass
+        # Persist the (corrected) yield so downstream portfolios and
+        # recommendations never consume an unvalidated extreme value.
+        if ytm is not None:
+            b.yield_to_maturity = Decimal(str(ytm))
+        elif raw_ytm is not None:
+            b.yield_to_maturity = None
         scores.append(
             score_bond(
                 internal_id=b.internal_id,

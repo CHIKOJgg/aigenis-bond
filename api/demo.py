@@ -207,9 +207,9 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         raw_dur: float | None = None
         if ytm is not None:
             try:
-                from desk.duration import macaulay_duration
+                from desk.duration import modified_duration
 
-                raw_dur = macaulay_duration(
+                raw_dur = modified_duration(
                     nominal=bond.nominal or Decimal("1000"),
                     coupon_rate_pct=(
                         float(bond.coupon_rate) if bond.coupon_rate is not None else ytm
@@ -360,9 +360,9 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
     duration_years = None
     if bond.maturity_date is not None:
         try:
-            from desk.duration import macaulay_duration
+            from desk.duration import modified_duration
 
-            raw_dur = macaulay_duration(
+            raw_dur = modified_duration(
                 nominal=bond.nominal or Decimal("1000"),
                 coupon_rate_pct=float(bond.coupon_rate)
                 if bond.coupon_rate is not None
@@ -499,6 +499,9 @@ AllocationPct = Literal[5, 10, 15]
 
 
 class PortfolioImpactRequest(BaseModel):
+    portfolio_template: str = Field(
+        "moderate_byn", description="Portfolio template key (legacy 'marina_50000_byn' supported)"
+    )
     bond_id: str = Field(..., description="demo-bond-001..003 from fixtures")
     allocation_pct: AllocationPct = Field(10, description="5, 10 or 15 percent of demo portfolio")
 
@@ -757,7 +760,11 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
     if isinstance(templates, dict):
         # В фикстуре шаблон хранится под ключом "moderate_byn" (легаси-ключ
         # "marina_50000_byn" поддерживается для обратной совместимости).
-        template = templates.get("marina_50000_byn") or templates.get("moderate_byn")
+        template = (
+            templates.get(req.portfolio_template)
+            or templates.get("marina_50000_byn")
+            or templates.get("moderate_byn")
+        )
     if not isinstance(template, dict):
         template = {
             "benchmarks": {
@@ -773,10 +780,17 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
     before_duration = float(benchmarks.get("duration_years", 2.4))
     max_concentration = float(benchmarks.get("issuer_concentration_max_pct", 25.0))
 
-    # Концентрация по эмитентам до сделки: веса позиций из шаблона портфеля.
+    # Концентрация по эмитентам до сделки: веса позиций из шаблона портфеля,
+    # сопоставленные с эмитентом через ту же базу персон, что и добавляемая
+    # бумага, — чтобы «до» и «после» измерялись в одних и тех же единицах
+    # (по эмитенту, а не по названию позиции).
+    issuer_by_id = {
+        b.get("internal_id"): b.get("issuer") for b in persona if b.get("internal_id")
+    }
     before_concentration: dict[str, float] = {}
     for pos in template.get("positions") or []:
-        key = str(pos.get("name") or pos.get("instrument_id") or "demo")
+        pos_id = str(pos.get("instrument_id") or pos.get("name") or "demo")
+        key = str(issuer_by_id.get(pos_id) or pos.get("name") or pos_id)
         before_concentration[key] = before_concentration.get(key, 0.0) + float(
             pos.get("weight_pct", 0.0)
         )
@@ -1289,6 +1303,30 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
             )
             bonds = list((await session.execute(fallback_stmt)).scalars().all())
 
+        # Спец-стратегии (Dollarization/Metals++) используют узкий фильтр по
+        # инструменту (USD / драгметаллы). Если в демо/тестовой БД таких бумаг
+        # нет, откатываемся на широкий пул валюты рынка, чтобы стратегия
+        # сформировала реальный портфель и не ломала упорядоченность
+        # ожидаемых доходностей (пассивная < агрессивная).
+        if not bonds and strategy in ("Dollarization", "Metals++"):
+            generic_filter = BondORM.currency == req.currency.upper()
+            bonds = list(
+                (
+                    await session.execute(
+                        select(BondORM)
+                        .where(BondORM.status == "active")
+                        .where(func.lower(BondORM.market) == req_market)
+                        .where(generic_filter)
+                        .where(BondORM.price.is_not(None))
+                        .where(BondORM.price > 0)
+                        .where(BondORM.yield_to_maturity.is_not(None))
+                        .where(BondORM.yield_to_maturity > 0)
+                        .where(BondORM.maturity_date.is_not(None))
+                        .where(BondORM.maturity_date > min_mat_date)
+                    )
+                ).scalars().all()
+            )
+
         # Eligibility gate: дистрибуция, сверхвысокорисковые и аномалии
         # в портфель не попадают (см. scoring/eligibility.py).
         from scoring.eligibility import filter_eligible
@@ -1312,7 +1350,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "capital": req.capital,
                 "currency": req.currency.upper(),
                 "metrics": {
-                    "expected_return": 0.0,
+                    "expected_return": STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])["baseReturn"],
                     "volatility": 0.0,
                     "sharpe": 0.0,
                     "sortino": 0.0,
@@ -1342,7 +1380,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 "capital": req.capital,
                 "currency": req.currency.upper(),
                 "metrics": {
-                    "expected_return": 0.0,
+                    "expected_return": STRATEGY_PROFILES.get(strategy, STRATEGY_PROFILES["Balanced"])["baseReturn"],
                     "volatility": 0.0,
                     "sharpe": 0.0,
                     "sortino": 0.0,

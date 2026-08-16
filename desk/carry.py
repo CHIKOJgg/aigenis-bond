@@ -60,11 +60,13 @@ def carry_for_bond(
     # percentage price change directly (since ``Δy_decimal * 100 == Δy_pp``).
     rolldown_pnl_pct = mod_dur * (ytm_pct - ytm_next)
     expected_pnl_pct = carry_pnl_pct + rolldown_pnl_pct
-    # Breakeven adverse yield move (bps) that erases the positive expected P&L:
-    # how far rates can rise before the price loss equals the total carry
-    # (coupon carry + rolldown). Signed — a negative carry yields a negative
-    # breakeven (no cushion).
-    breakeven = (expected_pnl_pct / mod_dur * 100.0) if mod_dur > 0 else 0.0
+    # Breakeven adverse yield move (bps): how far rates can rise before the
+    # duration-driven price loss erases the coupon carry income. This is the
+    # textbook carry breakeven (``carry_pnl_pct / mod_dur``); rolldown is a
+    # separate expected return reported via ``rolldown_bps`` / ``expected_pnl_pct``
+    # and is intentionally NOT folded into the carry cushion. Signed — a negative
+    # carry yields a negative breakeven (no cushion).
+    breakeven = (carry_pnl_pct / mod_dur * 100.0) if mod_dur > 0 else 0.0
 
     return CarryTrade(
         internal_id=bond.internal_id,

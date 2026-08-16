@@ -18,6 +18,7 @@ from typing import Any
 
 from scraper.models import Bond
 from scraper.orm import BondHistoryORM
+from scoring.eligibility import filter_eligible
 
 _Q = Decimal("0.01")
 
@@ -195,6 +196,14 @@ def run_backtest(
 
     price_rows = _build_price_rows(history_by_bond)
 
+    # Only trade bonds that pass the portfolio eligibility gate. This keeps
+    # non-viable paper (insane YTM, distressed/distribution, excluded status,
+    # anomaly vs peers) out of the simulated portfolio — the same rule that
+    # guards the live optimizer and recommendations.
+    eligible_bonds, _ = filter_eligible(bonds)
+    eligible_ids = {b.internal_id for b in eligible_bonds}
+    tradeable = [b for b in bonds if b.internal_id in eligible_ids]
+
     def mark_price(iid: str, day: date) -> Decimal | None:
         """Price strictly at-or-before ``day``; None if unknown.
 
@@ -243,7 +252,7 @@ def run_backtest(
             # no historical price at the decision date is never scored with its
             # current catalog price — that would leak future information.
             scored = []
-            for b in bonds:
+            for b in tradeable:
                 snap = _snapshot_on_or_before(price_rows, b.internal_id, current_date)
                 if snap is not None:
                     score = _score_bond_for_strategy(b, strategy, price=snap[0], ytm=snap[1])
