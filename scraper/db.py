@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import event
@@ -17,6 +20,25 @@ from scraper.config import get_settings
 from scraper.logging import get_logger
 
 logger = get_logger("scraper.db")
+
+
+def _json_serialize_default(obj: Any) -> Any:
+    """Make JSONB columns accept Decimal / datetime values.
+
+    asyncpg's default JSON encoder rejects ``Decimal`` and ``datetime``/``date``
+    objects, which the scraper produces inside ``coupon_schedule`` and ``raw``.
+    Without this, every live upsert of a bond carrying accrual/coupon decimals
+    raises ``Object of type Decimal is not JSON serializable`` and the daily
+    ingestion pipeline silently writes nothing — leaving demo data stale.
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", "replace")
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -50,6 +72,9 @@ def get_engine() -> AsyncEngine:
             kwargs["max_overflow"] = db_settings.max_overflow
             kwargs["pool_timeout"] = db_settings.pool_timeout
             kwargs["pool_recycle"] = db_settings.pool_recycle
+            # asyncpg rejects Decimal/datetime inside JSONB columns by default;
+            # this lets the scraper persist coupon_schedule/raw with decimal values.
+            kwargs["json_serializer"] = lambda v: json.dumps(v, default=_json_serialize_default)
         if is_sqlite and is_memory:
             from sqlalchemy.pool import StaticPool
 

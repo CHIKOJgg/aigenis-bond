@@ -492,7 +492,7 @@
     "status": "active",
     "is_government": true,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 1.5478
+    "accrued_interest": 15.4781
   },
   {
     "internal_id": "demo-bond-aigenis-op35-gold",
@@ -506,7 +506,7 @@
     "coupon_frequency": 1,
     "maturity_date": "2030-03-27",
     "price": 135.46,
-    "yield_to_maturity": 0.0,
+    "yield_to_maturity": null,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2025-04-02",
@@ -532,7 +532,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0004
+    "accrued_interest": 0.0012
   },
   {
     "internal_id": "demo-bond-aigenis-op43-silver",
@@ -546,7 +546,7 @@
     "coupon_frequency": 1,
     "maturity_date": "2030-10-07",
     "price": 132.27,
-    "yield_to_maturity": 0.0,
+    "yield_to_maturity": null,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2025-10-08",
@@ -572,7 +572,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0008
+    "accrued_interest": 0.004
   },
   {
     "internal_id": "demo-bond-aigenis-op42-platinum",
@@ -586,7 +586,7 @@
     "coupon_frequency": 1,
     "maturity_date": "2030-10-07",
     "price": 109.66,
-    "yield_to_maturity": 0.0,
+    "yield_to_maturity": null,
     "amortization": "none",
     "offer_date": null,
     "start_date": "2025-10-08",
@@ -612,6 +612,6 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0008
+    "accrued_interest": 0.0013
   }
 ]

@@ -237,10 +237,11 @@ async def _sanitize_yield(
             stored_ytm_pct=float(v),
             coupon_rate_pct=_safe_float(coupon_rate),
             indexation_currency=idx,
+            currency=currency,
         )
-        == 0.0
+        is None
     ):
-        return Decimal("0")
+        return None
 
     price_pct = await _to_price_pct(price_raw, nominal, currency)
     cr = _safe_float(coupon_rate)
@@ -793,12 +794,18 @@ class AigenisClient:
             "issuer_logo": issuer_logo,
             "end_date": defn.get("maturity_date"),
             "maturity_date": defn.get("maturity_date"),
+            # Только последняя цена сделки (market_price): bid/ask (1150/1200 у
+            # Авангард Лизинг ОП-54) дают ложную доходность, когда сделок нет.
             "price": await _to_price_pct(
-                defn.get("price"), defn.get("nominal"), defn.get("currency") or currency
+                item.get("market_price") or defn.get("market_price") or defn.get("price"),
+                defn.get("nominal"),
+                defn.get("currency") or currency,
             ),
             "yield_to_maturity": await _sanitize_yield(
                 defn.get("instr_yield"),
-                price_raw=defn.get("price"),
+                price_raw=item.get("market_price")
+                or defn.get("market_price")
+                or defn.get("price"),
                 nominal=defn.get("nominal"),
                 currency=defn.get("currency") or currency,
                 coupon_rate=defn.get("coupon_rate"),
@@ -865,14 +872,17 @@ class AigenisClient:
             "coupon_rate": _sane_coupon_rate(defn.get("coupon_rate")),
             "coupon_frequency": defn.get("coupon_frequency"),
             "maturity_date": defn.get("maturity_date"),
+            # Только последняя цена сделки (market_price), см. listing.
             "price": await _to_price_pct(
-                defn.get("price"),
+                data.get("market_price") or defn.get("market_price") or defn.get("price"),
                 defn.get("nominal"),
                 defn.get("currency") or data.get("settl_currency"),
             ),
             "yield_to_maturity": await _sanitize_yield(
                 defn.get("instr_yield"),
-                price_raw=defn.get("price"),
+                price_raw=data.get("market_price")
+                or defn.get("market_price")
+                or defn.get("price"),
                 nominal=defn.get("nominal"),
                 currency=defn.get("currency") or data.get("settl_currency"),
                 coupon_rate=defn.get("coupon_rate"),

@@ -426,6 +426,7 @@ def score_bond(
     price: Decimal | float | int | None = None,
     nominal: Decimal | float | int | None = None,
     coupon_rate: Decimal | float | int | None = None,
+    indexation_currency: str | None = None,
     ref_date: date | None = None,
     market: str = "bcse",
     ytm_history: list[float] | None = None,
@@ -442,12 +443,24 @@ def score_bond(
     coupon_pct = float(coupon_rate) if coupon_rate is not None else None
     price_f = float(price) if price is not None else None
     nominal_f = float(nominal) if nominal is not None else None
-    from desk.ytm import to_price_pct, ytm_from_price
+    from desk.ytm import is_metal_bond, to_price_pct, ytm_from_price
 
     price_pct = to_price_pct(price_f, nominal_f) if price_f is not None else None
 
-    if (ytm_pct is None or ytm_pct <= 0) and (
-        price_f is not None or coupon_pct is not None or maturity_date is not None
+    # Металлические бумаги без реального купона (золото/серебро/платина в
+    # валюте номинала или индексации) не имеют доходности вовсе: ни хранимой,
+    # ни выведенной из цены/дефолтов по валюте (Case 2/4). Убираем любую YTM,
+    # чтобы нигде не рисовались фиктивные проценты (например, 12% у металлов).
+    metal_no_coupon = is_metal_bond(currency, indexation_currency) and (
+        coupon_pct is None or coupon_pct <= 0.01
+    )
+    if metal_no_coupon:
+        ytm_pct = None
+
+    if (
+        not metal_no_coupon
+        and (ytm_pct is None or ytm_pct <= 0)
+        and (price_f is not None or coupon_pct is not None or maturity_date is not None)
     ):
         try:
             ref = ref_date or date.today()

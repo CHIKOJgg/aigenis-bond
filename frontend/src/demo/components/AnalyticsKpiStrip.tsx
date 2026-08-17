@@ -26,7 +26,7 @@ export default function AnalyticsKpiStrip({ attractive, review, distressed, best
         color="#e03400"
       />
       <KpiCard
-        value={`${bestYield}%`}
+        value={`${bestYield.toFixed(2)}%`}
         label="макс. доходность (без дистрибуций)"
         color="#0B526B"
       />

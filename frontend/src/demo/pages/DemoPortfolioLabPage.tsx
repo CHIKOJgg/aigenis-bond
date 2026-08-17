@@ -25,8 +25,8 @@ import type {
   CustomCalculateResponse,
   CustomExcluded,
   CustomMetrics,
-  DemoBond,
 } from '../live-demo-api';
+import type { DemoBond } from '../types';
 import { formatBondDisplayName, formatYtm } from '../demo-format';
 import { bondDrawerStore } from '../drawer-store';
 import { DEMO_PERSONA } from '../demo-config';

@@ -70,18 +70,19 @@ def fix_ytm(asof: date) -> tuple[list[dict], list[str]]:
         stored = b.get("yield_to_maturity")
         stored_f = float(stored) if stored is not None else None
 
-        # Бескупонная индексируемая бумага (XAU/XAG/XPT): честная доходность
-        # 0% — нет купонного графика, который поддерживал бы положительный YTM.
+        # Бескупонная индексируемая бумага (XAU/XAG/XPT): доходности нет вовсе
+        # (None) — нет купонного графика, который поддерживал бы положительный YTM.
         honest = honest_yield(
             stored_ytm_pct=stored_f,
             coupon_rate_pct=float(b["coupon_rate"]) if b.get("coupon_rate") is not None else None,
             indexation_currency=b.get("indexation_currency"),
+            currency=b.get("currency"),
         )
-        if honest == 0.0 and stored_f != 0.0:
+        if honest is None and stored_f is not None:
             changes.append(
-                f"{b['internal_id']}: ytm {stored_f} -> 0.0 (бескупонная, индексируется к металлу)"
+                f"{b['internal_id']}: ytm {stored_f} -> None (бескупонная, индексируется к металлу)"
             )
-            b["yield_to_maturity"] = 0.0
+            b["yield_to_maturity"] = None
             continue
 
         price_pct = to_price_pct(b.get("price"), b.get("nominal"))
@@ -130,6 +131,7 @@ def _score_inputs(b: dict, ytm):
         "price": to_price_pct(b.get("price"), b.get("nominal")),
         "nominal": Decimal("100"),
         "coupon_rate": float(b["coupon_rate"]) if b.get("coupon_rate") is not None else None,
+        "indexation_currency": b.get("indexation_currency"),
         "market": str(b.get("market") or "bcse"),
     }
 

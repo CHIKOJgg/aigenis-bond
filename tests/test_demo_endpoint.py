@@ -20,6 +20,22 @@ def _enable_demo_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AIGENIS_ENV", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _clear_demo_snapshot_cache() -> None:
+    """Drop the in-process market/search snapshot cache between tests.
+
+    The cache lives for 300s, so a short test run would otherwise serve a
+    stale snapshot (seeded bonds missing) to every test after the first one.
+    """
+    import api.demo as demo_mod
+
+    demo_mod._market_cache.clear()
+    demo_mod._market_inflight.clear()
+    yield
+    demo_mod._market_cache.clear()
+    demo_mod._market_inflight.clear()
+
+
 async def _seed_bcse_bond(*, internal_id: str = "bcse-live-1", **overrides) -> None:
     from scraper.db import session_scope
     from scraper.orm import BondORM
@@ -109,6 +125,26 @@ def test_market_data_uses_source_ytm_when_present() -> None:
     bond = _find(resp.json()["bonds"], "bcse-source-ytm")
     assert bond["yield_to_maturity"] == 4.0002
     assert bond["computed_ytm"] is False
+    assert bond["score"] is not None
+
+
+def test_market_data_metal_bond_has_no_yield() -> None:
+    _run(
+        _seed_bcse_bond,
+        internal_id="bcse-metal-xau",
+        currency="XAU",
+        nominal=Decimal("1000"),
+        coupon_rate=Decimal("0.001"),
+        price=Decimal("1019"),
+        yield_to_maturity=Decimal("12.0"),
+    )
+    resp = client.get("/api/v1/demo/market-data?market=bcse&limit=50")
+    bond = _find(resp.json()["bonds"], "bcse-metal-xau")
+    # Металлическая бескупонная бумага: доходности нет вовсе — ни хранимой
+    # 12%, ни выведенной из цены 1019 (цена = последняя цена сделки).
+    assert bond["yield_to_maturity"] is None
+    assert bond["computed_ytm"] is False
+    assert bond["distressed"] is False
     assert bond["score"] is not None
 
 

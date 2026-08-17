@@ -99,7 +99,7 @@ docker compose up -d postgres redis parser api
 docker compose -f docker-compose.demo.yml up -d --build
 ```
 
-Открыть: `http://localhost:8080/demo`
+Открыть: `http://localhost/demo`
 
 В demo доступны:
 
@@ -164,7 +164,7 @@ tests/            Python test suite
 ## API namespaces
 
 - `/api/v1/*` — application analytics and portfolio API;
-- `/api/v1/demo/*` — protected read-only live demo API;
+- `/api/v1/demo/*` — public read-only live demo API;
 - `/api/aigenis/v1/*` — B2B integration contract for Aigenis;
 - `/api/v1/partner/*` — partner keys, usage, webhooks and partner analytics;
 - `/widget/*` — public widget endpoints.

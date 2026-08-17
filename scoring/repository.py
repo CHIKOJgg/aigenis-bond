@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from decimal import Decimal
 from typing import Any
 
@@ -18,6 +19,24 @@ from scoring.engine import score_bond
 from scoring.models import BondScore, ScoreBreakdown
 from scraper.db import upsert_row
 from scraper.orm import BondORM, BondScoreORM
+
+# Persisted yields above this are physically impossible (source/data errors) and
+# would also overflow the ``NUMERIC(14, 4)`` ``yield_to_maturity`` column. They are
+# treated as missing data instead of crashing the daily recompute.
+YTM_PERSIST_MAX_PCT = 1000.0
+
+
+def _sanitize_ytm(value: Any) -> "Decimal | None":
+    """Clamp a computed/stored yield to a storage- and sanity-safe value."""
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or f <= 0 or f > YTM_PERSIST_MAX_PCT:
+        return None
+    return Decimal(str(round(f, 4)))
 
 
 def _to_orm(score: BondScore) -> dict[str, Any]:
@@ -96,15 +115,20 @@ async def recompute_all(session: AsyncSession) -> int:
     """Пересчитать Score для всех облигаций в БД."""
     from datetime import date
 
-    from desk.ytm import sane_yield, to_price_pct, ytm_from_price
+    from desk.ytm import is_metal_bond, sane_yield, to_price_pct, ytm_from_price
 
     result = await session.execute(select(BondORM))
     bonds = list(result.scalars().all())
     scores: list[BondScore] = []
     for b in bonds:
         raw_ytm = b.yield_to_maturity
+        # Металлические бумаги без реального купона доходности не имеют
+        # вовсе — не решаем YTM из цены и не храним фиктивный источник.
+        metal_no_coupon = is_metal_bond(b.currency, b.indexation_currency) and (
+            b.coupon_rate is None or float(b.coupon_rate) <= 0.01
+        )
         ytm = None
-        if raw_ytm is not None and float(raw_ytm) > 0:
+        if not metal_no_coupon and raw_ytm is not None and float(raw_ytm) > 0:
             ytm_val = float(raw_ytm)
             price_pct = to_price_pct(b.price, b.nominal)
             computed = None
@@ -132,7 +156,8 @@ async def recompute_all(session: AsyncSession) -> int:
                 # Unvalidatable extreme yield — treat as missing data.
                 ytm = None
         if (
-            ytm is None
+            not metal_no_coupon
+            and ytm is None
             and raw_ytm is None
             and b.price is not None
             and b.coupon_rate is not None
@@ -154,8 +179,9 @@ async def recompute_all(session: AsyncSession) -> int:
                 pass
         # Persist the (corrected) yield so downstream portfolios and
         # recommendations never consume an unvalidated extreme value.
+        ytm = _sanitize_ytm(ytm)
         if ytm is not None:
-            b.yield_to_maturity = Decimal(str(ytm))
+            b.yield_to_maturity = ytm
         elif raw_ytm is not None:
             b.yield_to_maturity = None
         scores.append(
@@ -169,6 +195,7 @@ async def recompute_all(session: AsyncSession) -> int:
                 price=b.price,
                 nominal=b.nominal,
                 coupon_rate=b.coupon_rate,
+                indexation_currency=b.indexation_currency,
                 market=getattr(b, "market", "bcse"),
             )
         )

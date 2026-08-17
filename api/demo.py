@@ -10,8 +10,11 @@ Phase 1 (item 1.13) — deterministic ``POST /api/v1/demo/portfolio-impact``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import sys
+import time
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -21,7 +24,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 
-from desk.ytm import honest_yield, to_price_pct, ytm_from_price
+from desk.ytm import honest_yield, is_metal_bond, to_price_pct, ytm_from_price
 from scraper.db import session_scope
 from scraper.logging import get_logger
 from scraper.orm import BondHistoryORM, BondORM, BondScoreORM
@@ -57,6 +60,177 @@ _STRATEGY_RU = {
     "Maximum Reward/Risk": "Макс. доходность/риск",
     "Metals++": "Металлы++",
 }
+
+# ---------------------------------------------------------------------------
+# Read-only demo responses are expensive to build (per-bond duration / accrued
+# interest / scoring for the whole market). To stay robust under concurrent
+# browser loads (the SPA fires several market-data requests at once), we cache
+# the fully-built payload with a short TTL and coalesce concurrent identical
+# requests so only one of them does the heavy work while the others await the
+# shared result. The per-bond CPU work is offloaded to a thread pool so it
+# never blocks the event loop (which previously caused "upstream prematurely
+# closed connection" 502s under load).
+# ---------------------------------------------------------------------------
+_MARKET_CACHE_TTL = 300.0
+_market_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_market_inflight: dict[str, asyncio.Future[dict[str, Any]]] = {}
+
+
+@router.on_event("startup")
+async def _warm_demo_cache() -> None:
+    """Pre-populate the read-only demo responses at worker startup so the first
+    real user request never triggers a cold (and potentially overload-prone)
+    heavy build. Concurrent requests during warmup coalesce onto the same
+    in-flight future, so they wait instead of erroring with a 502."""
+    for market, currency, limit in (
+        ("bcse", None, 2000),
+        ("moex", None, 2000),
+        ("bcse", "BYN", 2000),
+        ("moex", "BYN", 2000),
+    ):
+        try:
+            asyncio.create_task(_get_market_snapshot(market, currency, limit))
+        except Exception:
+            logger.warning("demo_cache_warm_failed", market=market, currency=currency)
+
+
+async def _build_market_snapshot(
+    market: str, currency: str | None, limit: int
+) -> dict[str, Any]:
+    loop = asyncio.get_event_loop()
+    async with session_scope() as session:
+        stmt = (
+            select(BondORM, BondScoreORM)
+            .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
+            .where(func.lower(BondORM.market) == market.lower())
+            .where(BondORM.status == "active")
+            .order_by(BondORM.fetched_at.desc(), BondORM.name.asc())
+            .limit(limit)
+        )
+        if currency:
+            stmt = stmt.where(BondORM.currency == currency.upper())
+        rows = (await session.execute(stmt)).all()
+
+    bonds: list[dict[str, Any]] = []
+    for bond, score in rows:
+        try:
+            payload = await loop.run_in_executor(None, _fast_bond_payload, bond, score)
+            bonds.append(payload)
+        except Exception:
+            logger.warning(
+                "demo_bond_payload_failed",
+                internal_id=bond.internal_id,
+                error="payload build failed, skipped",
+            )
+    as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
+    return {
+        "source": "Aigenis official feed",
+        "market": market,
+        "currency": currency.upper() if currency else None,
+        "as_of": as_of,
+        "count": len(bonds),
+        "bonds": bonds,
+        "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
+    }
+
+
+async def _get_market_snapshot(
+    market: str, currency: str | None, limit: int
+) -> dict[str, Any]:
+    key = f"{market}|{str(currency)}|{limit}"
+    now = time.monotonic()
+    cached = _market_cache.get(key)
+    if cached is not None and (now - cached[0]) < _MARKET_CACHE_TTL:
+        return cached[1]
+    # Coalesce concurrent identical requests: only one computation runs, the
+    # rest await the shared future. This prevents N parallel heavy builds from
+    # overloading the worker under concurrent browser loads.
+    inflight = _market_inflight.get(key)
+    if inflight is not None and not inflight.done():
+        return await inflight
+    loop = asyncio.get_event_loop()
+    fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+    _market_inflight[key] = fut
+    try:
+        result = await _build_market_snapshot(market, currency, limit)
+        _market_cache[key] = (time.monotonic(), result)
+        fut.set_result(result)
+        return result
+    except Exception:
+        fut.set_exception(sys.exc_info()[1])
+        raise
+    finally:
+        _market_inflight.pop(key, None)
+
+
+async def _build_search_snapshot(
+    term: str, market: str | None, currency: str | None, limit: int
+) -> dict[str, Any]:
+    loop = asyncio.get_event_loop()
+    async with session_scope() as session:
+        stmt = (
+            select(BondORM, BondScoreORM)
+            .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
+            .where(BondORM.status == "active")
+            .where(
+                or_(
+                    BondORM.name.ilike(f"%{term}%"),
+                    BondORM.issuer.ilike(f"%{term}%"),
+                    BondORM.isin.ilike(f"%{term}%"),
+                    BondORM.internal_id.ilike(f"%{term}%"),
+                )
+            )
+        )
+        if market:
+            stmt = stmt.where(func.lower(BondORM.market) == market.lower())
+        if currency:
+            stmt = stmt.where(BondORM.currency == currency.upper())
+        rows = (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).all()
+
+    bonds: list[dict[str, Any]] = []
+    for bond, score in rows:
+        try:
+            payload = await loop.run_in_executor(None, _fast_bond_payload, bond, score)
+            bonds.append(payload)
+        except Exception:
+            logger.warning(
+                "demo_search_payload_failed",
+                internal_id=bond.internal_id,
+                error="payload build failed, skipped",
+            )
+    return {
+        "query": term,
+        "market": market,
+        "count": len(bonds),
+        "bonds": bonds,
+        "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
+    }
+
+
+async def _get_search_snapshot(
+    term: str, market: str | None, currency: str | None, limit: int
+) -> dict[str, Any]:
+    key = f"{term}|{str(market)}|{str(currency)}|{limit}"
+    now = time.monotonic()
+    cached = _market_cache.get(key)
+    if cached is not None and (now - cached[0]) < _MARKET_CACHE_TTL:
+        return cached[1]
+    inflight = _market_inflight.get(key)
+    if inflight is not None and not inflight.done():
+        return await inflight
+    loop = asyncio.get_event_loop()
+    fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+    _market_inflight[key] = fut
+    try:
+        result = await _build_search_snapshot(term, market, currency, limit)
+        _market_cache[key] = (time.monotonic(), result)
+        fut.set_result(result)
+        return result
+    except Exception:
+        fut.set_exception(sys.exc_info()[1])
+        raise
+    finally:
+        _market_inflight.pop(key, None)
 
 
 def _strategy_notes(strategy: str, allocations: list[dict[str, Any]]) -> list[str]:
@@ -189,11 +363,16 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         stored_ytm_pct=stored_ytm,
         coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
         indexation_currency=bond.indexation_currency,
+        currency=bond.currency,
     )
     computed_ytm = False
     price_pct = to_price_pct(bond.price, bond.nominal)
+    metal_no_coupon = is_metal_bond(bond.currency, bond.indexation_currency) and (
+        bond.coupon_rate is None or float(bond.coupon_rate) <= 0.01
+    )
     if (
         ytm is None
+        and not metal_no_coupon
         and price_pct is not None
         and bond.coupon_rate is not None
         and bond.maturity_date is not None
@@ -259,9 +438,9 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         try:
             from scoring.engine import score_bond
 
-            # Бескупонная индексируемая бумага: честная доходность 0% — движок
-            # трактует ytm <= 0 как «нет данных» и подставил бы дефолт 14%
-            # (Case 4), поэтому передаём None и даём Case 3 (par yield ~0%).
+            # Бескупонная металлическая бумага: доходности нет вовсе — движок
+            # получит None и сам не подставит ни решение из цены, ни дефолт
+            # по валюте (см. metal guard в score_bond).
             bs = score_bond(
                 internal_id=bond.internal_id,
                 yield_to_maturity=None if ytm == 0.0 else ytm,
@@ -272,6 +451,7 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
                 price=price_pct,
                 nominal=Decimal("100"),
                 coupon_rate=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+                indexation_currency=bond.indexation_currency,
                 market=str(bond.market or "bcse"),
             )
         except Exception:
@@ -356,11 +536,16 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         stored_ytm_pct=stored_ytm,
         coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
         indexation_currency=bond.indexation_currency,
+        currency=bond.currency,
     )
     price_pct = to_price_pct(bond.price, bond.nominal)
     computed_ytm = False
+    metal_no_coupon = is_metal_bond(bond.currency, bond.indexation_currency) and (
+        bond.coupon_rate is None or float(bond.coupon_rate) <= 0.01
+    )
     if (
         ytm is None
+        and not metal_no_coupon
         and price_pct is not None
         and bond.coupon_rate is not None
         and bond.maturity_date is not None
@@ -618,41 +803,11 @@ async def live_market_data(
     """Read-only, sanitized market snapshot for the protected demo UI.
 
     Uses pre-computed scores from bond_scores table for fast response.
-    Returns all active bonds by default (up to 2000).
+    Returns all active bonds by default (up to 2000). The fully-built payload is
+    cached and concurrent identical requests are coalesced so the heavy per-bond
+    work runs only once.
     """
-    async with session_scope() as session:
-        stmt = (
-            select(BondORM, BondScoreORM)
-            .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
-            .where(func.lower(BondORM.market) == market.lower())
-            .where(BondORM.status == "active")
-            .order_by(BondORM.fetched_at.desc(), BondORM.name.asc())
-            .limit(limit)
-        )
-        if currency:
-            stmt = stmt.where(BondORM.currency == currency.upper())
-        rows = (await session.execute(stmt)).all()
-
-    bonds = []
-    for bond, score in rows:
-        try:
-            bonds.append(_fast_bond_payload(bond, score))
-        except Exception:
-            logger.warning(
-                "demo_bond_payload_failed",
-                internal_id=bond.internal_id,
-                error="payload build failed, skipped",
-            )
-    as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
-    return {
-        "source": "Aigenis official feed",
-        "market": market,
-        "currency": currency.upper() if currency else None,
-        "as_of": as_of,
-        "count": len(bonds),
-        "bonds": bonds,
-        "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
-    }
+    return await _get_market_snapshot(market, currency, limit)
 
 
 @router.get("/search")
@@ -666,6 +821,7 @@ async def demo_search(
 
     Returns the same sanitized payload shape as ``/market-data`` so the drawer
     can be opened straight from search results. Read-only, no live calls.
+    The built payload is cached and concurrent identical searches coalesced.
     """
     term = q.strip()
     if not term:
@@ -676,43 +832,7 @@ async def demo_search(
             "bonds": [],
             "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
         }
-    async with session_scope() as session:
-        stmt = (
-            select(BondORM, BondScoreORM)
-            .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
-            .where(BondORM.status == "active")
-            .where(
-                or_(
-                    BondORM.name.ilike(f"%{term}%"),
-                    BondORM.issuer.ilike(f"%{term}%"),
-                    BondORM.isin.ilike(f"%{term}%"),
-                    BondORM.internal_id.ilike(f"%{term}%"),
-                )
-            )
-        )
-        if market:
-            stmt = stmt.where(func.lower(BondORM.market) == market.lower())
-        if currency:
-            stmt = stmt.where(BondORM.currency == currency.upper())
-        rows = (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).all()
-
-    bonds = []
-    for bond, score in rows:
-        try:
-            bonds.append(_fast_bond_payload(bond, score))
-        except Exception:
-            logger.warning(
-                "demo_search_payload_failed",
-                internal_id=bond.internal_id,
-                error="payload build failed, skipped",
-            )
-    return {
-        "query": term,
-        "market": market,
-        "count": len(bonds),
-        "bonds": bonds,
-        "disclaimer": "Реальные данные лицензированного источника. Только для защищённого демо; не торговая рекомендация.",
-    }
+    return await _get_search_snapshot(term, market, currency, limit)
 
 
 @router.get("/bond/{internal_id}")
@@ -840,6 +960,7 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
         if bond.get("coupon_rate") is not None
         else None,
         indexation_currency=bond.get("indexation_currency"),
+        currency=bond.get("currency"),
     )
     if bond_yield is None:
         bond_yield = 0.0
@@ -1527,6 +1648,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                 stored_ytm_pct=float(b.yield_to_maturity) if b.yield_to_maturity else None,
                 coupon_rate_pct=float(b.coupon_rate) if b.coupon_rate is not None else None,
                 indexation_currency=b.indexation_currency,
+                currency=b.currency,
             )
             if ytm_val is None:
                 ytm_val = 0.0
@@ -1652,6 +1774,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                         if bond.coupon_rate is not None
                         else None,
                         indexation_currency=bond.indexation_currency,
+                        currency=bond.currency,
                     ),
                 }
             )

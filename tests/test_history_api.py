@@ -55,12 +55,12 @@ def test_api_history_normalizes_and_paginates():
     first = rows[0]
     assert first["date"] == "2025-01-01"
     assert first["price"] == 101
-    assert abs(first["yield"] - 5.1) < 1e-6
+    assert abs(float(first["yield"]) - 5.1) < 1e-6
     # Last page row uses alternative field names.
     last = rows[-1]
     assert last["price"] == 99.5
-    assert last["yield"] == 6.2
-    assert last["coupon"] == 5.0
+    assert float(last["yield"]) == 6.2
+    assert float(last["coupon"]) == 5.0
 
 
 def test_api_history_missing_listing_raises_notfound():

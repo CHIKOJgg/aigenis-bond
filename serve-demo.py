@@ -3,11 +3,13 @@ import os
 import socketserver
 from urllib.parse import unquote
 
-# Папка со сборкой демо-SPA. По умолчанию — каталог .demo-dist в корне
-# репозитория; можно переопределить переменной окружения DEMO_DIST_DIR.
+# Папка со сборкой демо-SPA. По умолчанию — frontend/dist (результат
+# `npm run build` из каталога frontend); можно переопределить переменной
+# окружения DEMO_DIST_DIR. ВНИМАНИЕ: .demo-dist в корне репозитория содержит
+# виджет/embed-артефакты, а не демо-SPA — его не нужно отдавать этим сервером.
 DIR = os.environ.get(
     "DEMO_DIST_DIR",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), ".demo-dist")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "frontend", "dist")),
 )
 PORT = int(os.environ.get("DEMO_PORT", "5176"))
 

@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
-from desk.ytm import honest_yield
+from desk.ytm import honest_yield, is_metal_bond
 from scoring.eligibility import filter_eligible
 from scoring.engine import score_bond
 from scoring.models import (
@@ -34,12 +34,12 @@ def _bond_to_score(bond: Bond) -> BondScore:
         stored_ytm_pct=raw_ytm,
         coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
         indexation_currency=getattr(bond, "indexation_currency", None),
+        currency=str(bond.currency) if bond.currency else None,
     )
-    # Для бескупонных индексируемых бумаг честная доходность 0%: движок
-    # скоринга трактует ytm <= 0 как «нет данных» и подставляет дефолтную
-    # доходность по валюте (Case 4), что снова вернуло бы фиктивные 12-14%.
-    # None + купон 0.001 -> Case 3 (par yield) даёт честные ~0%.
-    ytm_input = None if honest == 0.0 else honest
+    # Для бескупонных металлических бумаг честной доходности нет (None):
+    # движок скоринга не должен подставлять дефолтную доходность по валюте
+    # (Case 4), которая снова вернула бы фиктивные 12-14%.
+    ytm_input = honest
     return score_bond(
         internal_id=bond.internal_id,
         yield_to_maturity=ytm_input,
@@ -50,6 +50,7 @@ def _bond_to_score(bond: Bond) -> BondScore:
         price=bond.price,
         nominal=bond.nominal,
         coupon_rate=bond.coupon_rate,
+        indexation_currency=getattr(bond, "indexation_currency", None),
     )
 
 
@@ -302,10 +303,23 @@ def _weighted_stats(
             stored_ytm_pct=raw_ytm,
             coupon_rate_pct=float(bond.coupon_rate) if bond and bond.coupon_rate is not None else None,
             indexation_currency=getattr(bond, "indexation_currency", None) if bond else None,
+            currency=str(bond.currency) if bond else None,
         )
         w = max(weights.get(s.internal_id, 0.0), 0.0)
+        metal = bool(bond) and is_metal_bond(
+            str(bond.currency) if bond.currency else None,
+            getattr(bond, "indexation_currency", None) if bond else None,
+        )
         if ytm is not None and ytm >= 0:
             ytm_weights.append((ytm, w))
+            dur = _bond_duration_years(bond)
+            proxy_vols.append(dur * 1.5 + s.breakdown.risk_subtotal * 0.2)
+            wsum += w
+        elif metal:
+            # Бескупонная металлическая бумага: честная доходность 0% — не
+            # фолбэчим на компоненты скоринга, которые вернули бы фиктивные
+            # проценты, а учитываем её как актив без гарантированного дохода.
+            ytm_weights.append((0.0, w))
             dur = _bond_duration_years(bond)
             proxy_vols.append(dur * 1.5 + s.breakdown.risk_subtotal * 0.2)
             wsum += w

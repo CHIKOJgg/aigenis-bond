@@ -29,7 +29,7 @@ export default function DemoApp() {
         <Route path="optimizer" element={<Page><DemoOptimizerPage /></Page>} />
         <Route path="search" element={<Page><DemoSearchPage /></Page>} />
         <Route path="portfolio-lab" element={<Page><DemoPortfolioLabPage /></Page>} />
-        <Route path="portfolio-impact/:internalId" element={<Page><DemoPortfolioImpactPage /></Page>} />
+        <Route path="portfolio-impact/:internalId?" element={<Page><DemoPortfolioImpactPage /></Page>} />
       </Route>
     </Routes>
   );

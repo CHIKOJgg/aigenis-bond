@@ -595,21 +595,23 @@ export function runPortfolioOptimizer(
       });
 
       if (metalAssets.length > 0) {
-        metalAssets.forEach((b) => {
+        // NOTE: never mutate the shared singleton bond objects returned by
+        // getBonds() — that corrupts scoring/ranking elsewhere. Rank the metals
+        // by a *copy* carrying the assigned metal score instead.
+        all = metalAssets.map((b) => {
           const name = (b.name || '').toLowerCase();
           const id = (b.internal_id || '').toLowerCase();
           const idx = (b.indexation_currency || '').toUpperCase();
+          let metalScore = 10;
           if (idx === 'XAU' || name.includes('золот') || name.includes('gold') || id.includes('op35')) {
-            b.score = 58;
+            metalScore = 58;
           } else if (idx === 'XAG' || name.includes('серебр') || name.includes('silver') || id.includes('op43')) {
-            b.score = 27;
+            metalScore = 27;
           } else if (idx === 'XPT' || name.includes('платин') || name.includes('platinum') || id.includes('op42')) {
-            b.score = 15;
-          } else {
-            b.score = 10;
+            metalScore = 15;
           }
+          return { ...b, score: metalScore };
         });
-        all = metalAssets;
       } else {
         all = all.filter((b) => b.currency.toUpperCase() === currency.toUpperCase());
       }

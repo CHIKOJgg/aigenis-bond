@@ -1308,6 +1308,109 @@ class TestNormalizeListingItem:
         result = await client._normalize_listing_item(item, "USD")
         assert result["maturity_term_text"] is None
 
+    @pytest.mark.asyncio
+    async def test_price_uses_last_deal_market_price(self, make_client, monkeypatch):
+        captured = {}
+
+        async def fake_to_price_pct(value, nominal, currency):
+            captured["value"] = value
+            return 101.9
+
+        monkeypatch.setattr(client_mod, "_to_price_pct", fake_to_price_pct)
+        client = make_client()
+        item = {
+            "settl_currency": "RUB",
+            "symbol": "BY/AV",
+            "best_bid": "1150",
+            "best_offer": "1200",
+            "market_price": "1019",
+            "definition": {
+                "state_security_id": "AV",
+                "currency": "rub",
+                "nominal": 1000,
+                "price": "1150",
+            },
+        }
+        result = await client._normalize_listing_item(item, "RUB")
+        assert captured["value"] == "1019"
+        assert result["price"] == 101.9
+
+    @pytest.mark.asyncio
+    async def test_price_falls_back_to_definition_price(self, make_client, monkeypatch):
+        captured = {}
+
+        async def fake_to_price_pct(value, nominal, currency):
+            captured["value"] = value
+            return 100.0
+
+        monkeypatch.setattr(client_mod, "_to_price_pct", fake_to_price_pct)
+        client = make_client()
+        item = {
+            "settl_currency": "RUB",
+            "symbol": "BY/AV",
+            "definition": {"state_security_id": "AV", "currency": "rub", "nominal": 1000, "price": "1150"},
+        }
+        await client._normalize_listing_item(item, "RUB")
+        assert captured["value"] == "1150"
+
+    @pytest.mark.asyncio
+    async def test_metal_currency_bond_has_no_yield(self, make_client, monkeypatch):
+        monkeypatch.setattr(client_mod, "_to_price_pct", AsyncMock(return_value=100.0))
+        client = make_client()
+        item = {
+            "settl_currency": "XAU",
+            "symbol": "BY/OP35",
+            "definition": {
+                "state_security_id": "OP35",
+                "currency": "xau",
+                "nominal": 1000,
+                "price": "1000",
+                "instr_yield": "12.0",
+                "coupon_rate": "0.001",
+            },
+        }
+        result = await client._normalize_listing_item(item, "XAU")
+        assert result["yield_to_maturity"] is None
+
+    @pytest.mark.asyncio
+    async def test_metal_indexation_bond_has_no_yield(self, make_client, monkeypatch):
+        monkeypatch.setattr(client_mod, "_to_price_pct", AsyncMock(return_value=100.0))
+        client = make_client()
+        item = {
+            "settl_currency": "BYN",
+            "symbol": "BY/OP43",
+            "definition": {
+                "state_security_id": "OP43",
+                "currency": "byn",
+                "nominal": 1000,
+                "price": "1000",
+                "instr_yield": "12.0",
+                "coupon_rate": "0.001",
+                "indexation_currency": "XAG",
+            },
+        }
+        result = await client._normalize_listing_item(item, "BYN")
+        assert result["yield_to_maturity"] is None
+
+    @pytest.mark.asyncio
+    async def test_metal_bond_with_real_coupon_keeps_yield(self, make_client, monkeypatch):
+        monkeypatch.setattr(client_mod, "_to_price_pct", AsyncMock(return_value=100.0))
+        client = make_client()
+        item = {
+            "settl_currency": "XAU",
+            "symbol": "BY/OP35",
+            "definition": {
+                "state_security_id": "OP35",
+                "currency": "xau",
+                "nominal": 1000,
+                "price": "1000",
+                "instr_yield": "12.0",
+                "coupon_rate": "3.0",
+            },
+        }
+        result = await client._normalize_listing_item(item, "XAU")
+        assert result["yield_to_maturity"] == Decimal("12.0")
+
 
 class TestFetchDetail:
     @pytest.mark.asyncio
@@ -1426,6 +1529,30 @@ class TestApiFetchDetail:
         monkeypatch.setattr(client, "_api_request", AsyncMock(return_value=payload))
         result = await client._api_fetch_detail("Q")
         assert result["internal_id"] == "QQ"
+
+    @pytest.mark.asyncio
+    async def test_detail_price_prefers_market_price(self, make_client, monkeypatch):
+        captured = {}
+
+        async def fake_to_price_pct(value, nominal, currency):
+            captured["value"] = value
+            return 100.1
+
+        monkeypatch.setattr(client_mod, "_to_price_pct", fake_to_price_pct)
+        client = make_client()
+        client._id_by_internal["X"] = 7
+        payload = {
+            "symbol": "BY/X",
+            "settl_currency": "usd",
+            "market_price": "100.1",
+            "best_bid": "99.9",
+            "best_offer": "100.2",
+            "definition": {"state_security_id": "X", "currency": "USD", "nominal": 1000, "price": "999"},
+        }
+        monkeypatch.setattr(client, "_api_request", AsyncMock(return_value=payload))
+        result = await client._api_fetch_detail("X")
+        assert captured["value"] == "100.1"
+        assert result["price"] == 100.1
 
 
 class TestFetchHistory:

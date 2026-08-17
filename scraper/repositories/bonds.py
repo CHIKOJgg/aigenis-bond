@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +11,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from scraper.db import upsert_row
 from scraper.models import Bond
 from scraper.orm import BondORM
+
+
+def _safe_numeric(value: Any, max_abs: float) -> Any:
+    """Return ``value`` if it fits the NUMERIC column, else ``None``.
+
+    Source feeds occasionally emit impossible magnitudes (e.g. a coupon/price in
+    the wrong unit, or a parser artifact). Writing them would overflow the
+    ``NUMERIC(p, s)`` columns and abort the whole ingestion batch, so we drop
+    the single bad field to ``NULL`` rather than failing the run.
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or abs(f) >= max_abs:
+        return None
+    return value
 
 # Маппинг internal_id → читаемое имя облигации.
 # Заполняется из XLSX-данных при enrich_from_xlsx(), плюс хардкоженные
@@ -80,18 +101,18 @@ def _bond_to_orm(bond: Bond) -> dict:
         "issuer": bond.issuer,
         "issuer_logo": bond.issuer_logo,
         "currency": bond.currency,
-        "nominal": bond.nominal,
-        "coupon_rate": bond.coupon_rate,
+        "nominal": _safe_numeric(bond.nominal, 1e13),
+        "coupon_rate": _safe_numeric(bond.coupon_rate, 1e9),
         "coupon_frequency": bond.coupon_frequency,
         "maturity_date": bond.maturity_date,
-        "price": bond.price,
-        "yield_to_maturity": bond.yield_to_maturity,
+        "price": _safe_numeric(bond.price, 1e13),
+        "yield_to_maturity": _safe_numeric(bond.yield_to_maturity, 1e9),
         "amortization": bond.amortization,
         "offer_date": bond.offer_date,
         "start_date": bond.start_date,
         "end_date": bond.end_date,
         "registration_number": bond.registration_number,
-        "issue_volume": bond.issue_volume,
+        "issue_volume": _safe_numeric(bond.issue_volume, 1e13),
         "issue_number": bond.issue_number,
         "income_method": bond.income_method,
         "in_stock": bond.in_stock,
@@ -100,7 +121,7 @@ def _bond_to_orm(bond: Bond) -> dict:
         "coupon_description": bond.coupon_description,
         "coupon_schedule": bond.coupon_schedule,
         "indexation_currency": bond.indexation_currency,
-        "exchange_rate_on_start": bond.exchange_rate_on_start,
+        "exchange_rate_on_start": _safe_numeric(bond.exchange_rate_on_start, 1e13),
         "term_days": bond.term_days,
         "quantity": bond.quantity,
         "status": bond.status,

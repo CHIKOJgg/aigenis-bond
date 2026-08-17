@@ -77,10 +77,10 @@ export default function DemoAnalyticsPage() {
   }, [params.internalId]);
 
   const fixtureSummary = getMarketSummary();
-  const summary = live ? {
+  const summary = useMemo(() => live ? {
     ...fixtureSummary,
     global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
-  } : fixtureSummary;
+  } : fixtureSummary, [live, fixtureSummary]);
   const bonds = live?.bonds ?? (market === 'ALL' ? getAllBonds() : getBonds(market.toUpperCase()));
 
   const scoreLookup = useMemo(() => {

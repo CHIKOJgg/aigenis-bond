@@ -28,7 +28,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from api.aigenis.audit import (
     EVENT_ALERT_CREATED,
@@ -47,6 +47,11 @@ from scraper.db import session_scope
 from scraper.instrument_map import resolve_aigenis_id_db
 from scraper.logging import get_logger
 from scraper.orm import BondORM
+from scraper.orm.bonds import BondScoreORM
+from scraper.orm.users import AlertORM
+from scoring.engine import score_bond
+from scoring.explain import explain_score
+from scoring.models import BondScore, ScoreBreakdown
 
 logger = get_logger("api.aigenis")
 
@@ -60,6 +65,132 @@ _BASE_PORTFOLIO = {"expected_yield_pct": 9.5, "duration_years": 2.4}
 _DEFAULT_BOND_DURATION = 3.0
 
 _SCORE_VERSION = "v1"
+
+# Tier (S/A/B/C/D) -> contract status vocabulary, kept identical to the demo
+# surface (api/demo.py _TIER_STATUS) so the B2B feed and the demo never disagree.
+_TIER_STATUS = {
+    "S": "attractive",
+    "A": "attractive",
+    "B": "neutral",
+    "C": "review",
+    "D": "high_risk",
+}
+
+_TERM_BUCKETS = {"up_to_1": (0.0, 1.0), "1_3": (1.0, 3.0), "3_5": (3.0, 5.0), "5_plus": (5.0, 1e9)}
+
+
+def _score_dto(bond: BondORM, score_orm: BondScoreORM | None) -> BondScoreDTO | None:
+    """Real Reward/Risk Score, sourced from the precomputed ``bond_scores`` table.
+
+    Falls back to the engine itself only when a precomputed row is missing, so
+    the B2B contract always returns the same score the demo computes (never the
+    obsolete ``YTM * 10`` heuristic).
+    """
+    if score_orm is not None and score_orm.score is not None:
+        tier = score_orm.tier or "D"
+        return BondScoreDTO(
+            value=round(float(score_orm.score), 2),
+            status=_TIER_STATUS.get(tier, "review"),
+            version=_SCORE_VERSION,
+        )
+    if bond.yield_to_maturity is None:
+        return None
+    try:
+        bs = score_bond(
+            internal_id=bond.internal_id,
+            yield_to_maturity=bond.yield_to_maturity,
+            currency=bond.currency,
+            maturity_date=bond.maturity_date,
+            status=bond.status or "unknown",
+            issuer=bond.issuer,
+            price=bond.price,
+            nominal=bond.nominal,
+            coupon_rate=bond.coupon_rate,
+            indexation_currency=bond.indexation_currency,
+            market=(bond.market or "bcse"),
+        )
+        return BondScoreDTO(
+            value=round(float(bs.score), 2),
+            status=_TIER_STATUS.get(bs.tier, "review"),
+            version=_SCORE_VERSION,
+        )
+    except Exception:
+        logger.warning("aigenis_score_compute_failed", internal_id=bond.internal_id)
+        return None
+
+
+def _real_as_of(bonds: list[BondORM]) -> datetime | None:
+    """Honest data-freshness stamp: newest ``fetched_at`` among the rows served."""
+    stamps = [b.fetched_at for b in bonds if getattr(b, "fetched_at", None) is not None]
+    return max(stamps) if stamps else None
+
+
+def _quality_from_asof(as_of: datetime | None) -> str:
+    """Real data-quality signal based on actual data age (not a constant 'ok')."""
+    if as_of is None:
+        return "warning"
+    now = datetime.now(UTC)
+    if as_of.tzinfo is None:
+        # SQLite round-trips DateTime(timezone=True) without an offset.
+        as_of = as_of.replace(tzinfo=UTC)
+    age_h = (now - as_of).total_seconds() / 3600.0
+    if age_h > 72:
+        return "critical"
+    if age_h > 36:
+        return "warning"
+    return "ok"
+
+
+def _term_years(maturity_date: date | None) -> float | None:
+    if maturity_date is None:
+        return None
+    return max((maturity_date - date.today()).days / 365.25, 0.0)
+
+
+def _term_bucket(maturity_date: date | None) -> str | None:
+    y = _term_years(maturity_date)
+    if y is None:
+        return None
+    if y < 1:
+        return "up_to_1"
+    if y < 3:
+        return "1_3"
+    if y < 5:
+        return "3_5"
+    return "5_plus"
+
+
+def _explain_factors(
+    bond: BondORM, score_orm: BondScoreORM | None, score_dto: BondScoreDTO | None
+) -> list[ExplanationFactorDTO]:
+    """Engine-derived, human-readable explainability (replaces the placeholder text)."""
+    if score_orm is None or score_dto is None or not score_orm.breakdown:
+        return []
+    try:
+        bs = BondScore(
+            internal_id=bond.internal_id,
+            score=score_dto.value,
+            breakdown=ScoreBreakdown(**score_orm.breakdown),
+            computed_at=score_orm.computed_at,
+        )
+        explained = explain_score(
+            bs,
+            currency=bond.currency,
+            ytm_pct=float(bond.yield_to_maturity) if bond.yield_to_maturity is not None else None,
+            coupon_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+        )
+        return [
+            ExplanationFactorDTO(
+                label=f.label,
+                direction=f.impact,
+                plain_text=f.detail,
+                importance="high" if abs(f.points) >= 10 else "medium",
+            )
+            for f in explained.factors
+        ]
+    except Exception:
+        logger.warning("aigenis_explain_failed", internal_id=bond.internal_id)
+        return []
 
 
 # ──────────────────────────────────────────────
@@ -185,16 +316,25 @@ async def _load_bond(instrument_id: str) -> tuple[BondORM, str]:
     """Разрешить Aigenis instrument_id через instrument_map и вернуть BondORM.
 
     Возвращает (bond, aigenis_instrument_id). Неизвестный инструмент -> 404.
+
+    The list endpoint returns ``instrument_id == internal_id``, so when the
+    instrument map has no entry we fall back to a direct primary-key lookup.
+    This keeps ``GET /bonds`` and ``GET /bonds/{id}`` consistent (no 404s for
+    instruments the list just returned).
     """
     async with session_scope() as session:
         mapping = await resolve_aigenis_id_db(session, instrument_id)
-        if mapping is None:
-            _not_covered(instrument_id)
-        if not mapping.analytics_internal_id:
-            _not_covered(instrument_id)
+        if mapping is not None and mapping.analytics_internal_id:
+            bond = (
+                await session.execute(
+                    select(BondORM).where(BondORM.internal_id == mapping.analytics_internal_id)
+                )
+            ).scalar_one_or_none()
+            if bond is not None:
+                return bond, instrument_id
         bond = (
             await session.execute(
-                select(BondORM).where(BondORM.internal_id == mapping.analytics_internal_id)
+                select(BondORM).where(BondORM.internal_id == instrument_id)
             )
         ).scalar_one_or_none()
     if bond is None:
@@ -202,14 +342,7 @@ async def _load_bond(instrument_id: str) -> tuple[BondORM, str]:
     return bond, instrument_id
 
 
-def _score_for(bond: BondORM) -> BondScoreDTO | None:
-    """Score облигации (базовая версия; полная логика в scoring/engine.py)."""
-    if bond.yield_to_maturity is None:
-        return None
-    ytm = float(bond.yield_to_maturity)
-    value = round(min(max(ytm * 10.0, 0.0), 100.0), 2)
-    status = "attractive" if value >= 60 else "neutral" if value >= 40 else "review"
-    return BondScoreDTO(value=value, status=status, version=_SCORE_VERSION)
+
 
 
 def _bond_duration_years(bond: Any) -> float | None:
@@ -257,33 +390,6 @@ def _to_item(bond: BondORM, score: BondScoreDTO | None) -> BondItemDTO:
     )
 
 
-def _explain_bond(bond: BondORM, score: BondScoreDTO | None) -> list[ExplanationFactorDTO]:
-    """Explainability: человекочитаемые факторы без внутренних формул (FP §10.3)."""
-    if score is None:
-        return []
-    factors: list[ExplanationFactorDTO] = []
-    if bond.yield_to_maturity is not None:
-        direction = "positive" if score.status == "attractive" else "neutral"
-        factors.append(
-            ExplanationFactorDTO(
-                label="Доходность",
-                direction=direction,
-                plain_text=f"Эффективная доходность {float(bond.yield_to_maturity):.2f}% "
-                "на дату последнего обновления.",
-                importance="high",
-            )
-        )
-    factors.append(
-        ExplanationFactorDTO(
-            label="Риск и ликвидность",
-            direction="neutral",
-            plain_text="Оценка обновляется по мере поступления рыночных данных.",
-            importance="medium",
-        )
-    )
-    return factors
-
-
 # ──────────────────────────────────────────────
 # Endpoints
 # ──────────────────────────────────────────────
@@ -316,30 +422,70 @@ async def list_bonds(
     - limit: размер страницы (макс. 100)
     """
     audit_event("analytics_opened", user_id=_auth.sub, market=market, extra={"term": term})
-    del term, status, currency  # параметры контракта; фильтрация в W2 пилота
 
+    if term is not None and term not in _TERM_BUCKETS:
+        term = None
+    if status is not None and status not in _TIER_STATUS.values():
+        status = None
     limit = max(1, min(limit, 100))
-    async with session_scope() as session:
-        stmt = select(BondORM).order_by(BondORM.internal_id).limit(limit + 1)
-        if market and market.upper() in ("BCSE", "MOEX"):
-            stmt = stmt.where(BondORM.market == market.lower())
-        if cursor:
-            stmt = stmt.where(BondORM.internal_id > cursor)
-        bonds = list((await session.execute(stmt)).scalars().all())
 
-    has_next = len(bonds) > limit
-    page = bonds[:limit]
-    as_of = datetime.now(UTC)
-    items = [_to_item(b, _score_for(b)) for b in page]
-    quality = "ok" if items else "warning"
+    async with session_scope() as session:
+        collected: list[tuple[BondORM, BondScoreORM | None]] = []
+        batch_cursor = cursor
+        exhausted = True
+        has_more = False
+        for _ in range(20):  # safety bound on pagination batches
+            # Select BondORM only; the joined Score ORM entity cannot be cleanly
+            # unpacked from a flattened result row, so scores are fetched per
+            # batch below.
+            stmt = (
+                select(BondORM)
+                .where(func.lower(BondORM.market) == market.lower())
+                .order_by(BondORM.internal_id)
+                .limit(200)
+            )
+            if currency:
+                stmt = stmt.where(BondORM.currency == currency.upper())
+            if batch_cursor:
+                stmt = stmt.where(BondORM.internal_id > batch_cursor)
+            bonds = list((await session.execute(stmt)).scalars().all())
+            if not bonds:
+                break
+            ids = [b.internal_id for b in bonds]
+            sres = await session.execute(
+                select(BondScoreORM).where(BondScoreORM.internal_id.in_(ids))
+            )
+            smap = {so.internal_id: so for so in sres.scalars().all()}
+            for bond in bonds:
+                so = smap.get(bond.internal_id)
+                sd = _score_dto(bond, so)
+                if status and (sd is None or sd.status != status):
+                    continue
+                if term and _term_bucket(bond.maturity_date) != term:
+                    continue
+                collected.append((bond, so))
+                if len(collected) >= limit:
+                    has_more = True
+                    break
+            batch_cursor = bonds[-1].internal_id
+            if len(bonds) < 200:
+                exhausted = True
+                break
+            exhausted = False
+
+    page = collected[:limit]
+    has_next = has_more or not exhausted
+    as_of = _real_as_of([b for b, _ in page])
+    quality = _quality_from_asof(as_of)
+    items = [_to_item(b, _score_dto(b, so)) for b, so in page]
     response.headers.update(
         {**response_headers(as_of, quality), "X-Request-Id": make_request_id(request)}
     )
     return BondListResponse(
-        as_of=as_of.isoformat(),
+        as_of=as_of.isoformat() if as_of else datetime.now(UTC).isoformat(),
         data_status=quality,
         items=items,
-        next_cursor=page[-1].internal_id if has_next else None,
+        next_cursor=page[-1][0].internal_id if has_next else None,
     )
 
 
@@ -358,14 +504,24 @@ async def get_bond_detail(
     """Детальный анализ облигации с объяснением Score (plan item 9.11)."""
     audit_event(EVENT_BOND_DETAIL_OPENED, user_id=_auth.sub, instrument_id=instrument_id)
     bond, _ = await _load_bond(instrument_id)
-    score = _score_for(bond)
-    as_of = datetime.now(UTC)
-    response.headers.update({**response_headers(as_of), "X-Request-Id": make_request_id(request)})
+    async with session_scope() as session:
+        score_orm = (
+            await session.execute(
+                select(BondScoreORM).where(BondScoreORM.internal_id == bond.internal_id)
+            )
+        ).scalar_one_or_none()
+    score = _score_dto(bond, score_orm)
+    explanation = _explain_factors(bond, score_orm, score)
+    as_of = bond.fetched_at
+    quality = _quality_from_asof(as_of) if score is not None else "warning"
+    response.headers.update(
+        {**response_headers(as_of, quality), "X-Request-Id": make_request_id(request)}
+    )
     return BondDetailResponse(
         instrument=_to_item(bond, score),
         score=score,
-        explanation=_explain_bond(bond, score),
-        quality={"status": "ok", "messages": []},
+        explanation=explanation,
+        quality={"status": quality, "messages": []},
         disclaimer=DEFAULT_DISCLAIMER,
     )
 
@@ -397,13 +553,14 @@ async def portfolio_impact(
 
     alloc = body.allocation_pct / 100.0
     bond_ytm = float(bond.yield_to_maturity) if bond.yield_to_maturity is not None else 9.5
+    bond_duration = _bond_duration_years(bond) or _DEFAULT_BOND_DURATION
     before = dict(_BASE_PORTFOLIO)
     after = {
         "expected_yield_pct": round(
             before["expected_yield_pct"] * (1 - alloc) + bond_ytm * alloc, 2
         ),
         "duration_years": round(
-            before["duration_years"] * (1 - alloc) + _DEFAULT_BOND_DURATION * alloc, 2
+            before["duration_years"] * (1 - alloc) + bond_duration * alloc, 2
         ),
     }
     deltas = {
@@ -422,8 +579,10 @@ async def portfolio_impact(
             detail=f"Дюрация портфеля изменится на {deltas['duration_years']:+.2f} лет.",
         ),
     ]
-    as_of = datetime.now(UTC)
-    response.headers.update({**response_headers(as_of), "X-Request-Id": make_request_id(request)})
+    as_of = bond.fetched_at
+    response.headers.update(
+        {**response_headers(as_of, _quality_from_asof(as_of)), "X-Request-Id": make_request_id(request)}
+    )
     return PortfolioImpactResponse(
         before=before,
         after=after,
@@ -448,8 +607,9 @@ async def create_alert(
 ) -> AlertResponse:
     """Создать алерт на инструмент (идемпотентный, plan item 9.15).
 
-    Повторный запрос с тем же ``idempotency_key`` вернёт ``duplicate`` без
-    создания дубля. В W3 пилота правило сохраняется в alerts_repository.
+    Повторный запрос с тем же ``idempotency_key`` возвращает существующий алерт
+    со статусом ``duplicate`` без создания дубля. Правило сохраняется в таблицу
+    ``alerts`` (AlertORM).
     """
     audit_event(
         EVENT_ALERT_CREATED,
@@ -457,11 +617,47 @@ async def create_alert(
         instrument_id=body.instrument_id,
         extra={"metric": body.metric, "operator": body.operator, "threshold": body.threshold},
     )
-    await _load_bond(body.instrument_id)
-    as_of = datetime.now(UTC)
-    response.headers.update({**response_headers(as_of), "X-Request-Id": make_request_id(request)})
+    bond, _ = await _load_bond(body.instrument_id)
+
+    async with session_scope() as session:
+        if body.idempotency_key:
+            existing = (
+                await session.execute(
+                    select(AlertORM).where(AlertORM.dedup_key == body.idempotency_key)
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                response.headers.update(
+                    {**response_headers(None), "X-Request-Id": make_request_id(request)}
+                )
+                return AlertResponse(
+                    alert_id=existing.dedup_key,
+                    status="duplicate",
+                    created_at=existing.created_at.isoformat(),
+                )
+        alert = AlertORM(
+            user_id=None,
+            kind=f"signal_{body.metric}",
+            title=f"Alert {body.metric} {body.operator} {body.threshold}",
+            message=f"{bond.name or body.instrument_id}: {body.metric} "
+            f"{body.operator} {body.threshold}",
+            internal_id=bond.internal_id,
+            payload={
+                "metric": body.metric,
+                "operator": body.operator,
+                "threshold": body.threshold,
+                "instrument_id": body.instrument_id,
+            },
+            dedup_key=body.idempotency_key,
+        )
+        session.add(alert)
+        await session.flush()
+        alert_id = str(alert.id)
+        created_at = alert.created_at
+
+    response.headers.update({**response_headers(None), "X-Request-Id": make_request_id(request)})
     return AlertResponse(
-        alert_id=str(uuid4()),
+        alert_id=alert_id,
         status="created",
-        created_at=datetime.now(UTC).isoformat(),
+        created_at=created_at.isoformat(),
     )

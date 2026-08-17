@@ -3,10 +3,10 @@
   "markets": {
     "bcse": {
       "total_bonds": 12,
-      "attractive_ideas": 5,
-      "needs_review": 3,
-      "neutral": 3,
-      "high_risk": 1,
+      "attractive_ideas": 0,
+      "needs_review": 5,
+      "neutral": 4,
+      "high_risk": 3,
       "best_yield_pct": 14.5,
       "best_yield_id": "demo-bond-007",
       "source": "demo snapshot"
@@ -23,8 +23,8 @@
     }
   },
   "global": {
-    "attractive_ideas": 5,
-    "needs_review": 7,
+    "attractive_ideas": 0,
+    "needs_review": 9,
     "best_yield_pct": 14.5,
     "data_status": "ok",
     "updated_at": "2026-08-06T09:42:00+03:00"

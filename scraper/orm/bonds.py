@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -19,9 +20,27 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from scraper.orm._base import Base
+
+
+def _clamp_numeric(value: object, max_abs: float) -> object:
+    """Drop physically impossible magnitudes so a bad feed value can never
+    overflow a ``NUMERIC(p, s)`` column and abort the whole ingestion batch.
+
+    Returns ``None`` for ``None``/non-finite/out-of-range values, otherwise the
+    original value untouched.
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or abs(f) >= max_abs:
+        return None
+    return value
 
 
 class BondORM(Base):
@@ -84,6 +103,31 @@ class BondORM(Base):
         Index("ix_bonds_maturity", "maturity_date"),
         Index("ix_bonds_is_government", "is_government"),
     )
+
+    @validates(
+        "nominal",
+        "price",
+        "issue_volume",
+        "exchange_rate_on_start",
+        "coupon_rate",
+        "yield_to_maturity",
+    )
+    def _validate_numeric(self, key: str, value: object) -> object:
+        # NUMERIC(20, 6) columns overflow above ~1e14; NUMERIC(14, 4) above ~1e10.
+        max_abs = 1e13 if key in {"nominal", "price", "issue_volume", "exchange_rate_on_start"} else 1e9
+        return _clamp_numeric(value, max_abs)
+
+    @validates("term_days", "quantity")
+    def _validate_int(self, key: str, value: object) -> object:
+        if value is None:
+            return None
+        try:
+            iv = int(value)
+        except (TypeError, ValueError):
+            return None
+        if iv < -2_000_000_000 or iv > 2_000_000_000:
+            return None
+        return iv
 
 
 class BondHistoryORM(Base):

@@ -22,30 +22,44 @@ _DEFAULT_TOLERANCE_PP = 15.0
 # не платят купона (coupon_rate <= 0.01 — технический «нулевой» купон).
 INDEXED_METAL_CURRENCIES = frozenset({"XAU", "XAG", "XPT", "GOLD", "SILVER", "PLATINUM"})
 
+# Валюты номинала, привязанные к драгметаллам (золото/серебро/платина).
+METAL_CURRENCIES = frozenset({"XAU", "XAG", "XPT"})
+
+
+def is_metal_bond(currency: str | None = None, indexation_currency: str | None = None) -> bool:
+    """Бумага номинирована или индексирована в драгоценном металле?"""
+    return (currency or "").upper() in METAL_CURRENCIES or (
+        (indexation_currency or "").upper() in INDEXED_METAL_CURRENCIES
+    )
+
 
 def honest_yield(
     *,
     stored_ytm_pct: float | None,
     coupon_rate_pct: float | None,
     indexation_currency: str | None,
+    currency: str | None = None,
 ) -> float | None:
     """Честная доходность для бескупонных индексируемых облигаций.
 
     Бескупонная облигация, привязанная к цене металла (XAU/XAG/XPT/...),
     не даёт купонного потока: её единственный источник дохода — рост индекса.
-    Рынок котирует такие бумаги по текущей индексации, поэтому при плоской
-    индексации честная годовая доходность равна 0%. Любой положительный
-    «хранимый» YTM у таких бумаг — артефакт (нет купонного графика, который
-    его бы обеспечивал), и его нельзя показывать как доход.
+    Рынок котирует такие бумаги по текущей индексации, поэтому честной
+    годовой доходности у них нет вовсе: любой положительный «хранимый» YTM
+    (например, 12% у Aigenis-металлов) — артефакт без купонного графика,
+    который его бы обеспечивал. Возвращается None, чтобы весь продукт
+    (скоринг, оптимизатор, карточка облигации) показывал «нет доходности»
+    вместо фиктивных процентов. Валюта номинала проверяется так же, как
+    валюта индексации, — металлические облигации без указанной индексации
+    (currency=XAU/XAG/XPT) не должны проскакивать мимо фильтра.
 
     Для бумаг с реальным купоном (например, MOEX-золотодобытчики) и для
     обычных облигаций возвращается хранимый YTM без изменений.
     """
-    idx = (indexation_currency or "").upper()
-    if idx in INDEXED_METAL_CURRENCIES:
+    if is_metal_bond(currency, indexation_currency):
         cp = coupon_rate_pct
         if cp is None or float(cp) <= 0.01:
-            return 0.0
+            return None
     return stored_ytm_pct
 
 

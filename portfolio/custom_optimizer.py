@@ -40,6 +40,7 @@ def bond_ytm(bond: Any) -> float:
         stored_ytm_pct=None if raw != raw else raw,  # keep None when NaN
         coupon_rate_pct=_as_float(getattr(bond, "coupon_rate", None), None),
         indexation_currency=getattr(bond, "indexation_currency", None),
+        currency=str(getattr(bond, "currency", "") or "") or None,
     )
     return ytm if ytm is not None else 0.0
 

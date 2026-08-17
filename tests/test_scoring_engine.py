@@ -181,4 +181,34 @@ def test_score_bond_distressed_cap():
     assert sc.breakdown.volatility_component < 0
 
 
+def test_score_bond_metal_no_coupon_strips_stored_yield():
+    # Металлическая бескупонная бумага: даже хранимые 12% не дают доходности —
+    # ни напрямую, ни через решение из цены/дефолта по валюте.
+    for currency, indexation in (("XAU", None), (None, "XAG"), ("XPT", None)):
+        sc = score_bond(
+            internal_id="M",
+            yield_to_maturity=12.0,
+            currency=currency or "BYN",
+            maturity_date=date(2029, 1, 1),
+            status="active",
+            coupon_rate=0.001,
+            price=90.0,  # discount would otherwise yield ~5% via zero-coupon solve
+            indexation_currency=indexation,
+        )
+        assert sc.breakdown.yield_component == 0.0
+
+
+def test_score_bond_metal_with_real_coupon_keeps_yield():
+    sc = score_bond(
+        internal_id="M2",
+        yield_to_maturity=12.0,
+        currency="XAU",
+        maturity_date=date(2029, 1, 1),
+        status="active",
+        coupon_rate=3.0,
+        price=100.0,
+    )
+    assert sc.breakdown.yield_component == pytest.approx(12.0, abs=0.5)
+
+
 import pytest  # noqa: E402

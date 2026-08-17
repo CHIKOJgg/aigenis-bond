@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LineChart, ArrowUpRight, ArrowDownRight, ShieldCheck, Activity, ExternalLink } from 'lucide-react';
 import { formatPrice, formatBondDisplayName } from '../demo-format';
@@ -31,18 +31,35 @@ export default function DemoDeskPage() {
   const [searchParams] = useSearchParams();
   const routeMarket = (searchParams.get('market') ?? 'BCSE').toUpperCase();
   const market = routeMarket === 'MOEX' ? 'MOEX' : 'BCSE';
-  const [currency, setCurrency] = useState<'BYN' | 'USD' | 'RUB'>(market === 'MOEX' ? 'RUB' : 'BYN');
+
+  // Only offer currencies that actually have bonds on the selected market.
+  // (e.g. MOEX has no BYN-denominated issues, so selecting BYN would render
+  // an empty "not enough points" curve — guard against that here.)
+  const MARKET_CURRENCIES: Record<'BCSE' | 'MOEX', Array<'BYN' | 'USD' | 'RUB' | 'EUR'>> = {
+    BCSE: ['BYN', 'USD', 'RUB', 'EUR'],
+    MOEX: ['RUB', 'USD', 'EUR'],
+  };
+  const availableCurrencies = MARKET_CURRENCIES[market];
+
+  const [currency, setCurrency] = useState<'BYN' | 'USD' | 'RUB' | 'EUR'>(
+    market === 'MOEX' ? 'RUB' : 'BYN',
+  );
+  const currencyRef = useRef(currency);
+  currencyRef.current = currency;
   const [curvePoints, setCurvePoints] = useState<CurvePoint[]>([]);
   const [signals, setSignals] = useState<RVSignal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (market === 'MOEX' && currency === 'BYN') {
+    // Reset to a currency that actually exists for the market.
+    if (market === 'MOEX' && currencyRef.current === 'BYN') {
       setCurrency('RUB');
-    } else if (market === 'BCSE' && currency === 'RUB') {
+    } else if (market === 'BCSE' && !MARKET_CURRENCIES.BCSE.includes(currencyRef.current)) {
       setCurrency('BYN');
+    } else if (!availableCurrencies.includes(currencyRef.current)) {
+      setCurrency(availableCurrencies[0]);
     }
-  }, [market]);
+  }, [market, availableCurrencies, setCurrency]);
 
   useEffect(() => {
     let active = true;
@@ -103,7 +120,7 @@ export default function DemoDeskPage() {
 
         {/* Currency Switcher */}
         <div style={{ display: 'flex', gap: 8, background: '#f0f4f8', padding: 4, borderRadius: 8 }}>
-          {(['BYN', 'USD', 'RUB'] as const).map((cur) => (
+          {availableCurrencies.map((cur) => (
             <button
               key={cur}
               onClick={() => setCurrency(cur)}
