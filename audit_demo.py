@@ -81,7 +81,7 @@ def recompute_accrued(bond: dict) -> float:
     )
 
 
-def process(data_dir: Path) -> None:
+def process(data_dir: Path) -> None:  # noqa: C901
     print(f"\n=== {data_dir} ===")
     bcse = load_resolved(data_dir / "bonds_bcse.json", keep="upstream")
     moex = load_resolved(data_dir / "bonds_moex.json", keep="upstream")
@@ -92,9 +92,7 @@ def process(data_dir: Path) -> None:
             prev = b.get("accrued_interest")
             new = recompute_accrued(b)
             if prev is not None and abs(prev - new) > 0.01:
-                print(
-                    f"  [accrued] {b['internal_id']}: stored={prev} recomputed={new}"
-                )
+                print(f"  [accrued] {b['internal_id']}: stored={prev} recomputed={new}")
             b["accrued_interest"] = new
 
     (data_dir / "bonds_bcse.json").write_text(
@@ -126,9 +124,7 @@ def process(data_dir: Path) -> None:
         if "reward_subtotal" in bd and "risk_subtotal" in bd:
             expected = round(bd["reward_subtotal"] - bd["risk_subtotal"], 2)
             if abs(expected - s["score"]) > 0.05:
-                print(
-                    f"  [WARN] {s['internal_id']} score {s['score']} != reward-risk {expected}"
-                )
+                print(f"  [WARN] {s['internal_id']} score {s['score']} != reward-risk {expected}")
 
     (data_dir / "scores.json").write_text(
         json.dumps(deduped, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -136,7 +132,6 @@ def process(data_dir: Path) -> None:
 
     # ---- market_summary: derive from scores + bonds ----
     status_of = {s["internal_id"]: s["status"] for s in deduped}
-    tier_of = {s["internal_id"]: s.get("tier") for s in deduped}
 
     def summarise(market_bonds):
         counts = {"attractive_ideas": 0, "needs_review": 0, "neutral": 0, "high_risk": 0}
@@ -264,9 +259,7 @@ def process(data_dir: Path) -> None:
                         f"(weighted modified duration of positions)"
                     )
                 tpl.setdefault("benchmarks", {})["duration_years"] = new_dur
-        (pt_path).write_text(
-            json.dumps(pt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        (pt_path).write_text(json.dumps(pt, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

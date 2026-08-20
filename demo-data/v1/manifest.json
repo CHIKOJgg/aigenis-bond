@@ -29,8 +29,8 @@
     "demo-bond-aigenis-op43-silver",
     "demo-bond-aigenis-op42-platinum"
   ],
-  "source_policy": "fixtures-only",
-  "live_data_used": false,
+  "source_policy": "live PostgreSQL market data (read-only) + fixtures for portfolio-impact",
+  "live_data_used": true,
   "side_effects_enabled": false,
   "files": [
     "bonds_bcse.json",

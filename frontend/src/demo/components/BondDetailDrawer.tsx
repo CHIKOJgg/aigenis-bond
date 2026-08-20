@@ -1,6 +1,7 @@
 import { X, TrendingUp, AlertTriangle, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { getScore, getExplanation, getAllBonds, scoreFromLiveBond } from '../demo-api';
+import { synthesizeExplanation } from '../demo-explanation';
 import { SCORE_STATUS_LABEL, SCORE_STATUS_DESC } from '../demo-config';
 import {
   formatYtm,
@@ -60,7 +61,8 @@ export default function BondDetailDrawer({
   const liveExplanation: LiveExplanation | null =
     (liveBond ?? detail)?.explanation ?? null;
   const explanation: (BondExplanation | LiveExplanation) | undefined =
-    liveExplanation ?? fixtureExplanation;
+    liveExplanation ?? fixtureExplanation ??
+    (score?.breakdown ? synthesizeExplanation(score.breakdown, score.status, score.score) : undefined);
   const factors = normalizeFactors(explanation);
   const history = detail?.history ?? [];
   const couponSchedule = detail?.coupon_schedule ?? (bond as DemoBond & { coupon_schedule?: Record<string, unknown> | null }).coupon_schedule ?? null;
@@ -329,7 +331,7 @@ export default function BondDetailDrawer({
                 />
               )}
               {bond.coupon_rate != null && (
-                <KeyValue label="Купон" value={bond.coupon_rate === 0 ? '0.0% (дисконтная бумага)' : formatYtm(bond.coupon_rate)} />
+                <KeyValue label="Купон" value={bond.coupon_rate === 0 ? '0.0% (переменный купон)' : formatYtm(bond.coupon_rate)} />
               )}
               {bond.coupon_frequency != null && (
                 <KeyValue label="Выплаты" value={`${bond.coupon_frequency} раза в год`} />

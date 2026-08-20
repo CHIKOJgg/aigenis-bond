@@ -21,8 +21,16 @@ from ml.features import TrainingSample
 from ml.models import BondFeatures
 
 
-def _feat(iid="B", ytm=10.0, score=70.0, asof=date(2024, 1, 1),
-          duration_years=3.0, spread=1.5, metal=0.0, is_gov=False):
+def _feat(
+    iid="B",
+    ytm=10.0,
+    score=70.0,
+    asof=date(2024, 1, 1),
+    duration_years=3.0,
+    spread=1.5,
+    metal=0.0,
+    is_gov=False,
+):
     return BondFeatures(
         internal_id=iid,
         asof_date=asof,
@@ -50,10 +58,11 @@ def _feat(iid="B", ytm=10.0, score=70.0, asof=date(2024, 1, 1),
 
 # --- pure decision logic ---------------------------------------------------
 
+
 def test_outcome_label_mapping():
-    assert _outcome_label(-0.5) == 2   # falling yield -> buy
-    assert _outcome_label(0.6) == 0    # rising yield -> avoid
-    assert _outcome_label(0.1) == 1    # hold
+    assert _outcome_label(-0.5) == 2  # falling yield -> buy
+    assert _outcome_label(0.6) == 0  # rising yield -> avoid
+    assert _outcome_label(0.1) == 1  # hold
 
 
 def test_decide_low_score_avoids():
@@ -95,10 +104,15 @@ def test_version_from_path():
 
 # --- walk-forward splits (no future leakage) -------------------------------
 
+
 def test_time_split_keeps_order_and_holds_out_recent():
     samples = [
-        TrainingSample(features=_feat(asof=date(2024, 1, 1 + i)), asof=date(2024, 1, 1 + i),
-                       future_ytm=10.0, future_return_pct=0.0)
+        TrainingSample(
+            features=_feat(asof=date(2024, 1, 1 + i)),
+            asof=date(2024, 1, 1 + i),
+            future_ytm=10.0,
+            future_return_pct=0.0,
+        )
         for i in range(20)
     ]
     train, test = _time_split(samples)
@@ -109,9 +123,12 @@ def test_time_split_keeps_order_and_holds_out_recent():
 
 def test_rolling_windows_expanding():
     samples = [
-        TrainingSample(features=_feat(asof=date(2024, 1, 1) + timedelta(days=i)),
-                       asof=date(2024, 1, 1) + timedelta(days=i),
-                       future_ytm=10.0, future_return_pct=0.0)
+        TrainingSample(
+            features=_feat(asof=date(2024, 1, 1) + timedelta(days=i)),
+            asof=date(2024, 1, 1) + timedelta(days=i),
+            future_ytm=10.0,
+            future_return_pct=0.0,
+        )
         for i in range(40)
     ]
     folds = _rolling_windows(samples, n_folds=5)
@@ -123,6 +140,7 @@ def test_rolling_windows_expanding():
 
 # --- end-to-end training / backtest with synthetic data --------------------
 
+
 def _make_samples(n=40):
     out = []
     for i in range(n):
@@ -130,12 +148,14 @@ def _make_samples(n=40):
         ytm = 8.0 + (i % 7)
         # alternate the realized move so both classifier classes appear
         future_return = -0.5 if i % 2 == 0 else 0.6
-        out.append(TrainingSample(
-            features=_feat(iid=f"B{i}", ytm=ytm, asof=asof),
-            asof=asof,
-            future_ytm=ytm + future_return,
-            future_return_pct=future_return,
-        ))
+        out.append(
+            TrainingSample(
+                features=_feat(iid=f"B{i}", ytm=ytm, asof=asof),
+                asof=asof,
+                future_ytm=ytm + future_return,
+                future_return_pct=future_return,
+            )
+        )
     return out
 
 

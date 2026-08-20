@@ -13,8 +13,8 @@ export default function DemoStatusBanner() {
         gap: 8,
       }}
     >
-      <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#0B526B' }} />
-       Демо на live-данных · Score и аналитика рассчитываются движком · только чтение
-    </div>
+        <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#0B526B' }} />
+         Демонстрационная среда · актуальные рыночные данные и скоринг движка Aigenis · только чтение
+       </div>
   );
 }

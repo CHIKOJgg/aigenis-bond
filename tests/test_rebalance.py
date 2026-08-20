@@ -17,7 +17,7 @@ def test_compute_weights_delta_and_before_after():
     target = {"A": Decimal("500"), "B": Decimal("500")}
     weights = rb._compute_weights(positions, target, total=Decimal("1000"))
     assert weights["A"][0] == Decimal("-100")  # A reduced
-    assert weights["B"][0] == Decimal("100")   # B increased
+    assert weights["B"][0] == Decimal("100")  # B increased
     # weight_before for A = 600/1000 = 0.6
     assert weights["A"][1] == pytest.approx(0.6)
     assert weights["B"][2] == pytest.approx(0.5)
@@ -47,11 +47,14 @@ def test_build_plan_none_when_below_threshold():
     from scoring.models import UserPreferences
 
     bonds = [_bond("A", ytm=10), _bond("B", ytm=12)]
-    prefs = UserPreferences(user_id=1, initial_capital=Decimal("1000"),
-                            strategy="Balanced")
-    plan = rb.build_plan(bonds=bonds, prefs=prefs,
-                         current_positions=[_pos("A", 500), _pos("B", 500)],
-                         current_total=Decimal("1000"), drift_threshold=0.05)
+    prefs = UserPreferences(user_id=1, initial_capital=Decimal("1000"), strategy="Balanced")
+    plan = rb.build_plan(
+        bonds=bonds,
+        prefs=prefs,
+        current_positions=[_pos("A", 500), _pos("B", 500)],
+        current_total=Decimal("1000"),
+        drift_threshold=0.05,
+    )
     # Already balanced (50/50) -> no drift above 5%
     assert plan is None
 
@@ -60,11 +63,14 @@ def test_build_plan_returns_actions_when_drifted():
     from scoring.models import UserPreferences
 
     bonds = [_bond("A", ytm=10), _bond("B", ytm=12)]
-    prefs = UserPreferences(user_id=1, initial_capital=Decimal("1000"),
-                            strategy="Balanced")
-    plan = rb.build_plan(bonds=bonds, prefs=prefs,
-                         current_positions=[_pos("A", 900), _pos("B", 100)],
-                         current_total=Decimal("1000"), drift_threshold=0.05)
+    prefs = UserPreferences(user_id=1, initial_capital=Decimal("1000"), strategy="Balanced")
+    plan = rb.build_plan(
+        bonds=bonds,
+        prefs=prefs,
+        current_positions=[_pos("A", 900), _pos("B", 100)],
+        current_total=Decimal("1000"),
+        drift_threshold=0.05,
+    )
     assert plan is not None
     assert plan.max_drift_observed > 0.05
     sides = {a.internal_id: a.side for a in plan.actions}

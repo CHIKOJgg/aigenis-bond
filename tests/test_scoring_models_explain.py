@@ -87,7 +87,7 @@ def test_explain_detail_helpers():
     )
 
     assert "не указана" in _yield_detail(None)
-    assert _yield_detail(0) == _yield_detail(None)
+    assert "отрицательн" in _yield_detail(0)
     assert "Высокая" in _yield_detail(15)
     assert "Умеренная" in _yield_detail(8)
     assert "Невысокая" in _yield_detail(5)

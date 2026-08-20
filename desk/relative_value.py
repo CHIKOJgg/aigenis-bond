@@ -8,6 +8,7 @@ from statistics import fmean, pstdev
 
 from desk.cashflow import accrued_interest
 from desk.models import RVSignal, YieldCurve
+from desk.ytm import to_price_pct
 from scoring.eligibility import filter_eligible
 
 
@@ -59,7 +60,7 @@ def relative_value_signals(
                 "name": getattr(b, "name", None) or b.internal_id,
                 "issuer": getattr(b, "issuer", None),
                 "isin": getattr(b, "isin", None),
-                "price": float(b.price) if getattr(b, "price", None) is not None else None,
+                "price": to_price_pct(b.price, b.nominal),
                 "nominal": float(b.nominal) if getattr(b, "nominal", None) is not None else 1000.0,
                 "ytm": float(b.yield_to_maturity),
                 "accrued_interest": round(

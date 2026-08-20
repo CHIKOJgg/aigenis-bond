@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from typing import Any
 
-from desk.ytm import honest_yield, to_price_pct
+from desk.ytm import honest_yield, to_price_pct, ytm_from_price
 
 RISK_FREE_PCT = 4.0
 
@@ -34,7 +34,13 @@ def _as_float(value: Any, default: float = 0.0) -> float:
 
 
 def bond_ytm(bond: Any) -> float:
-    """Real (honest) YTM for a bond row, falling back to 0% when unknown."""
+    """Real (honest) YTM for a bond row, falling back to 0% when unknown.
+
+    Приоритет — честный пересчёт по текущей цене (как в demo market-data):
+    хранимый фидовый YTM может быть устаревшим или равным купону (ЕВРОТОРГ
+    Оп24: хранится 10.0 = купон, при цене 102.61 честная доходность ≈ −11.7%).
+    Отрицательный результат — ожидаемый убыток, а не отсутствие данных.
+    """
     raw = _as_float(getattr(bond, "yield_to_maturity", None), default=float("nan"))
     ytm = honest_yield(
         stored_ytm_pct=None if raw != raw else raw,  # keep None when NaN
@@ -42,6 +48,27 @@ def bond_ytm(bond: Any) -> float:
         indexation_currency=getattr(bond, "indexation_currency", None),
         currency=str(getattr(bond, "currency", "") or "") or None,
     )
+    price = to_price_pct(getattr(bond, "price", None), getattr(bond, "nominal", None))
+    coupon = _as_float(getattr(bond, "coupon_rate", None), None)
+    maturity = getattr(bond, "maturity_date", None)
+    if (
+        price is not None
+        and coupon is not None
+        and coupon > 0.01
+        and maturity is not None
+        and maturity > date.today()
+    ):
+        try:
+            solved = ytm_from_price(
+                price,
+                coupon,
+                int(getattr(bond, "coupon_frequency", None) or 2),
+                maturity,
+            )
+            if solved is not None:
+                return round(solved, 4)
+        except Exception:
+            pass
     return ytm if ytm is not None else 0.0
 
 

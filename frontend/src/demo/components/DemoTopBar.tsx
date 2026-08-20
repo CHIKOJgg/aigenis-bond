@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Bell, Search, Settings, X } from 'lucide-react';
+import { Bell, Search, Settings, X, Menu } from 'lucide-react';
 import { DEMO_PERSONA } from '../demo-config';
 import { fetchLiveSearch } from '../live-demo-api';
 import { scoreFromLiveBond } from '../demo-api';
@@ -13,12 +13,13 @@ import type { DemoBond } from '../types';
 interface Props {
   market?: string;
   onMarketChange?: (market: string) => void;
+  onMenuClick?: () => void;
 }
 
 const SUGGESTION_DEBOUNCE = 220;
 const SUGGESTION_LIMIT = 8;
 
-export default function DemoTopBar({ market: marketProp, onMarketChange }: Props) {
+export default function DemoTopBar({ market: marketProp, onMarketChange, onMenuClick }: Props) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // The header market switch is global: it reads/writes the ?market= query
@@ -29,8 +30,16 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
   const [q, setQ] = useState('');
   const [suggestions, setSuggestions] = useState<DemoBond[]>([]);
   const [open, setOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const showNotice = (text: string) => {
+    setNotice(text);
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 2600);
+  };
 
   useEffect(() => {
     const term = q.trim();
@@ -83,6 +92,7 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
 
   return (
     <header
+      className="demo-header"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -92,9 +102,28 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
         backgroundColor: 'var(--demo-card, #ffffff)',
         minHeight: 56,
         gap: 16,
+        flexWrap: 'wrap',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <button
+        className="demo-menu-btn"
+        onClick={onMenuClick}
+        aria-label="Открыть меню"
+        style={{
+          display: 'none',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          padding: 6,
+          color: '#0B526B',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Menu size={20} />
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
         <div style={{ display: 'flex', background: '#eef3f5', borderRadius: 8, padding: 2 }}>
           {['BCSE', 'MOEX'].map((m) => (
             <button
@@ -118,7 +147,7 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
         </div>
       </div>
 
-      <div ref={wrapRef} style={{ flex: 1, maxWidth: 480, position: 'relative' }}>
+      <div ref={wrapRef} className="demo-search" style={{ flex: 1, maxWidth: 480, minWidth: 0, flexShrink: 1, position: 'relative' }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -132,6 +161,7 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
           <input
             ref={inputRef}
             type="search"
+            name="q"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -263,9 +293,10 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
         )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
         <button
           aria-label="Уведомления"
+          onClick={() => showNotice('Уведомления недоступны в демо-режиме')}
           style={{
             background: 'none',
             border: 'none',
@@ -280,17 +311,23 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
           <Bell size={18} />
         </button>
         <div
+          className="demo-persona"
           style={{
             fontSize: 13,
             color: '#01121a',
             fontWeight: 500,
             marginRight: 8,
+            maxWidth: 160,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
           {DEMO_PERSONA.name} · {DEMO_PERSONA.portfolio_byn.toLocaleString('ru-RU')} BYN
         </div>
         <button
           aria-label="Настройки"
+          onClick={() => showNotice('Настройки недоступны в демо-режиме')}
           style={{
             background: 'none',
             border: 'none',
@@ -302,6 +339,27 @@ export default function DemoTopBar({ market: marketProp, onMarketChange }: Props
           <Settings size={18} />
         </button>
       </div>
+      {notice && (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            bottom: 24,
+            transform: 'translateX(-50%)',
+            background: '#0B526B',
+            color: '#ffffff',
+            padding: '10px 18px',
+            borderRadius: 10,
+            fontSize: 14,
+            fontWeight: 500,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+            zIndex: 200,
+          }}
+        >
+          {notice}
+        </div>
+      )}
     </header>
   );
 }

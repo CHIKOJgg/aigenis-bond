@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: /demo-(flow|pages)\.spec\.ts/,
   testIgnore: /\.visual\.spec\.ts/,
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -16,6 +17,14 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], viewport: { width: 1366, height: 768 } },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'], viewport: { width: 1366, height: 768 } },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'], viewport: { width: 1366, height: 768 } },
     },
   ],
   webServer: {

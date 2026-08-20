@@ -8,6 +8,12 @@ const viewports = [
   { name: 'mobile-390', width: 390, height: 844 },
 ];
 
+const browsers = [
+  { suffix: '', browser: 'chromium' as const, device: 'Desktop Chrome' },
+  { suffix: '-firefox', browser: 'firefox' as const, device: 'Desktop Firefox' },
+  { suffix: '-webkit', browser: 'webkit' as const, device: 'Desktop Safari' },
+];
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: /\.visual\.spec\.ts/,
@@ -23,10 +29,16 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:4173',
   },
-  projects: viewports.map((v) => ({
-    name: v.name,
-    use: { ...devices['Desktop Chrome'], viewport: { width: v.width, height: v.height } },
-  })),
+  projects: viewports.flatMap((v) =>
+    browsers.map((b) => ({
+      name: `${v.name}${b.suffix}`,
+      use: {
+        ...devices[b.device],
+        viewport: { width: v.width, height: v.height },
+        browserName: b.browser,
+      },
+    })),
+  ),
   webServer: {
     command: 'npm run build && npm run preview -- --port 4173 --strictPort --host 127.0.0.1',
     url: 'http://127.0.0.1:4173',

@@ -23,9 +23,15 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
   });
   const allocation = allocationPct / 100;
   const currency = bond?.currency ?? 'BYN';
+  // Портфель персоны номинирован в BYN (и RUB как альтернатива). У бумаг в
+  // USD/EUR/CNY нет собственного капитала в демо: позиция оценивается в
+  // валюте портфеля (BYN), а не «в валюте бумаги» — иначе UI показывал бы
+  // «5 000 USD» на основе BYN-капитала (5 000 BYN ≠ 5 000 USD).
+  const capitalCurrency = currency === 'RUB' ? 'RUB' : 'BYN';
   const personaCapital =
     currency === 'RUB' ? DEMO_PERSONA.portfolio_rub : DEMO_PERSONA.portfolio_byn;
   const positionAmount = personaCapital * allocation;
+  const currencyNote = currency !== capitalCurrency ? ` · позиция в ${currency}` : '';
   const headlineYield = bond?.yield_to_maturity ?? 0;
   const effectiveYield = bond?.distressed
     ? Math.min(headlineYield, DISTRESSED_YIELD_CAP)
@@ -78,7 +84,8 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>
         <div>После добавления {allocationPct}% позиции</div>
         <div style={{ fontSize: 12, color: '#516c79', fontWeight: 400, marginTop: 4 }}>
-          {positionAmount.toLocaleString('ru-RU')} {currency} из портфеля {personaCapital.toLocaleString('ru-RU')} {currency}
+          {positionAmount.toLocaleString('ru-RU')} {capitalCurrency} из портфеля {personaCapital.toLocaleString('ru-RU')} {capitalCurrency}
+          {currencyNote}
           {allocationLabel && allocationLabel !== `${allocationPct}%` ? ` · ${allocationLabel}` : ''}
         </div>
       </div>
@@ -87,8 +94,8 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
         <MetricBox label="Ожидаемая доходность" before={`${impact.before.expected_yield_pct}%`} after={`${impact.after.expected_yield_pct}%`} delta={`${impact.deltas.expected_yield_pp >= 0 ? '+' : ''}${impact.deltas.expected_yield_pp} п.п.`} />
         <MetricBox label="Средняя дюрация" before={`${impact.before.duration_years} г.`} after={`${impact.after.duration_years} г.`} delta={`${impact.deltas.duration_years >= 0 ? '+' : ''}${impact.deltas.duration_years} г.`} />
         <div style={{ padding: '16px', background: '#f5f9fb', borderRadius: 8, textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: '#717680', marginBottom: 4 }}>РИСК-ПРОФИЛЬ</div>
-           <div style={{ fontSize: 14, fontWeight: 600, color: bond?.score_status === 'high_risk' ? '#dc6803' : '#0B526B' }}>{riskLabel}</div>
+          <div style={{ fontSize: 11, color: '#66707a', marginBottom: 4 }}>РИСК-ПРОФИЛЬ</div>
+           <div style={{ fontSize: 14, fontWeight: 600, color: bond?.score_status === 'high_risk' ? '#b45309' : '#0B526B' }}>{riskLabel}</div>
         </div>
       </div>
 
@@ -109,7 +116,7 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
           <LiveMetric label="Дюрация" value={bond.duration_years != null ? `${bond.duration_years.toFixed(1)} г.` : '—'} />
           <LiveMetric
             label="Доход на позиции/год"
-            value={effectiveYield > 0 ? `${Math.round(positionAmount * effectiveYield / 100).toLocaleString('ru-RU')} ${currency}` : '—'}
+            value={effectiveYield > 0 ? `${Math.round(positionAmount * effectiveYield / 100).toLocaleString('ru-RU')} ${capitalCurrency}${currency !== capitalCurrency ? ' (по позиции)' : ''}` : '—'}
           />
         </div>
       )}
@@ -166,13 +173,13 @@ export default function PortfolioImpactCard({ bondId, allocationPct, allocationL
         borderRadius: 8,
         fontSize: 14,
         fontWeight: 600,
-        color: impact.deltas.expected_yield_pp >= 0 ? '#06b663' : '#dc6803',
+        color: impact.deltas.expected_yield_pp >= 0 ? '#057a44' : '#b45309',
         marginBottom: 12,
       }}>
         {impact.summary}
       </div>
 
-      <div style={{ fontSize: 11, color: '#717680', lineHeight: 1.5 }}>
+      <div style={{ fontSize: 11, color: '#66707a', lineHeight: 1.5 }}>
         {impact.disclaimer}
       </div>
     </div>
@@ -184,12 +191,12 @@ function MetricBox({ label, before, after, delta }: {
 }) {
   return (
     <div style={{ padding: '16px', background: '#f5f9fb', borderRadius: 8 }}>
-      <div style={{ fontSize: 11, color: '#717680', marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 11, color: '#66707a', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <span style={{ fontSize: 14, color: '#516c79', textDecoration: 'line-through' }}>{before}</span>
         <span style={{ fontSize: 20, fontWeight: 700, color: '#01121a' }}>{after}</span>
       </div>
-      <div style={{ fontSize: 13, color: delta.startsWith('+') ? '#06b663' : '#e03400', marginTop: 4 }}>
+      <div style={{ fontSize: 13, color: delta.startsWith('+') ? '#057a44' : '#c42e00', marginTop: 4 }}>
         {delta}
       </div>
     </div>
@@ -218,7 +225,7 @@ function ImpactBars({ beforeYield, afterYield, beforeDuration, afterDuration }: 
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Изменение профиля портфеля</div>
       <ComparisonBar label="Доходность" before={beforeYield} after={afterYield} max={maxYield} suffix="%" />
       <ComparisonBar label="Дюрация" before={beforeDuration} after={afterDuration} max={maxDuration} suffix=" г." />
-      <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11, color: '#717680' }}>
+      <div style={{ display: 'flex', gap: 14, marginTop: 10, fontSize: 11, color: '#66707a' }}>
         <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#b2c9d1', marginRight: 5 }} />До</span>
         <span><i style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#0B526B', marginRight: 5 }} />После</span>
       </div>

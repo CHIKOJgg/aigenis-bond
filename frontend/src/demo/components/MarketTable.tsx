@@ -49,7 +49,7 @@ export default function MarketTable({ market, bonds: liveBonds, loading, onSelec
           <tr style={{ borderBottom: '2px solid #d6e2e6', textAlign: 'left' }}>
             <th style={thStyle}>Название / ISIN</th>
             <th style={thStyle}>Цена</th>
-            <th style={thStyle}>Доходность</th>
+            <th style={thStyle}>Доходность / Купон</th>
             <th style={thStyle}>Погашение</th>
             <th style={thStyle}>Score</th>
             <th style={thStyle}>Статус</th>
@@ -80,7 +80,13 @@ export default function MarketTable({ market, bonds: liveBonds, loading, onSelec
                 </td>
                 <td style={tdStyle}>{formatPrice(bond.price, bond.currency, bond.nominal, bond.accrued_interest)}</td>
                 <td style={tdStyle}>
-                  <div>{formatYtm(bond.yield_to_maturity)}</div>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{formatYtm(bond.yield_to_maturity)}</span>
+                    <span style={{ fontSize: 11, color: '#717680', marginLeft: 4 }}>эфф.</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#717680' }}>
+                    купон {bond.coupon_rate != null ? formatYtm(bond.coupon_rate) : '—'}
+                  </div>
                   {bond.distressed && <DistressedChip />}
                 </td>
                 <td style={tdStyle}>{bond.maturity_date ?? '—'}</td>

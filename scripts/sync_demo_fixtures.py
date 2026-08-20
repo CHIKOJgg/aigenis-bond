@@ -23,8 +23,8 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from desk.ytm import honest_yield, to_price_pct, ytm_from_price
 from desk.cashflow import accrued_interest
+from desk.ytm import honest_yield, to_price_pct, ytm_from_price
 from scoring.engine import score_bond
 from scoring.explain import explain_score
 
@@ -97,7 +97,12 @@ def fix_ytm(asof: date) -> tuple[list[dict], list[str]]:
                 maturity=date.fromisoformat(maturity),
                 asof=asof,
             )
-        if stored_f is not None and rec is not None and rec > 0 and abs(stored_f - rec) > YTM_TOLERANCE_PP:
+        if (
+            stored_f is not None
+            and rec is not None
+            and rec > 0
+            and abs(stored_f - rec) > YTM_TOLERANCE_PP
+        ):
             changes.append(
                 f"{b['internal_id']}: ytm {stored_f} -> {round(rec, 2)} (diff {stored_f - rec:+.2f}pp)"
             )
@@ -171,9 +176,7 @@ def fix_aci(bonds: list[dict], asof: date) -> list[str]:
         rounded = round(aci, 4) if aci else 0.0
         prev = b.get("accrued_interest")
         if prev is None or abs(float(prev) - rounded) > 1e-9:
-            changes.append(
-                f"{b['internal_id']}: accrued_interest {prev} -> {rounded}"
-            )
+            changes.append(f"{b['internal_id']}: accrued_interest {prev} -> {rounded}")
         b["accrued_interest"] = rounded
     return changes
 

@@ -200,7 +200,10 @@ def test_ytm_negative_extreme_is_critical():
     assert dq.overall == "critical"
 
 
-def test_ytm_high_but_not_extreme_is_warning():
+def test_ytm_above_threshold_is_critical():
+    # YTM > 100% — согласовано с портфельным eligibility-гейтом. Бумага,
+    # слишком рискованная для портфеля, не скорится и не показывается как
+    # жизнеспособная возможность (явная ошибка данных / экстремальный дистресс).
     dq = validate_bond_data(
         internal_id="X",
         yield_to_maturity=150.0,
@@ -212,9 +215,8 @@ def test_ytm_high_but_not_extreme_is_warning():
         nominal=100.0,
         coupon_rate=5.0,
     )
-    assert dq.overall == "warning"
-    assert dq.is_rated
-    assert dq.confidence == "medium"
+    assert dq.overall == "critical"
+    assert not dq.is_rated
 
 
 def test_stale_data_is_warning():
@@ -346,7 +348,9 @@ def test_score_bond_safe_returns_none_for_critical():
     assert score is None
 
 
-def test_score_bond_safe_discounts_warnings():
+def test_score_bond_safe_rejects_above_ytm_threshold():
+    # YTM > 100% теперь критичен (согласован с eligibility): скоринг не
+    # выполняется, возвращается (critical, None).
     dq, score = score_bond_safe(
         internal_id="WARN-1",
         yield_to_maturity=120.0,
@@ -359,22 +363,8 @@ def test_score_bond_safe_discounts_warnings():
         coupon_rate=5.0,
         fetched_at=datetime.now(UTC) - timedelta(hours=1),
     )
-    assert dq.overall == "warning"
-    assert score is not None
-    from scoring.engine import score_bond as raw_score_bond
-
-    raw = raw_score_bond(
-        internal_id="WARN-1",
-        yield_to_maturity=120.0,
-        currency="USD",
-        maturity_date=date(2030, 1, 1),
-        status="active",
-        issuer="Treasury",
-        price=100.0,
-        nominal=100.0,
-        coupon_rate=5.0,
-    )
-    assert score.score == round(raw.score * 0.85, 2)
+    assert dq.overall == "critical"
+    assert score is None
 
 
 def test_missing_ytm_is_warning():

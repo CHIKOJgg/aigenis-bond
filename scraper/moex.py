@@ -18,6 +18,7 @@ Rate limits: MOEX ISS is public but please keep concurrency modest.
 from __future__ import annotations
 
 import os
+import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -132,6 +133,9 @@ def _to_date(value: Any) -> date | None:
 
 
 # MOEX FACEUNIT uses 'SUR' for Russian ruble; normalize to our Currency literal.
+# CNY/CHF/GBP/JPY/KZT issues (yuan bonds, Swiss-franc bonds, etc.) must keep
+# their real currency: falling back to "RUB" silently turns a CNY bond into a
+# RUB bond and corrupts every derived number in the product.
 _CURRENCY_ALIASES = {
     "SUR": "RUB",
     "RUR": "RUB",
@@ -139,11 +143,22 @@ _CURRENCY_ALIASES = {
     "USD": "USD",
     "EUR": "EUR",
     "BYN": "BYN",
+    "CNY": "CNY",
+    "CHF": "CHF",
+    "GBP": "GBP",
+    "JPY": "JPY",
+    "KZT": "KZT",
 }
 
 
 def _norm_currency(value: Any) -> str:
-    return _CURRENCY_ALIASES.get(str(value or "").upper(), "RUB")
+    s = str(value or "").strip().upper()
+    if s in _CURRENCY_ALIASES:
+        return _CURRENCY_ALIASES[s]
+    # Unknown currency code: this helper feeds the domestic MOEX bond universe
+    # (almost always RUB). Default to RUB rather than propagating a bogus code
+    # upstream, which broke downstream currency filtering/validation.
+    return "RUB"
 
 
 def _parse_iss_rows(payload: dict[str, Any], block: str) -> list[dict[str, Any]]:
@@ -183,9 +198,20 @@ def _quote_and_yield(
             maturity=maturity,
         )
     ytm = _to_dec(md.get("YIELD"))
-    if ytm is not None and sane_yield(float(ytm), computed):
+    if ytm is not None and 0 < float(ytm) < 100 and (
+        computed is None or sane_yield(float(ytm), computed)
+    ):
+        # Trust the exchange's own YIELD when we cannot compute one ourselves
+        # (e.g. missing coupon schedule), as long as it is not absurd (>100%).
         return price, ytm
     if computed is not None and computed > 0:
+        return price, Decimal(str(round(computed, 4)))
+    # Честный отрицательный YTM (цена выше «справедливой» у коротких бумаг) —
+    # это реальный ожидаемый убыток, а не ошибка данных. Возвращаем его, чтобы
+    # pipeline не сохранял устаревшее положительное значение (RU000A0JWTL6:
+    # хранилось +11.74 при биржевой YIELD −26.27). Решатель не выдаёт значений
+    # ниже −99%, так что диапазон безопасен.
+    if computed is not None and computed > -99:
         return price, Decimal(str(round(computed, 4)))
     return price, None
 
@@ -258,11 +284,12 @@ class MoexClient:
             if not secid:
                 continue
             name = str(sec.get("SECNAME") or secid)
-            # Structured notes (e.g. «СФО БКС Структурные Ноты N») have
-            # index/trigger-linked payoffs — pricing them with the plain-bond
-            # YTM formula produces meaningless "opportunities" (a 75-price
-            # note maturing in days showing 66% YTM). Skip them entirely.
-            if "структурн" in name.lower():
+            # Structured notes (e.g. «Сбер CIB-СО-21», «СФО БКС Структурные
+            # Ноты N») have index/trigger-linked payoffs — pricing them with
+            # the plain-bond YTM formula produces meaningless "opportunities"
+            # (a 75-price note maturing in days showing 66% YTM). Skip them.
+            _lower = name.lower()
+            if "структурн" in _lower or re.search(r"cib[- ]?(со|co)", _lower):
                 continue
             md = marketdata.get(secid, {})
             cur = _norm_currency(sec.get("FACEUNIT") or "RUB")

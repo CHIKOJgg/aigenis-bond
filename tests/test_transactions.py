@@ -55,8 +55,13 @@ def test_record_and_list_transactions():
         await _make_user(8101)
         async with session_scope() as s:
             await record_transaction(
-                s, user_id=8101, internal_id="B1", side="buy",
-                amount=Decimal("1000"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8101,
+                internal_id="B1",
+                side="buy",
+                amount=Decimal("1000"),
+                price=Decimal("100"),
+                currency="BYN",
             )
         rows = await _gather_list(8101)
         assert len(rows) == 1
@@ -75,8 +80,13 @@ def test_list_transactions_ordered_desc_and_paginated():
         async with session_scope() as s:
             for i in range(3):
                 await record_transaction(
-                    s, user_id=8102, internal_id=f"B{i}", side="buy",
-                    amount=Decimal("100"), price=Decimal("100"), currency="BYN",
+                    s,
+                    user_id=8102,
+                    internal_id=f"B{i}",
+                    side="buy",
+                    amount=Decimal("100"),
+                    price=Decimal("100"),
+                    currency="BYN",
                 )
         async with session_scope() as s:
             first = await list_transactions(s, 8102, limit=2)
@@ -95,12 +105,22 @@ def test_get_bond_transactions_filters_by_bond():
         await _make_user(8103)
         async with session_scope() as s:
             await record_transaction(
-                s, user_id=8103, internal_id="X", side="buy",
-                amount=Decimal("500"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8103,
+                internal_id="X",
+                side="buy",
+                amount=Decimal("500"),
+                price=Decimal("100"),
+                currency="BYN",
             )
             await record_transaction(
-                s, user_id=8103, internal_id="Y", side="sell",
-                amount=Decimal("200"), price=Decimal("101"), currency="BYN",
+                s,
+                user_id=8103,
+                internal_id="Y",
+                side="sell",
+                amount=Decimal("200"),
+                price=Decimal("101"),
+                currency="BYN",
             )
         async with session_scope() as s:
             xs = await get_bond_transactions(s, 8103, "X")
@@ -116,16 +136,31 @@ def test_total_bought_sold_aggregates():
         await _make_user(8104)
         async with session_scope() as s:
             await record_transaction(
-                s, user_id=8104, internal_id="Z", side="buy",
-                amount=Decimal("1000"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8104,
+                internal_id="Z",
+                side="buy",
+                amount=Decimal("1000"),
+                price=Decimal("100"),
+                currency="BYN",
             )
             await record_transaction(
-                s, user_id=8104, internal_id="Z", side="buy",
-                amount=Decimal("500"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8104,
+                internal_id="Z",
+                side="buy",
+                amount=Decimal("500"),
+                price=Decimal("100"),
+                currency="BYN",
             )
             await record_transaction(
-                s, user_id=8104, internal_id="Z", side="sell",
-                amount=Decimal("300"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8104,
+                internal_id="Z",
+                side="sell",
+                amount=Decimal("300"),
+                price=Decimal("100"),
+                currency="BYN",
             )
         async with session_scope() as s:
             agg = await total_bought_sold(s, 8104, "Z")
@@ -142,8 +177,13 @@ def test_delete_transaction_removes_own_and_not_others():
         await _make_user(8105)
         async with session_scope() as s:
             tx = await record_transaction(
-                s, user_id=8105, internal_id="D", side="buy",
-                amount=Decimal("100"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8105,
+                internal_id="D",
+                side="buy",
+                amount=Decimal("100"),
+                price=Decimal("100"),
+                currency="BYN",
             )
             tx_id = int(tx.id)
         # wrong user cannot delete
@@ -164,8 +204,13 @@ def test_record_transaction_accepts_note():
         await _make_user(8106)
         async with session_scope() as s:
             await record_transaction(
-                s, user_id=8106, internal_id="N", side="buy",
-                amount=Decimal("100"), price=Decimal("100"), currency="BYN",
+                s,
+                user_id=8106,
+                internal_id="N",
+                side="buy",
+                amount=Decimal("100"),
+                price=Decimal("100"),
+                currency="BYN",
                 note="manual",
             )
         async with session_scope() as s:

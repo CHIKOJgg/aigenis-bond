@@ -405,6 +405,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
     logger.info("moex_pipeline_start", currencies=cur_list)
 
     saved = 0
+    skipped = 0
     async with session_scope() as session:
         for cur in cur_list:
             bonds = await client.fetch_bonds(cur)
@@ -412,6 +413,20 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                 logger.info("moex_no_bonds", currency=cur)
                 continue
             for b in bonds:
+                if b.isin:
+                    dup = (
+                        await session.execute(
+                            select(BondORM).where(
+                                BondORM.isin == b.isin,
+                                BondORM.internal_id != b.internal_id,
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if dup is not None:
+                        # Тот же ISIN уже есть в БД (РесБел торгуется и на BCSE,
+                        # и на MOEX; BCSE-версия приоритетна в демо) — пропускаем.
+                        skipped += 1
+                        continue
                 existing = (
                     await session.execute(
                         select(BondORM).where(BondORM.internal_id == b.internal_id)
@@ -436,7 +451,10 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
                                 maturity=b.maturity_date,
                                 asof=date.today(),
                             )
-                            if solved is not None and solved > 0:
+                            # Честный отрицательный результат (цена выше
+                            # «справедливой») — тоже валидные данные; решатель
+                            # не выдаёт значений ниже −99%.
+                            if solved is not None and solved > -99:
                                 ytm_val = Decimal(str(round(solved, 4)))
                     except Exception:
                         pass
@@ -544,6 +562,7 @@ async def run_once_moex(client: MoexClient, currencies: Iterable[str]) -> dict[s
         "listing_total": saved,
         "details_ok": saved,
         "details_err": 0,
+        "skipped_duplicates": skipped,
         "history_rows": history_rows,
         "history_err": history_err,
         "coupon_bonds": coupon_bonds,

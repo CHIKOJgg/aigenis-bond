@@ -11,6 +11,10 @@ export interface DemoBond {
   maturity_date: string | null;
   price: number | null;
   yield_to_maturity: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  bid_yield?: number | null;
+  ask_yield?: number | null;
   amortization: string | null;
   market: string;
   status: string;
@@ -69,6 +73,8 @@ export interface LiveExplanation {
   strengths: string[];
   weaknesses: string[];
   factors: LiveExplanationFactor[];
+  source?: string;
+  metadata?: Record<string, string>;
 }
 
 export interface LiveSearchResult {

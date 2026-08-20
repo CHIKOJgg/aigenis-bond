@@ -24,6 +24,12 @@ describe('formatDurationYears', () => {
     expect(formatDurationYears(456.5625)).toBe('1.3 г.');
   });
 
+  it('показывает два знака для сроков короче 36 дней', () => {
+    // 21C22516: дюрация 0.04 года не должна выглядеть как «0.0 г.».
+    expect(formatDurationYears(0.04)).toBe('0.04 г.');
+    expect(formatDurationYears(365 / 365.25)).toBe('1.0 г.');
+  });
+
   it('возвращает прочерк для null/undefined', () => {
     expect(formatDurationYears(null)).toBe('—');
     expect(formatDurationYears(undefined)).toBe('—');
@@ -86,6 +92,9 @@ describe('formatBondDisplayName', () => {
   it('различает выпуски Минфина по internal_id', () => {
     expect(formatBondDisplayName('Министерство финансов Республики Беларусь', '004405')).toBe('Минфин РБ (выпуск 004405)');
     expect(formatBondDisplayName('Министерство финансов Республики Беларусь', 'MF-LB-BYN-0405')).toBe('Минфин РБ (выпуск 0405)');
+    expect(formatBondDisplayName('Министерство финансов Республики Беларусь', 'MF-SB-BYN-0412')).toBe('Минфин РБ (выпуск 0412)');
+    expect(formatBondDisplayName('Министерство финансов Республики Беларусь', 'MF-LB-RUB-0286')).toBe('Минфин РБ (выпуск 0286)');
+    expect(formatBondDisplayName('Министерство финансов Республики Беларусь', 'MF-SB-USD-0301')).toBe('Минфин РБ (выпуск 0301)');
   });
 
   it('сохраняет обычные названия эмитентов', () => {

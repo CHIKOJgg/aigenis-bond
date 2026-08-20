@@ -60,7 +60,7 @@ class TestVerifiedCredit:
     def test_tiers(self):
         assert _credit_risk_component("Министерство", "active") == 12.0
         assert _credit_risk_component("Газпром", "active") == 6.0
-        assert _credit_risk_component("Сбербанк", "active") == 3.0
+        assert _credit_risk_component("Сбербанк", "active") == 4.0  # issuer profile
         assert _credit_risk_component("Some Bank", "active") == 0.0
         assert _credit_risk_component("Some Corp", "active") == -3.0
         assert _credit_risk_component(None, "active") == -2.0

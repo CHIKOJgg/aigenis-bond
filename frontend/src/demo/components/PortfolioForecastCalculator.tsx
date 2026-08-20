@@ -156,7 +156,6 @@ export default function PortfolioForecastCalculator({
         border: '1px solid #d6e2e6',
         padding: 24,
         marginTop: 32,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
       }}
     >
       {/* Заголовок */}
@@ -241,6 +240,7 @@ export default function PortfolioForecastCalculator({
             <DollarSign size={16} color="#717680" />
             <input
               type="number"
+              aria-label={`Стартовый капитал (${currency})`}
               min={100}
               step={1000}
               value={capital}
@@ -262,6 +262,7 @@ export default function PortfolioForecastCalculator({
           </div>
           <input
             type="range"
+            aria-label="Срок инвестирования"
             min={1}
             max={20}
             step={1}
@@ -283,6 +284,7 @@ export default function PortfolioForecastCalculator({
           </div>
           <input
             type="range"
+            aria-label="Доходность портфеля (процент годовых)"
             min={3}
             max={35}
             step={0.5}
@@ -304,6 +306,7 @@ export default function PortfolioForecastCalculator({
           </div>
           <input
             type="range"
+            aria-label="Ожидаемая инфляция (процент в год)"
             min={0}
             max={25}
             step={0.5}
@@ -322,6 +325,7 @@ export default function PortfolioForecastCalculator({
             <Calendar size={16} color="#717680" />
             <input
               type="number"
+              aria-label={`Ежемесячное пополнение (${currency})`}
               min={0}
               step={100}
               value={monthlyContribution}
@@ -450,7 +454,7 @@ export default function PortfolioForecastCalculator({
           <h3 style={{ fontSize: 14, fontWeight: 700, color: '#01121a', margin: 0 }}>
             Динамика Капитала: Номинальный vs Реальный (с учётом инфляции {inflationRate}%)
           </h3>
-          <span style={{ fontSize: 12, color: '#8fa0a8' }}>Суммы указаны в {currency}</span>
+          <span style={{ fontSize: 12, color: '#64747c' }}>Суммы указаны в {currency}</span>
         </div>
 
         <div style={{ width: '100%', height: 300 }}>

@@ -113,6 +113,7 @@ async def _analyze_with_llm(text: str) -> dict[str, object]:
             prompt,
             max_tokens=2048,
             temperature=0.1,
+            user=str(user_id),
         )
         if content:
             start = content.find("{")

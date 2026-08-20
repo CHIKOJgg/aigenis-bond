@@ -197,7 +197,10 @@ npm run test
 npm run build
 npm run test:e2e
 npm run test:e2e:visual
+npm run test:e2e:perf
 ```
+
+Полный цепной аудит демо (8 шагов, Windows: `powershell -File scripts/demo-audit.ps1`, Linux/macOS: `make demo-audit`).
 
 Runtime smoke:
 

@@ -23,12 +23,20 @@ async def llm_completion(
     *,
     max_tokens: int = 1024,
     temperature: float = 0.3,
+    user: str | None = None,
 ) -> str | None:
-    """Call OpenRouter, then OpenAI. Returns None when no key is configured."""
+    """Call OpenRouter, then OpenAI. Returns None when no key is configured.
+
+    ``user`` is a non-empty end-user identifier required by OpenRouter
+    (``safety_identifier`` / ``user``). Without it the provider rejects the
+    request with ``invalid_request_error: ... requires an end-user identifier``.
+    """
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
     ]
+
+    safety_user = (user or "").strip() or "aigenis-bonds-anon"
 
     or_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
     if or_key:
@@ -46,6 +54,7 @@ async def llm_completion(
                         "messages": messages,
                         "max_tokens": max_tokens,
                         "temperature": temperature,
+                        "user": safety_user,
                     },
                 )
                 resp.raise_for_status()
@@ -69,6 +78,7 @@ async def llm_completion(
                         "messages": messages,
                         "max_tokens": max_tokens,
                         "temperature": temperature,
+                        "user": safety_user,
                     },
                 )
                 resp.raise_for_status()

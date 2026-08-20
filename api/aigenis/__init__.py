@@ -43,15 +43,15 @@ from api.aigenis.security import (
     SsoContext,
     require_scope,
 )
+from scoring.engine import score_bond
+from scoring.explain import explain_score
+from scoring.models import BondScore, ScoreBreakdown
 from scraper.db import session_scope
 from scraper.instrument_map import resolve_aigenis_id_db
 from scraper.logging import get_logger
 from scraper.orm import BondORM
 from scraper.orm.bonds import BondScoreORM
 from scraper.orm.users import AlertORM
-from scoring.engine import score_bond
-from scoring.explain import explain_score
-from scoring.models import BondScore, ScoreBreakdown
 
 logger = get_logger("api.aigenis")
 
@@ -333,16 +333,11 @@ async def _load_bond(instrument_id: str) -> tuple[BondORM, str]:
             if bond is not None:
                 return bond, instrument_id
         bond = (
-            await session.execute(
-                select(BondORM).where(BondORM.internal_id == instrument_id)
-            )
+            await session.execute(select(BondORM).where(BondORM.internal_id == instrument_id))
         ).scalar_one_or_none()
     if bond is None:
         _not_covered(instrument_id)
     return bond, instrument_id
-
-
-
 
 
 def _bond_duration_years(bond: Any) -> float | None:
@@ -559,9 +554,7 @@ async def portfolio_impact(
         "expected_yield_pct": round(
             before["expected_yield_pct"] * (1 - alloc) + bond_ytm * alloc, 2
         ),
-        "duration_years": round(
-            before["duration_years"] * (1 - alloc) + bond_duration * alloc, 2
-        ),
+        "duration_years": round(before["duration_years"] * (1 - alloc) + bond_duration * alloc, 2),
     }
     deltas = {
         "expected_yield_pp": round(after["expected_yield_pct"] - before["expected_yield_pct"], 2),
@@ -581,7 +574,10 @@ async def portfolio_impact(
     ]
     as_of = bond.fetched_at
     response.headers.update(
-        {**response_headers(as_of, _quality_from_asof(as_of)), "X-Request-Id": make_request_id(request)}
+        {
+            **response_headers(as_of, _quality_from_asof(as_of)),
+            "X-Request-Id": make_request_id(request),
+        }
     )
     return PortfolioImpactResponse(
         before=before,

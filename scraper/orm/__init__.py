@@ -29,6 +29,7 @@ from scraper.orm.integration import (  # noqa: F401 — schema import for alembi
     InstrumentMapORM,
     SnapshotLineageORM,
 )
+from scraper.orm.issuer_financials import IssuerFinancialsORM  # noqa: F401 — schema import
 from scraper.orm.jobs import JobRunORM
 from scraper.orm.markets import FxRateORM, MetalPriceORM
 from scraper.orm.ml import ModelVersionORM, PredictionORM, TrainingRunORM
@@ -73,6 +74,7 @@ __all__ = [
     "DocumentAnalysisORM",
     "FxRateORM",
     "InstrumentMapORM",
+    "IssuerFinancialsORM",
     "JobRunORM",
     "MetalPriceORM",
     "ModelVersionORM",

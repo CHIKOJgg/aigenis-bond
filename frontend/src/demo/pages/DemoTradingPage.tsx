@@ -124,12 +124,10 @@ export default function DemoTradingPage() {
         </div>
       </div>
 
-      {source && (
-        <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12 }}>
-          Источник: {source.name}
-          {source.asOf ? ` · актуально на ${new Date(source.asOf).toLocaleString('ru-RU')}` : ''}
-        </div>
-      )}
+      <div style={{ color: '#516c79', fontSize: 12, marginBottom: 12, minHeight: 16 }}>
+        Источник: {source ? source.name : '…'}
+        {source?.asOf ? ` · актуально на ${new Date(source.asOf).toLocaleString('ru-RU')}` : ''}
+      </div>
       <MarketTable
         market={market}
         bonds={loading ? undefined : bonds}

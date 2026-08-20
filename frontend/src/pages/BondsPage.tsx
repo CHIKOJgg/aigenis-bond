@@ -46,8 +46,8 @@ export default function BondsPage() {
     setError(null);
     setPage(1);
     Promise.all([
-      api.bonds.list({ limit: 1000 }),
-      api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
+      api.bonds.list({ limit: 2000 }),
+      api.scores({ limit: 2000 }).catch(() => [] as BondScore[]),
     ])
       .then(([bs, sc]) => {
         setAllBonds(bs);
@@ -123,7 +123,7 @@ export default function BondsPage() {
     const couponHi = f.coupon[1] != null ? f.coupon[1] : null;
 
     let rows = allBonds.filter((b) => {
-      if (q && !(b.name.toLowerCase().includes(q) || b.internal_id.toLowerCase().includes(q))) return false;
+      if (q && ![b.name, b.internal_id, b.issuer, b.isin].some((v) => v && v.toLowerCase().includes(q))) return false;
       if (f.currencies.length && !f.currencies.includes(b.currency)) return false;
       if (f.statuses.length && !f.statuses.includes(b.status)) return false;
       if (f.favoritesOnly && !favorites.has(b.internal_id)) return false;

@@ -35,31 +35,40 @@ def test_to_price_pct_tiny_quote_treated_as_absolute():
 
 
 def test_honest_yield_returns_stored_for_normal():
-    assert honest_yield(stored_ytm_pct=10.0, coupon_rate_pct=10.0,
-                        indexation_currency=None) == 10.0
+    assert honest_yield(stored_ytm_pct=10.0, coupon_rate_pct=10.0, indexation_currency=None) == 10.0
 
 
 def test_honest_yield_none_for_indexed_metal_no_coupon():
-    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=0.0,
-                        indexation_currency="XAU") is None
+    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=0.0, indexation_currency="XAU") is None
 
 
 def test_honest_yield_none_for_metal_currency_no_coupon():
     # Валюта номинала — металл, индексации нет: доходности быть не должно.
-    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=None,
-                        indexation_currency=None, currency="XAU") is None
-    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=0.001,
-                        indexation_currency=None, currency="XPT") is None
+    assert (
+        honest_yield(
+            stored_ytm_pct=12.0, coupon_rate_pct=None, indexation_currency=None, currency="XAU"
+        )
+        is None
+    )
+    assert (
+        honest_yield(
+            stored_ytm_pct=12.0, coupon_rate_pct=0.001, indexation_currency=None, currency="XPT"
+        )
+        is None
+    )
 
 
 def test_honest_yield_keeps_stored_for_indexed_metal_with_coupon():
-    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=3.0,
-                        indexation_currency="XAU") == 12.0
+    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=3.0, indexation_currency="XAU") == 12.0
 
 
 def test_honest_yield_keeps_stored_for_metal_currency_with_coupon():
-    assert honest_yield(stored_ytm_pct=12.0, coupon_rate_pct=3.0,
-                        indexation_currency=None, currency="XAU") == 12.0
+    assert (
+        honest_yield(
+            stored_ytm_pct=12.0, coupon_rate_pct=3.0, indexation_currency=None, currency="XAU"
+        )
+        == 12.0
+    )
 
 
 def test_ytm_from_price_par_around_coupon():

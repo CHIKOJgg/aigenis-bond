@@ -15,6 +15,7 @@ export default function DemoStressPage() {
 
   const [scenarioKey, setScenarioKey] = useState('parallel_+100bp');
   const [capital, setCapital] = useState(50000);
+  const [capitalError, setCapitalError] = useState<string | null>(null);
   const [data, setData] = useState<StressTestResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -94,11 +95,27 @@ export default function DemoStressPage() {
           <span style={{ fontSize: 13, color: '#717680', fontWeight: 500 }}>Капитал портфеля:</span>
           <input
             type="number"
+            aria-label="Капитал портфеля"
+            min={1}
+            step={1000}
             value={capital}
-            onChange={(e) => setCapital(Number(e.target.value) || 10000)}
-            style={{ width: 100, border: 'none', fontWeight: 700, fontSize: 14, color: '#01121a', outline: 'none' }}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw.trim() === '') { setCapitalError(null); return; }
+              const v = Number(raw);
+              if (!Number.isFinite(v) || v <= 0) {
+                setCapitalError('Сумма инвестиций должна быть больше 0');
+                return;
+              }
+              setCapitalError(null);
+              setCapital(v);
+            }}
+            style={{ width: 110, border: 'none', fontWeight: 700, fontSize: 14, color: '#01121a', outline: 'none' }}
           />
           <span style={{ fontSize: 13, color: '#717680' }}>{market === 'MOEX' ? 'RUB' : 'BYN'}</span>
+          {capitalError && (
+            <div style={{ color: '#e03400', fontSize: 12, marginTop: 4, width: '100%', flexBasis: '100%' }}>{capitalError}</div>
+          )}
         </div>
       </div>
 
@@ -257,7 +274,7 @@ export default function DemoStressPage() {
                         <td style={{ padding: '12px', fontWeight: 600, color: '#0B526B' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span>{formatBondDisplayName(pos.name, pos.internal_id)}</span>
-                            <ExternalLink size={12} color="#8fa0a8" />
+                            <ExternalLink size={12} color="#64747c" />
                           </div>
                         </td>
                         <td style={{ padding: '12px', textAlign: 'right', color: '#516c79' }}>
@@ -272,7 +289,17 @@ export default function DemoStressPage() {
                       </tr>
                     ));
                   }
-                  return Object.entries(res.by_position).map(([name, pnl], idx) => (
+                  const entries = Object.entries(res.by_position);
+                  if (entries.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '24px 12px', textAlign: 'center', color: '#717680' }}>
+                          Нет позиций для расчёта — подберите рыночные параметры стресс-сценария
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return entries.map(([name, pnl], idx) => (
                     <tr key={idx} style={{ borderBottom: '1px solid #f5f9fb' }}>
                       <td style={{ padding: '12px', fontWeight: 600, color: '#01121a' }}>
                         {formatBondDisplayName(name, name)}

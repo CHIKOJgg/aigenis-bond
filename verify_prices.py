@@ -1,8 +1,10 @@
 """Check that each demo bond's stated price is consistent with its stated YTM
 and coupon schedule (price accuracy audit)."""
+
 import json
 from datetime import date
 from pathlib import Path
+
 from desk.ytm import to_price_pct, ytm_from_price
 
 REPO = Path(__file__).resolve().parent

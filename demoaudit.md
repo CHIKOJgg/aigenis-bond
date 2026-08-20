@@ -120,10 +120,15 @@ This plan audits it end-to-end before presenting to Aigenis, combining:
   lint 0 warnings; typecheck clean; demo unit + E2E + visual green; security
   fail-closed guards confirmed; demo serves offline; report artifact produced.
 
-## 6. Proposed automation
+## 6. Automation (implemented 2026-08-18)
 
-Add a `make demo-audit` target chaining steps 2–8 and generating the report, so
-the audit is reproducible before each buyer demo (mirrors existing `make verify`).
+Implemented as `make demo-audit` (Linux/macOS) and `scripts/demo-audit.ps1`
+(Windows, plain `powershell`). The 8-step chain: fixtures (`audit_demo.py`) →
+optimizer monotonicity (`verify_demo_frontend.py`) → backend demo tests →
+ruff (demo surface) → frontend lint + `tsc -b` → unit tests → **E2E smoke
+(cross-browser) + visual regression + perf budgets** → security grep (with
+`do-not-use-in-production` marker allowlist). Any failure exits non-zero;
+report still maintained manually as `demo-audit-report.md`.
 
 ## 7. Risks & known gaps
 
@@ -137,5 +142,6 @@ the audit is reproducible before each buyer demo (mirrors existing `make verify`
 ## 8. Next steps (after approval)
 
 1. Write this plan to `DEMO_AUDIT_PLAN.md`.
-2. Wire a `make demo-audit` target and a `scripts/demo_audit_report.py` to
-   automate steps 2–9.
+2. ~~Wire a `make demo-audit` target and a `scripts/demo_audit_report.py` to
+   automate steps 2–9~~ — **done 2026-08-18** (chain + ps1/Makefile; report
+   remains a manually maintained artifact).

@@ -84,6 +84,7 @@ export default function DemoPortfolioImpactPage() {
             <div style={{ position: 'relative' }}>
               <input
                 type="search"
+                name="bond-search"
                 role="combobox"
                 aria-label="Поиск облигации"
                 aria-expanded={bondMenuOpen}
@@ -174,9 +175,17 @@ export default function DemoPortfolioImpactPage() {
               </button>
             </>
           )}
-          {!bond && (
+          {!bond && loading && (
             <div style={{
-              padding: 40, textAlign: 'center', color: '#717680',
+              padding: 40, textAlign: 'center', color: '#5c666f',
+              background: '#fafafa', borderRadius: 10,
+            }}>
+              Загрузка актуальных котировок…
+            </div>
+          )}
+          {!bond && !loading && (
+            <div style={{
+              padding: 40, textAlign: 'center', color: '#5c666f',
               background: '#fafafa', borderRadius: 10,
             }}>
               Выберите облигацию для оценки портфельного эффекта

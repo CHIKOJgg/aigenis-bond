@@ -45,8 +45,8 @@ def test_coupon_component_zero_penalty():
 
 
 def test_duration_component_short_bonus_long_penalty():
-    assert _duration_component(0.3) == 8.0       # very short
-    assert _duration_component(10.0) < 0.0       # very long -> negative
+    assert _duration_component(0.3) == 8.0  # very short
+    assert _duration_component(10.0) < 0.0  # very long -> negative
 
 
 def test_metal_component_direct_and_keyword():
@@ -57,11 +57,11 @@ def test_metal_component_direct_and_keyword():
 
 
 def test_liquidity_component_active_with_price():
-    full = _liquidity_component(has_price=True, status="active",
-                                days_to_maturity=200, price_pct=100.0)
+    full = _liquidity_component(
+        has_price=True, status="active", days_to_maturity=200, price_pct=100.0
+    )
     assert full >= 9.0  # 5 + 2 + 4 + 3 (short)
-    no_price = _liquidity_component(has_price=False, status="active",
-                                     days_to_maturity=200)
+    no_price = _liquidity_component(has_price=False, status="active", days_to_maturity=200)
     assert no_price < full
 
 
@@ -91,8 +91,8 @@ def test_volatility_component_extreme_ytm_penalty():
 
 def test_historical_volatility_component_buckets():
     assert _historical_volatility_component([10.0, 10.1, 10.0]) == 5.0  # very stable
-    assert _historical_volatility_component([10.0, 20.0, 5.0]) < 0       # very unstable
-    assert _historical_volatility_component([10.0]) == 0.0              # too few
+    assert _historical_volatility_component([10.0, 20.0, 5.0]) < 0  # very unstable
+    assert _historical_volatility_component([10.0]) == 0.0  # too few
 
 
 def test_peer_relative_component_zscore():
@@ -127,19 +127,34 @@ def test_score_bond_invariants():
     bd = sc.breakdown
     # reward_subtotal = sum of non-negative components
     manual_reward = sum(
-        max(v, 0.0) for v in [
-            bd.yield_component, bd.currency_component, bd.duration_component,
-            bd.liquidity_component, bd.metal_component, bd.credit_risk_component,
-            bd.inflation_component, bd.coupon_component, bd.historical_volatility_component,
+        max(v, 0.0)
+        for v in [
+            bd.yield_component,
+            bd.currency_component,
+            bd.duration_component,
+            bd.liquidity_component,
+            bd.metal_component,
+            bd.credit_risk_component,
+            bd.inflation_component,
+            bd.coupon_component,
+            bd.historical_volatility_component,
             bd.peer_relative_component,
         ]
     )
     manual_risk = sum(
-        abs(min(v, 0.0)) for v in [
-            bd.yield_component, bd.currency_component, bd.duration_component,
-            bd.liquidity_component, bd.metal_component, bd.credit_risk_component,
-            bd.inflation_component, bd.coupon_component, bd.volatility_component,
-            bd.historical_volatility_component, bd.peer_relative_component,
+        abs(min(v, 0.0))
+        for v in [
+            bd.yield_component,
+            bd.currency_component,
+            bd.duration_component,
+            bd.liquidity_component,
+            bd.metal_component,
+            bd.credit_risk_component,
+            bd.inflation_component,
+            bd.coupon_component,
+            bd.volatility_component,
+            bd.historical_volatility_component,
+            bd.peer_relative_component,
         ]
     )
     assert bd.reward_subtotal == pytest.approx(round(manual_reward, 2), abs=0.01)

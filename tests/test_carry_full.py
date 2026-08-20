@@ -11,7 +11,15 @@ from desk.carry import _rolldown_bps, carry_for_bond, rank_carry
 from desk.models import NelsonSiegelParams
 
 
-def _bond(internal_id="B", ytm=12.0, coupon=12.0, maturity=date(2029, 1, 1), freq=2, nominal=1000, currency="BYN"):
+def _bond(
+    internal_id="B",
+    ytm=12.0,
+    coupon=12.0,
+    maturity=date(2029, 1, 1),
+    freq=2,
+    nominal=1000,
+    currency="BYN",
+):
     return SimpleNamespace(
         internal_id=internal_id,
         yield_to_maturity=ytm,
@@ -59,7 +67,9 @@ def test_carry_without_curve_uses_ytm():
     ct = carry_for_bond(_bond(ytm=12, coupon=12), funding_rate_pct=5.0, curve_params=None)
     assert ct is not None
     # no rolldown when curve absent -> expected pnl = carry only
-    assert ct.expected_pnl_pct == pytest.approx(ct.rolldown_bps / 100 * 0 + ct.expected_pnl_pct, abs=1e-6)
+    assert ct.expected_pnl_pct == pytest.approx(
+        ct.rolldown_bps / 100 * 0 + ct.expected_pnl_pct, abs=1e-6
+    )
 
 
 def test_carry_with_curve_adds_rolldown():
@@ -77,7 +87,9 @@ def test_rank_carry_sorts_desc():
     ]
     ranked = rank_carry(bonds, funding_rate_pct=5.0)
     assert ranked[0].internal_id == "high"
-    assert all(ranked[i].expected_pnl_pct >= ranked[i + 1].expected_pnl_pct for i in range(len(ranked) - 1))
+    assert all(
+        ranked[i].expected_pnl_pct >= ranked[i + 1].expected_pnl_pct for i in range(len(ranked) - 1)
+    )
 
 
 def test_rank_carry_skips_incomplete():

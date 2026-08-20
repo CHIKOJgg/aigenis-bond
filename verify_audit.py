@@ -36,7 +36,9 @@ def to_bond(d: dict) -> Bond:
         is_government=bool(d.get("is_government")),
         indexation_currency=d.get("indexation_currency"),
         term_days=d.get("term_days"),
-        fetched_at=datetime.fromisoformat(d["fetched_at"]) if d.get("fetched_at") else datetime(2026, 8, 6),
+        fetched_at=datetime.fromisoformat(d["fetched_at"])
+        if d.get("fetched_at")
+        else datetime(2026, 8, 6),
     )
 
 
@@ -71,20 +73,26 @@ for s in STRATEGY_ORDER:
 
 print("\n== Monotonicity checks (passive must stay passive, aggressive > passive) ==")
 checks = [
-    ("Conservative (passive) < Aggressive (aggressive)",
-     results["Conservative"] < results["Aggressive"]),
+    (
+        "Conservative (passive) < Aggressive (aggressive)",
+        results["Conservative"] < results["Aggressive"],
+    ),
     ("Balanced < Aggressive", results["Balanced"] < results["Aggressive"]),
     ("Conservative < Carry Trade", results["Conservative"] < results["Carry Trade"]),
     ("Dollarization < Aggressive", results["Dollarization"] < results["Aggressive"]),
-    ("Maximum Reward/Risk >= Aggressive (both aggressive)",
-     results["Maximum Reward/Risk"] >= results["Aggressive"]),
+    (
+        "Maximum Reward/Risk >= Aggressive (both aggressive)",
+        results["Maximum Reward/Risk"] >= results["Aggressive"],
+    ),
 ]
 ok = True
 for name, cond in checks:
-    print(f"  [{'OK ' if cond else 'FAIL'}] {name}  "
-          f"(C={results['Conservative']}, B={results['Balanced']}, "
-          f"A={results['Aggressive']}, CT={results['Carry Trade']}, "
-          f"MRR={results['Maximum Reward/Risk']})")
+    print(
+        f"  [{'OK ' if cond else 'FAIL'}] {name}  "
+        f"(C={results['Conservative']}, B={results['Balanced']}, "
+        f"A={results['Aggressive']}, CT={results['Carry Trade']}, "
+        f"MRR={results['Maximum Reward/Risk']})"
+    )
     ok = ok and cond
 
 print("\n== Allocator portfolio sanity (actual YTM-based, not monotonic by design) ==")
@@ -108,9 +116,11 @@ for iid in ["demo-bond-007", "demo-bond-001", "demo-bond-006"]:
     b = next(x for x in BONDS if x.internal_id == iid)
     ct = carry_for_bond(b, funding_rate_pct=5.0, horizon_days=90)
     if ct:
-        print(f"  {iid}: coupon={ct.coupon_pct}% funding=5% "
-              f"carry_pnl={ct.expected_pnl_pct:.3f}% breakeven={ct.breakeven_bps}bps "
-              f"rolldown={ct.rolldown_bps}bps")
+        print(
+            f"  {iid}: coupon={ct.coupon_pct}% funding=5% "
+            f"carry_pnl={ct.expected_pnl_pct:.3f}% breakeven={ct.breakeven_bps}bps "
+            f"rolldown={ct.rolldown_bps}bps"
+        )
         # expected P&L must be a sane small number (not 100x inflated)
         assert -5 < ct.expected_pnl_pct < 25, f"rolldown bug: {ct.expected_pnl_pct}"
 print("  carry P&L magnitudes sane (no 100x inflation)")

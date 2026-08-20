@@ -10,7 +10,7 @@ export function formatDurationYears(val: number | null | undefined): string {
   // значения больше 30 интерпретируются как дни. Для однозначности срока
   // используйте formatTermDays.
   const years = val > 30 ? val / 365.25 : val;
-  return `${years.toFixed(1)} г.`;
+  return formatYears(years);
 }
 
 export function formatTermDays(days: number | null | undefined): string {
@@ -19,7 +19,12 @@ export function formatTermDays(days: number | null | undefined): string {
 }
 
 export function formatYears(years: number | null | undefined): string {
-  return years != null ? `${years.toFixed(1)} г.` : '—';
+  if (years == null) return '—';
+  // Короткие бумаги (дюрация меньше ~36 дней) не должны превращаться в
+  // обманчивое «0.0 г.»: показываем 2 знака, иначе 0.04 г. выглядит как
+  // нулевой срок. От 0.1 года и выше одного знака достаточно.
+  const precision = Math.abs(years) < 0.1 ? 2 : 1;
+  return `${years.toFixed(precision)} г.`;
 }
 
 export function formatPrice(
@@ -69,14 +74,14 @@ export function formatBondDisplayName(
   const cleanName = name.trim();
 
   // Очищаем технические префиксы вида MF-LB-USD-0355 -> ВГДО 355
-  const humanized = cleanName
-    .replace(/MF-LB-USD-0?(\d+)/gi, 'ВГДО $1 (USD)')
-    .replace(/MF-LB-BYN-0?(\d+)/gi, 'ВГДО $1 (BYN)')
-    .replace(/demo-bond-minfin-usd-0?(\d+)/gi, 'ВГДО $1 (USD)');
+  const humanized = cleanName.replace(
+    /MF-(LB|SB)-(BYN|USD|RUB)-0?(\d+)/gi,
+    (_match, _kind: string, cur: string, num: string) => `ВГДО ${num} (${cur})`,
+  ).replace(/demo-bond-minfin-usd-0?(\d+)/gi, 'ВГДО $1 (USD)');
 
   // Если это generic-заголовок "Министерство финансов" без номера выпуска
   if (/^министерство финансов( республики беларусь)?$/i.test(humanized) || humanized.toLowerCase() === 'минфин') {
-    const rawCode = internalId ? internalId.replace(/^(demo-bond-)?(BCSE|MOEX|MF-LB-BYN|MF-LB-USD)-?/i, '') : (isin ?? '');
+    const rawCode = internalId ? internalId.replace(/^(demo-bond-)?(BCSE|MOEX|MF-(?:LB|SB)-(?:BYN|USD|RUB))-?/i, '') : (isin ?? '');
     if (rawCode) {
       return `Минфин РБ (выпуск ${rawCode})`;
     }

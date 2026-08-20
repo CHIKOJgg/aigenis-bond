@@ -19,7 +19,9 @@ def _bundle(tmp_path):
     x_train = np.array([[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]], dtype=float)
     y = np.array([1.0, 2.0, 1.5], dtype=float)
     scaler = StandardScaler().fit(x_train)
-    model = GradientBoostingRegressor(n_estimators=10, random_state=0).fit(scaler.transform(x_train), y)
+    model = GradientBoostingRegressor(n_estimators=10, random_state=0).fit(
+        scaler.transform(x_train), y
+    )
     path = tmp_path / "ytm_regressor_test.joblib"
     registry.save_artifact(path, {"model": model, "scaler": scaler, "features": ["a", "b"]})
     return path

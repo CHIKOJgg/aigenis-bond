@@ -12,12 +12,13 @@ const NAV_ITEMS = [
   { path: '/demo/search', label: 'Поиск', icon: <Search size={18} /> },
 ];
 
-export default function DemoSidebar() {
+export default function DemoSidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
 
   return (
     <aside
+      className={`demo-sidebar${open ? ' demo-sidebar-open' : ''}`}
       style={{
         width: 210,
         minWidth: 210,
@@ -32,7 +33,7 @@ export default function DemoSidebar() {
         <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.5px' }}>
           Aigenis Invest
         </span>
-        <span style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+        <span style={{ display: 'block', fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 2 }}>
           Analytics Preview
         </span>
       </div>
@@ -43,7 +44,7 @@ export default function DemoSidebar() {
           return (
             <button
               key={item.path}
-              onClick={() => navigate(`${item.path}${location.search}`)}
+              onClick={() => { navigate(`${item.path}${location.search}`); onClose?.(); }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -52,7 +53,7 @@ export default function DemoSidebar() {
                 padding: '10px 20px',
                 border: 'none',
                 background: isActive ? 'rgba(255,255,255,0.12)' : 'transparent',
-                color: isActive ? '#ffffff' : 'rgba(255,255,255,0.7)',
+                color: isActive ? '#ffffff' : 'rgba(255,255,255,0.8)',
                 fontSize: 14,
                 fontWeight: isActive ? 600 : 400,
                 cursor: 'pointer',
@@ -74,7 +75,7 @@ export default function DemoSidebar() {
           background: 'rgba(255,255,255,0.08)',
           borderRadius: 8,
           fontSize: 12,
-          color: 'rgba(255,255,255,0.6)',
+          color: 'rgba(255,255,255,0.85)',
         }}
       >
         <div style={{ fontWeight: 600, color: 'rgba(255,255,255,0.9)', marginBottom: 4 }}>

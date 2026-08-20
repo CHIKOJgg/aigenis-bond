@@ -32,7 +32,15 @@ def _pos(internal_id, amount):
     return SimpleNamespace(internal_id=internal_id, amount=Decimal(str(amount)))
 
 
-def _bond(price=100.0, coupon_rate=10.0, currency="BYN", status="active", start=date(2024, 1, 1), maturity=date(2029, 1, 1), coupon_frequency=2):
+def _bond(
+    price=100.0,
+    coupon_rate=10.0,
+    currency="BYN",
+    status="active",
+    start=date(2024, 1, 1),
+    maturity=date(2029, 1, 1),
+    coupon_frequency=2,
+):
     return SimpleNamespace(
         price=price,
         coupon_rate=coupon_rate,
@@ -48,7 +56,15 @@ def _bond(price=100.0, coupon_rate=10.0, currency="BYN", status="active", start=
 # PositionPnL / PortfolioPnL aggregates
 # --------------------------------------------------------------------------- #
 def test_position_pnl_total():
-    p = PositionPnL("B", Decimal("10"), Decimal("5"), Decimal("3"), Decimal("100"), Decimal("90"), Decimal("0.5"))
+    p = PositionPnL(
+        "B",
+        Decimal("10"),
+        Decimal("5"),
+        Decimal("3"),
+        Decimal("100"),
+        Decimal("90"),
+        Decimal("0.5"),
+    )
     assert p.total_pnl() == Decimal("18")
 
 
@@ -120,7 +136,9 @@ def test_sell_without_buys_no_realized():
 # --------------------------------------------------------------------------- #
 def test_unrealized_mark_to_market_dirty_price():
     txs = [_tx("B", "buy", 1000, 100, datetime(2024, 1, 1))]
-    bonds = {"B": _bond(price=110, coupon_rate=10, start=date(2024, 1, 1), maturity=date(2029, 1, 1))}
+    bonds = {
+        "B": _bond(price=110, coupon_rate=10, start=date(2024, 1, 1), maturity=date(2029, 1, 1))
+    }
     res = compute_pnl(txs, [_pos("B", 1000)], bonds)
     pos = next(p for p in res.per_bond if p.internal_id == "B")
     # mark at dirty price (110 + accrued) must exceed clean cost basis of 1000

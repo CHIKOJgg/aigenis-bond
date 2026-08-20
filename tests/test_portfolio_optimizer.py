@@ -180,40 +180,58 @@ def _metal_bond(iid: str, idx: str, ytm: float = 10.0) -> Bond:
 def test_honest_yield_none_for_couponless_indexed():
     from desk.ytm import honest_yield
 
-    assert honest_yield(
-        stored_ytm_pct=10.5,
-        coupon_rate_pct=0.001,
-        indexation_currency="XAU",
-    ) is None
-    assert honest_yield(
-        stored_ytm_pct=9.8,
-        coupon_rate_pct=0.001,
-        indexation_currency="XAG",
-    ) is None
-    assert honest_yield(
-        stored_ytm_pct=8.5,
-        coupon_rate_pct=None,
-        indexation_currency="XPT",
-    ) is None
+    assert (
+        honest_yield(
+            stored_ytm_pct=10.5,
+            coupon_rate_pct=0.001,
+            indexation_currency="XAU",
+        )
+        is None
+    )
+    assert (
+        honest_yield(
+            stored_ytm_pct=9.8,
+            coupon_rate_pct=0.001,
+            indexation_currency="XAG",
+        )
+        is None
+    )
+    assert (
+        honest_yield(
+            stored_ytm_pct=8.5,
+            coupon_rate_pct=None,
+            indexation_currency="XPT",
+        )
+        is None
+    )
     # Металлическая валюта без индексации (currency=XAU) — тоже без доходности.
-    assert honest_yield(
-        stored_ytm_pct=12.0,
-        coupon_rate_pct=None,
-        indexation_currency=None,
-        currency="XAU",
-    ) is None
+    assert (
+        honest_yield(
+            stored_ytm_pct=12.0,
+            coupon_rate_pct=None,
+            indexation_currency=None,
+            currency="XAU",
+        )
+        is None
+    )
     # Реальный купон (например, MOEX-золотодобытчики) — хранимый YTM честный.
-    assert honest_yield(
-        stored_ytm_pct=12.0,
-        coupon_rate_pct=10.0,
-        indexation_currency="XAU",
-    ) == 12.0
+    assert (
+        honest_yield(
+            stored_ytm_pct=12.0,
+            coupon_rate_pct=10.0,
+            indexation_currency="XAU",
+        )
+        == 12.0
+    )
     # Обычная облигация — без изменений.
-    assert honest_yield(
-        stored_ytm_pct=9.4,
-        coupon_rate_pct=8.0,
-        indexation_currency=None,
-    ) == 9.4
+    assert (
+        honest_yield(
+            stored_ytm_pct=9.4,
+            coupon_rate_pct=8.0,
+            indexation_currency=None,
+        )
+        == 9.4
+    )
 
 
 def test_weighted_stats_uses_honest_ytm_for_metals():

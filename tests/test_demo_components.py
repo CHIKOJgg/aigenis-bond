@@ -18,7 +18,10 @@ def test_strategy_order_base_returns_are_monotonic():
     bases = [demo.STRATEGY_PROFILES[s]["baseReturn"] for s in demo.STRATEGY_ORDER]
     assert bases == sorted(bases)
     # passive < aggressive
-    assert demo.STRATEGY_PROFILES["Conservative"]["baseReturn"] < demo.STRATEGY_PROFILES["Maximum Reward/Risk"]["baseReturn"]
+    assert (
+        demo.STRATEGY_PROFILES["Conservative"]["baseReturn"]
+        < demo.STRATEGY_PROFILES["Maximum Reward/Risk"]["baseReturn"]
+    )
 
 
 def test_guarded_expected_return_preserves_strategy_order():
@@ -46,7 +49,9 @@ def test_issuer_risk_payload_tiers():
     assert dflt["score"] == 15.0
     assert dflt["level"] == "Критический"
     # negative credit component -> high risk
-    neg = _issuer_risk_payload("Y Corp", is_government=False, credit_component=-5.0, status="active")
+    neg = _issuer_risk_payload(
+        "Y Corp", is_government=False, credit_component=-5.0, status="active"
+    )
     assert neg["level"] == "Умеренный"
     assert neg["score"] == 56.0
 
@@ -63,9 +68,7 @@ def test_strategy_notes_only_for_metals_plus_plus():
 
 
 def test_build_impact_known_bond_returns_response():
-    resp = _build_impact(
-        PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10)
-    )
+    resp = _build_impact(PortfolioImpactRequest(bond_id="demo-bond-001", allocation_pct=10))
     assert resp.bond_id == "demo-bond-001"
     assert resp.allocation_pct == 10
     # before/after yields bracket the portfolio benchmark; after >= before when

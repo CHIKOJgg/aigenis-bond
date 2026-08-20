@@ -41,10 +41,32 @@ verify:
 	cd frontend && npm run build
 	@echo "=== All checks passed ==="
 
-# ---- E2E smoke + visual regression (требует установленных браузеров Playwright) ----
+# ---- E2E smoke + visual regression + perf (требует установленных браузеров Playwright) ----
 verify-e2e:
 	cd frontend && npm run test:e2e
 	cd frontend && npm run test:e2e:visual
+	cd frontend && npm run test:e2e:perf
+
+# ---- Reproducible pre-demo audit chain (Windows: pwsh -File scripts/demo-audit.ps1) ----
+.PHONY: demo-audit
+demo-audit:
+	@echo "=== 1/8 Fixture consistency (audit_demo: regenerate + two-copy sync) ==="
+	.venv/bin/python audit_demo.py
+	@echo "=== 2/8 Optimizer monotonicity (verify_demo_frontend) ==="
+	.venv/bin/python verify_demo_frontend.py
+	@echo "=== 3/8 Backend demo tests ==="
+	.venv/bin/python -m pytest tests/test_demo_endpoint.py tests/test_demo_components.py tests/test_analytics_http.py -q
+	@echo "=== 4/8 Ruff (demo surface) ==="
+	.venv/bin/python -m ruff check api/demo.py tests/test_demo_endpoint.py tests/test_demo_components.py tests/test_analytics_http.py audit_demo.py verify_demo_frontend.py
+	@echo "=== 5/8 Frontend lint + typecheck ==="
+	cd frontend && npm run lint && npx tsc -b
+	@echo "=== 6/8 Frontend unit tests ==="
+	cd frontend && npm run test
+	@echo "=== 7/8 E2E smoke + visual regression + perf ==="
+	cd frontend && npm run test:e2e && npm run test:e2e:visual && npm run test:e2e:perf
+	@echo "=== 8/8 Security grep (hardcoded secrets in demo surface) ==="
+	@! grep -rInE "(api[_-]?key|apikey|secret|passwd|password|bearer|auth[_-]?token|access[_-]?token)[[:space:]]*[:=][[:space:]]*[\"'][^\"']{8,}[\"']" frontend/src/demo api --include='*.ts' --include='*.tsx' --include='*.py' && { echo "Security grep clean."; true; }
+	@echo "=== Demo audit chain passed ==="
 
 # ---- Сборка ----
 

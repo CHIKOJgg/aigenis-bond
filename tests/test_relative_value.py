@@ -50,7 +50,7 @@ def test_bucket_zscore_computes_z():
     avg, z = _bucket_zscore([8.0, 10.0, 12.0, 14.0], 14.0)
     # mean = 11, pstdev = sqrt(5) ~= 2.236
     assert avg == 11.0
-    assert z == (14.0 - 11.0) / (5.0 ** 0.5)
+    assert z == (14.0 - 11.0) / (5.0**0.5)
 
 
 def test_relative_value_signals_buy_and_sell():
@@ -113,7 +113,7 @@ def test_signals_from_curve_buy_sell_hold():
     )
     signals = signals_from_curve(curve)
     sides = {s.internal_id.split("-")[1]: s.side for s in signals}
-    assert sides["1Y"] == "buy"   # highest rate => cheap
+    assert sides["1Y"] == "buy"  # highest rate => cheap
     assert sides["10Y"] == "sell"  # lowest rate => rich
     assert sides["5Y"] == "hold"
 

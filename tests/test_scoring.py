@@ -113,7 +113,7 @@ def test_classify_issuer_tiers():
 def test_credit_risk_component():
     assert _credit_risk_component("Министерство финансов", "active") == 12.0
     assert _credit_risk_component("Газпром", "active") == 6.0
-    assert _credit_risk_component("Сбербанк", "active") == 3.0
+    assert _credit_risk_component("Сбербанк", "active") == 4.0  # issuer profile
     assert _credit_risk_component("Acme Bank", "active") == 0.0
     assert _credit_risk_component("Acme Corp", "active") == -3.0
     assert _credit_risk_component(None, "active") == -2.0

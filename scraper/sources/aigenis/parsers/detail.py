@@ -9,6 +9,8 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
+from scraper.sources.aigenis.isin_overrides import override_isin
+
 
 def _id_matches(candidate: dict[str, Any], internal_id: str | None) -> bool:
     target = (internal_id or "").strip().lower()
@@ -173,7 +175,7 @@ def _parse_dom(html: str, internal_id: str) -> dict[str, Any]:
     payload["offer_date"] = grab("оферта", "offer")
     payload["start_date"] = grab("дата размещения", "размещение", "start")
     payload["end_date"] = grab("дата окончания", "окончание", "end")
-    payload["isin"] = grab("isin")
+    payload["isin"] = override_isin(internal_id, grab("isin"))
     payload["status"] = grab("статус", "status")
 
     # Парсинг wp-block-aigenis-bounds (основной формат aigenis.by)

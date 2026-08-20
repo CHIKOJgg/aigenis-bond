@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import math
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from desk.ytm import is_metal_bond, to_price_pct, ytm_from_price
 from scoring.eligibility import (
     DISTRIBUTION_MAX_PRICE_PCT,
     DISTRIBUTION_MIN_YTM_PCT,
@@ -26,7 +28,7 @@ from scraper.orm import BondORM, BondScoreORM
 YTM_PERSIST_MAX_PCT = 1000.0
 
 
-def _sanitize_ytm(value: Any) -> "Decimal | None":
+def _sanitize_ytm(value: Any) -> Decimal | None:
     """Clamp a computed/stored yield to a storage- and sanity-safe value."""
     if value is None:
         return None
@@ -111,12 +113,60 @@ async def count_scores(session: AsyncSession) -> int:
     return int(result.scalar_one())
 
 
+def _validate_stored_ytm(b: BondORM, raw_ytm: Decimal | float | None, asof: date) -> Decimal | None:
+    """Cross-check a stored yield against the coupon/price-implied one."""
+    if raw_ytm is None or float(raw_ytm) <= 0:
+        return None
+    ytm_val = float(raw_ytm)
+    price_pct = to_price_pct(b.price, b.nominal)
+    computed = None
+    if price_pct is not None and b.coupon_rate is not None and b.maturity_date is not None:
+        try:
+            computed = ytm_from_price(
+                price_pct=price_pct,
+                coupon_rate_pct=float(b.coupon_rate),
+                coupon_frequency=int(b.coupon_frequency or 2),
+                maturity=b.maturity_date,
+                asof=asof,
+            )
+        except Exception:
+            computed = None
+    if computed is not None and computed > 0:
+        # The price-implied yield is the honest current one: the demo detail
+        # endpoint always recomputes it from the market price, so the stored
+        # score must not drift from what the UI shows for the same bond.
+        return Decimal(str(round(computed, 4)))
+    if ytm_val < 100:
+        # No price to cross-check; keep only plausible stored yields.
+        return Decimal(str(round(ytm_val, 4)))
+    # Unvalidatable extreme yield — treat as missing data.
+    return None
+
+
+def _solve_missing_ytm(b: BondORM, asof: date) -> Decimal | None:
+    """Solve YTM from price when the source provides none."""
+    if b.price is None or b.coupon_rate is None or b.maturity_date is None:
+        return None
+    try:
+        price_pct = to_price_pct(b.price, b.nominal)
+        if price_pct is None:
+            return None
+        solved = ytm_from_price(
+            price_pct=price_pct,
+            coupon_rate_pct=float(b.coupon_rate),
+            coupon_frequency=int(b.coupon_frequency or 2),
+            maturity=b.maturity_date,
+            asof=asof,
+        )
+        if solved is not None and solved > 0:
+            return Decimal(str(round(solved, 4)))
+    except Exception:
+        pass
+    return None
+
+
 async def recompute_all(session: AsyncSession) -> int:
     """Пересчитать Score для всех облигаций в БД."""
-    from datetime import date
-
-    from desk.ytm import is_metal_bond, sane_yield, to_price_pct, ytm_from_price
-
     result = await session.execute(select(BondORM))
     bonds = list(result.scalars().all())
     scores: list[BondScore] = []
@@ -128,55 +178,10 @@ async def recompute_all(session: AsyncSession) -> int:
             b.coupon_rate is None or float(b.coupon_rate) <= 0.01
         )
         ytm = None
-        if not metal_no_coupon and raw_ytm is not None and float(raw_ytm) > 0:
-            ytm_val = float(raw_ytm)
-            price_pct = to_price_pct(b.price, b.nominal)
-            computed = None
-            if price_pct is not None and b.coupon_rate is not None and b.maturity_date is not None:
-                try:
-                    computed = ytm_from_price(
-                        price_pct=price_pct,
-                        coupon_rate_pct=float(b.coupon_rate),
-                        coupon_frequency=int(b.coupon_frequency or 2),
-                        maturity=b.maturity_date,
-                        asof=date.today(),
-                    )
-                except Exception:
-                    computed = None
-            if computed is not None and sane_yield(ytm_val, computed):
-                ytm = ytm_val
-            elif computed is not None and computed > 0:
-                # Source yield disagrees with the coupon/price-implied yield:
-                # trust our own estimate instead of the garbage value.
-                ytm = round(computed, 4)
-            elif ytm_val < 100:
-                # No price to cross-check; keep only plausible stored yields.
-                ytm = ytm_val
-            else:
-                # Unvalidatable extreme yield — treat as missing data.
-                ytm = None
-        if (
-            not metal_no_coupon
-            and ytm is None
-            and raw_ytm is None
-            and b.price is not None
-            and b.coupon_rate is not None
-            and b.maturity_date is not None
-        ):
-            try:
-                price_pct = to_price_pct(b.price, b.nominal)
-                if price_pct is not None:
-                    solved = ytm_from_price(
-                        price_pct=price_pct,
-                        coupon_rate_pct=float(b.coupon_rate),
-                        coupon_frequency=int(b.coupon_frequency or 2),
-                        maturity=b.maturity_date,
-                        asof=date.today(),
-                    )
-                    if solved is not None and solved > 0:
-                        ytm = round(solved, 4)
-            except Exception:
-                pass
+        if not metal_no_coupon:
+            ytm = _validate_stored_ytm(b, raw_ytm, date.today())
+            if ytm is None and raw_ytm is None:
+                ytm = _solve_missing_ytm(b, date.today())
         # Persist the (corrected) yield so downstream portfolios and
         # recommendations never consume an unvalidated extreme value.
         ytm = _sanitize_ytm(ytm)

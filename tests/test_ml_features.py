@@ -70,9 +70,18 @@ def test_duration_years_clamps_to_zero():
     assert _duration_years(date(2026, 1, 1), date(2024, 1, 1)) > 0
 
 
-def _bd(iid="B", ytm=10.0, currency="BYN", price=100.0, coupon=10.0,
-        maturity=date(2028, 1, 1), issuer="ООО Рога", status="active", nominal=1000,
-        coupon_frequency=2):
+def _bd(
+    iid="B",
+    ytm=10.0,
+    currency="BYN",
+    price=100.0,
+    coupon=10.0,
+    maturity=date(2028, 1, 1),
+    issuer="ООО Рога",
+    status="active",
+    nominal=1000,
+    coupon_frequency=2,
+):
     return {
         "internal_id": iid,
         "currency": currency,
@@ -88,8 +97,7 @@ def _bd(iid="B", ytm=10.0, currency="BYN", price=100.0, coupon=10.0,
 
 
 def test_build_features_basic_fields():
-    f = build_features(bond_dict=_bd(), asof=date(2024, 1, 1),
-                       avg_yield_by_currency={"BYN": 8.0})
+    f = build_features(bond_dict=_bd(), asof=date(2024, 1, 1), avg_yield_by_currency={"BYN": 8.0})
     assert isinstance(f, BondFeatures)
     assert f.internal_id == "B"
     assert f.currency_idx == 2  # BYN
@@ -99,8 +107,7 @@ def test_build_features_basic_fields():
 
 
 def test_build_features_gov_issuer_flag():
-    f = build_features(bond_dict=_bd(issuer="Министерство финансов"),
-                       asof=date(2024, 1, 1))
+    f = build_features(bond_dict=_bd(issuer="Министерство финансов"), asof=date(2024, 1, 1))
     assert f.is_gov_issuer == 1
 
 
@@ -110,8 +117,7 @@ def test_build_features_usd_currency_idx():
 
 
 def test_features_to_matrix_shape_and_names():
-    feats = [build_features(bond_dict=_bd(iid=f"B{i}"), asof=date(2024, 1, 1))
-             for i in range(3)]
+    feats = [build_features(bond_dict=_bd(iid=f"B{i}"), asof=date(2024, 1, 1)) for i in range(3)]
     matrix, names = features_to_matrix(feats)
     assert len(matrix) == 3
     assert len(matrix[0]) == len(names) == 19
@@ -138,16 +144,18 @@ def _hist_rows(start=date(2024, 1, 1), n=8, step=20, base_ytm=10.0):
 def test_build_training_samples_leakage_free():
     bonds = [_bd(iid="A", ytm=10.0)]
     history = {"A": _hist_rows()}
-    samples = build_training_samples(bonds, history, horizon_days=90,
-                                     tolerance_days=20, step_days=20,
-                                     min_history_span_days=60)
+    samples = build_training_samples(
+        bonds, history, horizon_days=90, tolerance_days=20, step_days=20, min_history_span_days=60
+    )
     assert len(samples) > 0
     for s in samples:
         assert isinstance(s, TrainingSample)
         # The label (future_ytm) must differ from the feature's observed current ytm,
         # proving the target comes from the future, not the snapshot.
         assert s.future_ytm != s.features.yield_to_maturity
-        assert s.future_return_pct == pytest.approx(s.future_ytm - s.features.yield_to_maturity, abs=1e-3)
+        assert s.future_return_pct == pytest.approx(
+            s.future_ytm - s.features.yield_to_maturity, abs=1e-3
+        )
 
 
 def test_build_training_samples_requires_enough_history():

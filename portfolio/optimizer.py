@@ -54,6 +54,126 @@ def _bond_to_score(bond: Bond) -> BondScore:
     )
 
 
+def _bonus_conservative(b: Bond, weighted: float) -> float:
+    """Консервативная: короткий срок, госбумаги, без глубокого дисконта."""
+    if b.maturity_date:
+        days_to_mat = (b.maturity_date - date.today()).days
+        if days_to_mat > 5 * 365:
+            weighted -= 12.0  # длинная дюрация = больший rate-risk
+        elif days_to_mat <= 2 * 365:
+            weighted += 8.0  # короткие бумаги почти без rate-risk
+    if getattr(b, "is_government", False):
+        weighted += 8.0
+    if b.price is not None and float(b.price) < 95.0:
+        weighted -= 5.0  # глубокий дисконт — риск кредитного события
+    return weighted
+
+
+def _bonus_carry_trade(b: Bond, weighted: float) -> float:
+    """Carry Trade: купонный доход, отсечение дистресса и дюрация 1-5 лет."""
+    if b.price is not None and float(b.price) < 70.0:
+        weighted -= 40.0
+    if b.coupon_rate is not None and float(b.coupon_rate) > 0:
+        weighted += min(float(b.coupon_rate) * 0.5, 15.0)
+    if b.maturity_date:
+        days_to_mat = (b.maturity_date - date.today()).days
+        if 365 <= days_to_mat <= 1825:
+            weighted += 10.0
+        elif days_to_mat < 180:
+            weighted -= 15.0
+    return weighted
+
+
+def _bonus_dollarization(b: Bond, weighted: float) -> float:
+    """Dollarization: USD-бумаги или индексированные к USD (ОП-49, ОП-50, Минфин USD)."""
+    name_l = (b.name or "").lower()
+    id_l = (b.internal_id or "").lower()
+    is_usd = (
+        str(b.currency).upper() == "USD"
+        or (b.indexation_currency and str(b.indexation_currency).upper() == "USD")
+        or any(
+            t in name_l
+            for t in [
+                "usd",
+                "$",
+                "долл",
+                "op49",
+                "оп49",
+                "op-49",
+                "оп-49",
+                "op50",
+                "оп50",
+                "валют",
+            ]
+        )
+        or any(t in id_l for t in ["usd", "op49", "op50"])
+    )
+    return weighted + (60.0 if is_usd else -50.0)
+
+
+def _is_gold_bond(idx: str, name_l: str, id_l: str, is_aig: bool) -> bool:
+    return (
+        idx in ["XAU", "GOLD"]
+        or (is_aig and any(t in name_l for t in ["золот", "gold", "xau", "op35", "оп35", "оп-35"]))
+        or any(t in id_l for t in ["op35-gold", "aigenis-op35"])
+        or ("южуралзолото" in name_l or "селигдар" in name_l)
+    )
+
+
+def _is_silver_bond(idx: str, name_l: str, id_l: str, is_aig: bool) -> bool:
+    return (
+        idx in ["XAG", "SILVER"]
+        or (
+            is_aig
+            and any(t in name_l for t in ["серебр", "silver", "xag", "op43", "оп43", "оп-43"])
+        )
+        or any(t in id_l for t in ["op43-silver", "aigenis-op43"])
+    )
+
+
+def _is_platinum_bond(idx: str, name_l: str, id_l: str, is_aig: bool) -> bool:
+    return (
+        idx in ["XPT", "PLATINUM"]
+        or (
+            is_aig
+            and any(t in name_l for t in ["платин", "platinum", "xpt", "op42", "оп42", "оп-42"])
+        )
+        or any(t in id_l for t in ["op42-platinum", "aigenis-op42"])
+    )
+
+
+def _bonus_metals(b: Bond) -> float:
+    """Metals++: умная институциональная аллокация в драгметаллы."""
+    name_l = (b.name or "").lower()
+    id_l = (b.internal_id or "").lower()
+    issuer_l = (b.issuer or "").lower()
+    idx = str(b.indexation_currency).upper() if b.indexation_currency else ""
+    is_aig = "айгенис" in issuer_l or "aigenis" in issuer_l or "aigenis" in id_l
+
+    if _is_gold_bond(idx, name_l, id_l, is_aig):
+        return 58.0  # Якорный вес 58%
+    if _is_silver_bond(idx, name_l, id_l, is_aig):
+        return 27.0  # Вес 27%
+    if _is_platinum_bond(idx, name_l, id_l, is_aig):
+        return 15.0  # Вес 15%
+    return -50.0  # Штраф для обычных корпоративных и суверенных облигаций
+
+
+def _bonus_aggressive(b: Bond, weighted: float) -> float:
+    """Aggressive: максимум доходности — купонные потоки и высокая YTM."""
+    if b.yield_to_maturity is not None:
+        weighted += min(float(b.yield_to_maturity) * 0.25, 10.0)
+    if b.coupon_rate is not None and float(b.coupon_rate) > 0:
+        weighted += min(float(b.coupon_rate) * 0.15, 6.0)
+    if b.maturity_date:
+        days_to_mat = (b.maturity_date - date.today()).days
+        if days_to_mat < 365:
+            weighted -= 10.0
+        elif days_to_mat > 8 * 365:
+            weighted += 6.0
+    return weighted
+
+
 def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) -> float:
     """Specialized overlay weights per strategy (on top of STRATEGY_WEIGHTS).
 
@@ -61,116 +181,16 @@ def _apply_strategy_bonuses(b: Bond, strategy: StrategyName, weighted: float) ->
     Conservative and Aggressive tilt by maturity/government/coupon so the two
     strategies genuinely differ (Conservative = safety, Aggressive = yield).
     """
-    # Conservative: короткий срок, госбумаги, без глубокого дисконта
     if strategy == "Conservative":
-        if b.maturity_date:
-            days_to_mat = (b.maturity_date - date.today()).days
-            if days_to_mat > 5 * 365:
-                weighted -= 12.0  # длинная дюрация = больший rate-risk
-            elif days_to_mat <= 2 * 365:
-                weighted += 8.0  # короткие бумаги почти без rate-risk
-        if getattr(b, "is_government", False):
-            weighted += 8.0
-        if b.price is not None and float(b.price) < 95.0:
-            weighted -= 5.0  # глубокий дисконт — риск кредитного события
-
-    # Carry Trade: купонный доход, отсечение дистресса (<70% цены) и дюрация 1-5 лет
-    elif strategy == "Carry Trade":
-        if b.price is not None and float(b.price) < 70.0:
-            weighted -= 40.0
-        if b.coupon_rate is not None and float(b.coupon_rate) > 0:
-            weighted += min(float(b.coupon_rate) * 0.5, 15.0)
-        if b.maturity_date:
-            days_to_mat = (b.maturity_date - date.today()).days
-            if 365 <= days_to_mat <= 1825:
-                weighted += 10.0
-            elif days_to_mat < 180:
-                weighted -= 15.0
-
-    # Dollarization: отбирает облигации в USD или индексированные к USD (ОП-49, ОП-50, Минфин USD)
-    elif strategy == "Dollarization":
-        name_l = (b.name or "").lower()
-        id_l = (b.internal_id or "").lower()
-        is_usd = (
-            str(b.currency).upper() == "USD"
-            or (b.indexation_currency and str(b.indexation_currency).upper() == "USD")
-            or any(
-                t in name_l
-                for t in [
-                    "usd",
-                    "$",
-                    "долл",
-                    "op49",
-                    "оп49",
-                    "op-49",
-                    "оп-49",
-                    "op50",
-                    "оп50",
-                    "валют",
-                ]
-            )
-            or any(t in id_l for t in ["usd", "op49", "op50"])
-        )
-        weighted += 60.0 if is_usd else -50.0
-
-    # Metals++: умная институциональная аллокация в драгметаллы (Gold-Anchor Risk-Parity):
-    # Золото 58% (монетарный защитный якорь), Серебро 27% (драйвер роста), Платина 15% (промышленный диверсификатор)
-    elif strategy == "Metals++":
-        name_l = (b.name or "").lower()
-        id_l = (b.internal_id or "").lower()
-        issuer_l = (b.issuer or "").lower()
-        idx = str(b.indexation_currency).upper() if b.indexation_currency else ""
-        is_aig = "айгенис" in issuer_l or "aigenis" in issuer_l or "aigenis" in id_l
-
-        is_gold = (
-            idx in ["XAU", "GOLD"]
-            or (
-                is_aig
-                and any(t in name_l for t in ["золот", "gold", "xau", "op35", "оп35", "оп-35"])
-            )
-            or any(t in id_l for t in ["op35-gold", "aigenis-op35"])
-            or ("южуралзолото" in name_l or "селигдар" in name_l)
-        )
-        is_silver = (
-            idx in ["XAG", "SILVER"]
-            or (
-                is_aig
-                and any(t in name_l for t in ["серебр", "silver", "xag", "op43", "оп43", "оп-43"])
-            )
-            or any(t in id_l for t in ["op43-silver", "aigenis-op43"])
-        )
-        is_platinum = (
-            idx in ["XPT", "PLATINUM"]
-            or (
-                is_aig
-                and any(t in name_l for t in ["платин", "platinum", "xpt", "op42", "оп42", "оп-42"])
-            )
-            or any(t in id_l for t in ["op42-platinum", "aigenis-op42"])
-        )
-
-        if is_gold:
-            weighted = 58.0  # Якорный вес 58%
-        elif is_silver:
-            weighted = 27.0  # Вес 27%
-        elif is_platinum:
-            weighted = 15.0  # Вес 15%
-        else:
-            weighted = -50.0  # Штраф для обычных корпоративных и суверенных облигаций
-
-    # Aggressive: максимум доходности — купонные потоки и высокая YTM,
-    # сверхкороткие бумаги (<1 года) не дают carry и штрафуются
-    elif strategy == "Aggressive":
-        if b.yield_to_maturity is not None:
-            weighted += min(float(b.yield_to_maturity) * 0.25, 10.0)
-        if b.coupon_rate is not None and float(b.coupon_rate) > 0:
-            weighted += min(float(b.coupon_rate) * 0.15, 6.0)
-        if b.maturity_date:
-            days_to_mat = (b.maturity_date - date.today()).days
-            if days_to_mat < 365:
-                weighted -= 10.0
-            elif days_to_mat > 8 * 365:
-                weighted += 6.0
-
+        return _bonus_conservative(b, weighted)
+    if strategy == "Carry Trade":
+        return _bonus_carry_trade(b, weighted)
+    if strategy == "Dollarization":
+        return _bonus_dollarization(b, weighted)
+    if strategy == "Metals++":
+        return _bonus_metals(b)
+    if strategy == "Aggressive":
+        return _bonus_aggressive(b, weighted)
     return weighted
 
 
@@ -301,7 +321,9 @@ def _weighted_stats(
         )
         ytm = honest_yield(
             stored_ytm_pct=raw_ytm,
-            coupon_rate_pct=float(bond.coupon_rate) if bond and bond.coupon_rate is not None else None,
+            coupon_rate_pct=float(bond.coupon_rate)
+            if bond and bond.coupon_rate is not None
+            else None,
             indexation_currency=getattr(bond, "indexation_currency", None) if bond else None,
             currency=str(bond.currency) if bond else None,
         )

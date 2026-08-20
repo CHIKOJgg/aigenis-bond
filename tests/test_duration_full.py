@@ -20,7 +20,15 @@ from desk.duration import (
 )
 
 
-def _bond(internal_id="B1", ytm=10.0, coupon=10.0, freq=2, maturity=date(2029, 1, 1), issue=date(2024, 1, 1), nominal=1000):
+def _bond(
+    internal_id="B1",
+    ytm=10.0,
+    coupon=10.0,
+    freq=2,
+    maturity=date(2029, 1, 1),
+    issue=date(2024, 1, 1),
+    nominal=1000,
+):
     return SimpleNamespace(
         internal_id=internal_id,
         yield_to_maturity=ytm,
@@ -50,12 +58,20 @@ def test_modified_duration_zero_coupon_equals_maturity_approx():
 
 def test_modified_less_than_macaulay_for_positive_yield():
     mac = macaulay_duration(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2029, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2029, 1, 1),
+        ref=date(2024, 1, 1),
     )
     mod = modified_duration(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2029, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2029, 1, 1),
+        ref=date(2024, 1, 1),
     )
     assert mod < mac
     assert mod == pytest.approx(mac / (1 + 0.10 / 2), abs=1e-6)
@@ -63,21 +79,36 @@ def test_modified_less_than_macaulay_for_positive_yield():
 
 def test_coupon_bond_duration_shorter_than_zero_coupon():
     zc = modified_duration(
-        nominal=1000, coupon_rate_pct=0, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2029, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=0,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2029, 1, 1),
+        ref=date(2024, 1, 1),
     )
     cp = modified_duration(
-        nominal=1000, coupon_rate_pct=10, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2029, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=10,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2029, 1, 1),
+        ref=date(2024, 1, 1),
     )
     assert cp < zc
 
 
 def test_duration_empty_when_no_flows():
-    assert macaulay_duration(
-        nominal=1000, coupon_rate_pct=10, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2024, 1, 1), ref=date(2024, 6, 1),
-    ) == 0.0
+    assert (
+        macaulay_duration(
+            nominal=1000,
+            coupon_rate_pct=10,
+            coupon_frequency=2,
+            ytm_pct=10,
+            maturity=date(2024, 1, 1),
+            ref=date(2024, 6, 1),
+        )
+        == 0.0
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -85,17 +116,28 @@ def test_duration_empty_when_no_flows():
 # --------------------------------------------------------------------------- #
 def test_convexity_positive_for_normal_bond():
     cvx = convexity(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2029, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2029, 1, 1),
+        ref=date(2024, 1, 1),
     )
     assert cvx > 0
 
 
 def test_convexity_zero_when_no_flows():
-    assert convexity(
-        nominal=1000, coupon_rate_pct=10, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2024, 1, 1), ref=date(2024, 6, 1),
-    ) == 0.0
+    assert (
+        convexity(
+            nominal=1000,
+            coupon_rate_pct=10,
+            coupon_frequency=2,
+            ytm_pct=10,
+            maturity=date(2024, 1, 1),
+            ref=date(2024, 6, 1),
+        )
+        == 0.0
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -103,17 +145,28 @@ def test_convexity_zero_when_no_flows():
 # --------------------------------------------------------------------------- #
 def test_dv01_positive_and_smaller_than_duration():
     dv = dv01(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2029, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2029, 1, 1),
+        ref=date(2024, 1, 1),
     )
     assert dv > 0
 
 
 def test_dv01_zero_when_no_flows():
-    assert dv01(
-        nominal=1000, coupon_rate_pct=10, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2024, 1, 1), ref=date(2024, 6, 1),
-    ) == 0.0
+    assert (
+        dv01(
+            nominal=1000,
+            coupon_rate_pct=10,
+            coupon_frequency=2,
+            ytm_pct=10,
+            maturity=date(2024, 1, 1),
+            ref=date(2024, 6, 1),
+        )
+        == 0.0
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -121,28 +174,44 @@ def test_dv01_zero_when_no_flows():
 # --------------------------------------------------------------------------- #
 def test_krd_keys_present():
     krd = key_rate_durations(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2034, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2034, 1, 1),
+        ref=date(2024, 1, 1),
     )
     assert "1Y" in krd and "5Y" in krd and "10Y" in krd and "30Y" in krd
 
 
 def test_krd_sum_approximates_modified_duration():
     mod = modified_duration(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2034, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2034, 1, 1),
+        ref=date(2024, 1, 1),
     )
     krd = key_rate_durations(
-        nominal=1000, coupon_rate_pct=8, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2034, 1, 1), ref=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=8,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2034, 1, 1),
+        ref=date(2024, 1, 1),
     )
     assert sum(krd.values()) == pytest.approx(mod, abs=0.5)
 
 
 def test_krd_empty_for_no_flows():
     krd = key_rate_durations(
-        nominal=1000, coupon_rate_pct=10, coupon_frequency=2, ytm_pct=10,
-        maturity=date(2024, 1, 1), ref=date(2024, 6, 1),
+        nominal=1000,
+        coupon_rate_pct=10,
+        coupon_frequency=2,
+        ytm_pct=10,
+        maturity=date(2024, 1, 1),
+        ref=date(2024, 6, 1),
     )
     assert all(v == 0.0 for v in krd.values())
 
@@ -222,7 +291,10 @@ def test_portfolio_duration_empty():
 
 
 def test_portfolio_duration_equal_weight_average():
-    bonds = [_bond(ytm=8, coupon=8, maturity=date(2027, 1, 1)), _bond(ytm=12, coupon=12, maturity=date(2031, 1, 1))]
+    bonds = [
+        _bond(ytm=8, coupon=8, maturity=date(2027, 1, 1)),
+        _bond(ytm=12, coupon=12, maturity=date(2031, 1, 1)),
+    ]
     rep = portfolio_duration(bonds)
     # weighted avg of two positive durations is positive
     assert rep.modified_duration > 0

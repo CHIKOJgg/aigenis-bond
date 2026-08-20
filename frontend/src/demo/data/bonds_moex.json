@@ -58,7 +58,7 @@
     "status": "active",
     "is_government": true,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 16.9158
+    "accrued_interest": 1.6916
   },
   {
     "internal_id": "demo-bond-008",
@@ -107,7 +107,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 46.4503
+    "accrued_interest": 4.645
   },
   {
     "internal_id": "demo-bond-009",
@@ -159,7 +159,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 12.7717
+    "accrued_interest": 1.2772
   },
   {
     "internal_id": "demo-bond-010",
@@ -232,6 +232,6 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 24.6995
+    "accrued_interest": 2.4699
   }
 ]

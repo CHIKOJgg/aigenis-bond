@@ -9,6 +9,19 @@ interface PricingSectionProps {
 
 const DISCOUNT = 0.8;
 
+// Цены из API приходят в BYN (29 / 99), но при недоступности /billing/plans
+// (например, в демо-сборке без проксирования) секция молча использует
+// fallback. Fallback обязан быть в ТЕХ ЖЕ единицах, что и API (BYN, не копейки),
+// иначе рендер покажет «2900 BYN/мес» вместо «29 BYN/мес».
+const FALLBACK_PRICE_BYN = { pro: 29, enterprise: 99 } as const;
+
+// Дополнительная защита от цен в копейках: если источник (API или fallback)
+// прислал сумму > 10 000, это почти наверняка копейки — приводим к BYN.
+function normalizePrice(price: number | undefined, fallback: number): number {
+  const raw = price ?? fallback;
+  return raw > 10_000 ? Math.round(raw / 100) : raw;
+}
+
 export function PricingSection({ onRegister }: PricingSectionProps) {
   const { t } = useI18n();
   const [billing, setBilling] = useState<'month' | 'year'>('month');
@@ -19,7 +32,7 @@ export function PricingSection({ onRegister }: PricingSectionProps) {
     api.billing.plans()
       .then((data) => {
         const byId: Record<string, { id: string; name: string; price: number; currency: string; features: string[] }> = {};
-        for (const p of data) byId[p.id] = p;
+        for (const p of data) byId[p.id] = { ...p, price: normalizePrice(p.price, FALLBACK_PRICE_BYN[p.id as keyof typeof FALLBACK_PRICE_BYN] ?? 0) };
         setPlans(byId);
       })
       .catch(() => {});
@@ -83,8 +96,8 @@ export function PricingSection({ onRegister }: PricingSectionProps) {
           <p className="text-sm text-[#516c79] mb-4">{t('pricing.upgradeNote')}</p>
           <p className="text-3xl font-bold mb-2">
             {billing === 'year' ? (
-              <>{Math.round((plans.pro?.price ?? 2900) * DISCOUNT)} <span className="text-base line-through text-[#a4a7ae]">{plans.pro?.price ?? 2900}</span></>
-            ) : plans.pro?.price ?? 2900}
+              <>{Math.round(normalizePrice(plans.pro?.price, FALLBACK_PRICE_BYN.pro) * DISCOUNT)} <span className="text-base line-through text-[#a4a7ae]">{normalizePrice(plans.pro?.price, FALLBACK_PRICE_BYN.pro)}</span></>
+            ) : normalizePrice(plans.pro?.price, FALLBACK_PRICE_BYN.pro)}
             <span className="text-base text-[#717680] font-normal"> {billing === 'year' ? '/мес при оплате за год' : t('landing.planPerMonth')}</span>
           </p>
           <p className="text-sm text-[#717680] mb-6">{t('landing.or')} {starsPlans.pro ?? 150} Stars</p>
@@ -108,8 +121,8 @@ export function PricingSection({ onRegister }: PricingSectionProps) {
           <p className="text-sm text-[#516c79] mb-4">{t('landing.planEntDesc')}</p>
           <p className="text-3xl font-bold mb-2">
             {billing === 'year' ? (
-              <>{Math.round((plans.enterprise?.price ?? 9900) * DISCOUNT)} <span className="text-base line-through text-[#a4a7ae]">{plans.enterprise?.price ?? 9900}</span></>
-            ) : plans.enterprise?.price ?? 9900}
+              <>{Math.round(normalizePrice(plans.enterprise?.price, FALLBACK_PRICE_BYN.enterprise) * DISCOUNT)} <span className="text-base line-through text-[#a4a7ae]">{normalizePrice(plans.enterprise?.price, FALLBACK_PRICE_BYN.enterprise)}</span></>
+            ) : normalizePrice(plans.enterprise?.price, FALLBACK_PRICE_BYN.enterprise)}
             <span className="text-base text-[#717680] font-normal"> {billing === 'year' ? '/мес при оплате за год' : t('landing.planPerMonth')}</span>
           </p>
           <p className="text-sm text-[#717680] mb-6">{t('landing.or')} {starsPlans.enterprise ?? 500} Stars</p>

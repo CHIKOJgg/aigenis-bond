@@ -114,7 +114,8 @@ logger.info("seo_pages_enabled")
 app.include_router(stocks_router)
 logger.info("stocks_api_enabled")
 
-# Demo showcase (/demo/*). Deterministic, fixtures-only — no live API, no side effects.
+# Demo showcase (/demo/*). Read-only live market data + fixtures for
+# portfolio-impact; fail-closed for write/side-effect endpoints.
 app.include_router(demo_router)
 logger.info("demo_api_enabled")
 
@@ -313,8 +314,13 @@ class BondResponse(BaseModel):
     name: str
     currency: str
     market: str = "bcse"
+    isin: str | None = None
     price: float | None = None
     yield_to_maturity: float | None = None
+    bid: float | None = None
+    ask: float | None = None
+    bid_yield: float | None = None
+    ask_yield: float | None = None
     coupon_rate: float | None = None
     coupon_frequency: int | None = None
     maturity_date: str | None = None
@@ -429,8 +435,8 @@ async def list_bonds(
     limit: int = 20,
     offset: int = 0,
 ) -> list[BondResponse]:
-    if limit < 1 or limit > 1000:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    if limit < 1 or limit > 2000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 2000")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset must be non-negative")
     async with session_scope() as session:
@@ -498,8 +504,8 @@ async def list_scores(
     min_score: float | None = None,
     market: str | None = None,
 ) -> list[BondScoreResponse]:
-    if limit < 1 or limit > 1000:
-        raise HTTPException(status_code=400, detail="limit must be between 1 and 1000")
+    if limit < 1 or limit > 2000:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 2000")
     async with session_scope() as session:
         stmt = select(BondScoreORM)
         if market and market in ("bcse", "moex"):
@@ -543,8 +549,13 @@ def _bond_to_response(b: BondORM) -> BondResponse:
         name=b.name,
         currency=b.currency,
         market=b.market,
+        isin=b.isin,
         price=float(b.price) if b.price is not None else None,
         yield_to_maturity=float(b.yield_to_maturity) if b.yield_to_maturity is not None else None,
+        bid=float(b.bid) if b.bid is not None else None,
+        ask=float(b.ask) if b.ask is not None else None,
+        bid_yield=float(b.bid_yield) if b.bid_yield is not None else None,
+        ask_yield=float(b.ask_yield) if b.ask_yield is not None else None,
         coupon_rate=float(b.coupon_rate) if b.coupon_rate is not None else None,
         coupon_frequency=b.coupon_frequency,
         maturity_date=b.maturity_date.isoformat() if b.maturity_date else None,

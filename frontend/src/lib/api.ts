@@ -74,6 +74,7 @@ export interface Bond {
   internal_id: string;
   name: string;
   currency: string;
+  isin?: string | null;
   price: number | null;
   yield_to_maturity: number | null;
   coupon_rate: number | null;
@@ -84,6 +85,10 @@ export interface Bond {
   issuer_logo: string | null;
   fetched_at: string | null;
   nominal?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  bid_yield?: number | null;
+  ask_yield?: number | null;
 }
 
 export interface BondScore {

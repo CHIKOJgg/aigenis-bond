@@ -16,9 +16,9 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
+from scoring.eligibility import filter_eligible
 from scraper.models import Bond
 from scraper.orm import BondHistoryORM
-from scoring.eligibility import filter_eligible
 
 _Q = Decimal("0.01")
 

@@ -437,22 +437,27 @@ class TestNormalizeHistoryItem:
 
     @pytest.mark.asyncio
     async def test_timestamp(self):
-        assert (await AigenisClient._normalize_history_item({"timestamp": "t", "price": 1}))["date"] == "t"
+        assert (await AigenisClient._normalize_history_item({"timestamp": "t", "price": 1}))[
+            "date"
+        ] == "t"
 
     @pytest.mark.asyncio
     async def test_trade_date(self):
-        assert (
-            (await AigenisClient._normalize_history_item({"trade_date": "td", "price": 1}))["date"]
-            == "td"
-        )
+        assert (await AigenisClient._normalize_history_item({"trade_date": "td", "price": 1}))[
+            "date"
+        ] == "td"
 
     @pytest.mark.asyncio
     async def test_dt(self):
-        assert (await AigenisClient._normalize_history_item({"dt": "dt", "price": 1}))["date"] == "dt"
+        assert (await AigenisClient._normalize_history_item({"dt": "dt", "price": 1}))[
+            "date"
+        ] == "dt"
 
     @pytest.mark.asyncio
     async def test_day(self):
-        assert (await AigenisClient._normalize_history_item({"day": "d", "price": 1}))["date"] == "d"
+        assert (await AigenisClient._normalize_history_item({"day": "d", "price": 1}))[
+            "date"
+        ] == "d"
 
     @pytest.mark.asyncio
     async def test_no_date(self):
@@ -480,7 +485,9 @@ class TestNormalizeHistoryItem:
 
     @pytest.mark.asyncio
     async def test_yield_instr_fallback(self):
-        item = await AigenisClient._normalize_history_item({"date": "d", "price": 1, "instr_yield": 4})
+        item = await AigenisClient._normalize_history_item(
+            {"date": "d", "price": 1, "instr_yield": 4}
+        )
         assert item["yield"] == Decimal("4")
 
     @pytest.mark.asyncio
@@ -502,7 +509,9 @@ class TestNormalizeHistoryItem:
 
     @pytest.mark.asyncio
     async def test_coupon_rate_fallback(self):
-        item = await AigenisClient._normalize_history_item({"date": "d", "price": 1, "coupon_rate": 8})
+        item = await AigenisClient._normalize_history_item(
+            {"date": "d", "price": 1, "coupon_rate": 8}
+        )
         assert item["coupon"] == 8
 
 
@@ -1348,7 +1357,12 @@ class TestNormalizeListingItem:
         item = {
             "settl_currency": "RUB",
             "symbol": "BY/AV",
-            "definition": {"state_security_id": "AV", "currency": "rub", "nominal": 1000, "price": "1150"},
+            "definition": {
+                "state_security_id": "AV",
+                "currency": "rub",
+                "nominal": 1000,
+                "price": "1150",
+            },
         }
         await client._normalize_listing_item(item, "RUB")
         assert captured["value"] == "1150"
@@ -1547,7 +1561,12 @@ class TestApiFetchDetail:
             "market_price": "100.1",
             "best_bid": "99.9",
             "best_offer": "100.2",
-            "definition": {"state_security_id": "X", "currency": "USD", "nominal": 1000, "price": "999"},
+            "definition": {
+                "state_security_id": "X",
+                "currency": "USD",
+                "nominal": 1000,
+                "price": "999",
+            },
         }
         monkeypatch.setattr(client, "_api_request", AsyncMock(return_value=payload))
         result = await client._api_fetch_detail("X")

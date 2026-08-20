@@ -46,25 +46,27 @@ export default function DemoAnalyticsPage() {
     setLiveLoading(true);
 
     // ALL = сводный универсум обоих рынков (BCSE + MOEX).
+    // Per-request catch: a failure of one market must not discard the other.
     const markets = market === 'ALL' ? ['bcse', 'moex'] : [API_MARKET[market] ?? 'bcse'];
-    Promise.all(markets.map((m) => fetchLiveMarket(m)))
+    Promise.all(markets.map((m) => fetchLiveMarket(m).catch(() => null)))
       .then((snaps) => {
         if (cancelled) return;
-        const merged = snaps.flatMap((s) => s.bonds);
+        const liveSnaps = snaps.filter((s): s is LiveMarketSnapshot => s !== null);
+        if (liveSnaps.length === 0) {
+          setLive(null);
+          setLiveLoading(false);
+          return;
+        }
+        const merged = liveSnaps.flatMap((s) => s.bonds);
         setLive({
-          source: snaps[0]?.source ?? 'Aigenis',
+          source: liveSnaps[0]?.source ?? 'Aigenis',
           market: market,
           currency: null,
-          as_of: snaps[0]?.as_of ?? null,
+          as_of: liveSnaps[0]?.as_of ?? null,
           count: merged.length,
           bonds: merged,
-          disclaimer: snaps[0]?.disclaimer ?? '',
+          disclaimer: liveSnaps[0]?.disclaimer ?? '',
         });
-        setLiveLoading(false);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLive(null);
         setLiveLoading(false);
       });
     return () => {
@@ -82,6 +84,16 @@ export default function DemoAnalyticsPage() {
     global: { ...fixtureSummary.global, updated_at: live.as_of ?? fixtureSummary.global.updated_at },
   } : fixtureSummary, [live, fixtureSummary]);
   const bonds = live?.bonds ?? (market === 'ALL' ? getAllBonds() : getBonds(market.toUpperCase()));
+
+  // Mirrors the chart's eligibility (score + real YTM, no distressed/outlier):
+  // used to render an honest placeholder instead of a silently missing chart.
+  const chartableCount = useMemo(
+    () => bonds.filter(
+      (b) => b.score != null && b.yield_to_maturity != null && b.yield_to_maturity > 0
+        && !b.distressed && b.yield_to_maturity <= 60,
+    ).length,
+    [bonds],
+  );
 
   const scoreLookup = useMemo(() => {
     if (!live) return getScore;
@@ -180,7 +192,17 @@ export default function DemoAnalyticsPage() {
         </div>
       )}
 
-      <ScoreYtmChart bonds={bonds} scoreLookup={scoreLookup} />
+      {chartableCount >= 2 ? (
+        <ScoreYtmChart bonds={bonds} scoreLookup={scoreLookup} />
+      ) : (
+        <div style={{
+          minHeight: 380, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          textAlign: 'center', color: '#717680', background: '#fafafa', borderRadius: 10,
+          marginBottom: 16, fontSize: 14,
+        }}>
+          Недостаточно данных для построения графика Score/YTM
+        </div>
+      )}
 
       <AnalyticsFilters
         market={market}

@@ -109,20 +109,24 @@ def test_market_data_computes_ytm_duration_score() -> None:
 def test_market_data_explanation_only_with_score() -> None:
     _run(_seed_bcse_bond, internal_id="bcse-noanchor", price=None, yield_to_maturity=None)
     resp = client.get("/api/v1/demo/market-data?market=bcse&limit=50")
-    bond = _find(resp.json()["bonds"], "bcse-noanchor")
-    assert bond["score"] is None
-    assert bond["explanation"] is None
+    ids = [b["internal_id"] for b in resp.json()["bonds"]]
+    # Без рыночных якорей (цена/доходность) бумага не проходит в market-data:
+    # ни скор, ни объяснение не показываются, потому что нет данных для оценки.
+    assert "bcse-noanchor" not in ids
 
 
 def test_market_data_uses_source_ytm_when_present() -> None:
     _run(
         _seed_bcse_bond,
         internal_id="bcse-source-ytm",
-        price=None,
+        price=Decimal("98.5"),
+        coupon_rate=None,
         yield_to_maturity=Decimal("4.0002"),
     )
     resp = client.get("/api/v1/demo/market-data?market=bcse&limit=50")
     bond = _find(resp.json()["bonds"], "bcse-source-ytm")
+    # Без купона ценовой переоценки нет — используется сохранённая (фидовая)
+    # доходность, а не вычисленная.
     assert bond["yield_to_maturity"] == 4.0002
     assert bond["computed_ytm"] is False
     assert bond["score"] is not None
@@ -151,18 +155,18 @@ def test_market_data_metal_bond_has_no_yield() -> None:
 def test_market_data_no_anchor_means_no_data() -> None:
     _run(_seed_bcse_bond, internal_id="bcse-noanchor", price=None, yield_to_maturity=None)
     resp = client.get("/api/v1/demo/market-data?market=bcse&limit=50")
-    bond = _find(resp.json()["bonds"], "bcse-noanchor")
-    assert bond["yield_to_maturity"] is None
-    assert bond["score"] is None
-    assert bond["score_status"] is None
+    ids = [b["internal_id"] for b in resp.json()["bonds"]]
+    # Ни цены, ни доходности — бумага исключена из рыночного среза целиком.
+    assert "bcse-noanchor" not in ids
 
 
 def test_market_data_invalid_math_returns_none() -> None:
     _run(_seed_bcse_bond, internal_id="bcse-badprice", price=Decimal("0"))
     resp = client.get("/api/v1/demo/market-data?market=bcse&limit=50")
-    bond = _find(resp.json()["bonds"], "bcse-badprice")
-    assert bond["yield_to_maturity"] is None
-    assert bond["score"] is None
+    ids = [b["internal_id"] for b in resp.json()["bonds"]]
+    # Цена 0% от номинала — испорченная котировка вне диапазона 10–150%:
+    # из рыночного среза исключается, а не показывается с фиктивным скором.
+    assert "bcse-badprice" not in ids
 
 
 def test_search_returns_matches_with_explanation() -> None:
@@ -201,6 +205,43 @@ def test_search_market_filter() -> None:
     resp = client.get("/api/v1/demo/search?q=Минфин&market=moex")
     ids = [b["internal_id"] for b in resp.json()["bonds"]]
     assert "bcse-mkt-filter" not in ids
+
+
+def test_search_matches_display_name_alias_for_sovereign_bcse() -> None:
+    # BCSE sovereign issues are stored under the generic issuer title while
+    # the UI displays "Минфин РБ (выпуск ...)" — search must find them by the
+    # displayed name, not only by the raw stored name.
+    _run(
+        _seed_bcse_bond,
+        internal_id="MF-LB-BYN-0400",
+        isin="004400",
+        name="Министерство финансов Республики Беларусь",
+        market="bcse",
+    )
+    resp = client.get("/api/v1/demo/search?q=минфин&market=bcse")
+    assert resp.status_code == 200
+    ids = [b["internal_id"] for b in resp.json()["bonds"]]
+    assert "MF-LB-BYN-0400" in ids
+    resp = client.get("/api/v1/demo/search?q=минфин рб&market=bcse")
+    ids = [b["internal_id"] for b in resp.json()["bonds"]]
+    assert "MF-LB-BYN-0400" in ids
+
+
+def test_search_display_name_mirrors_frontend_formatting() -> None:
+    import api.demo as demo_mod
+
+    assert (
+        demo_mod._search_display_name(
+            "Министерство финансов Республики Беларусь", "MF-LB-BYN-0405", "004405"
+        )
+        == "Минфин РБ (выпуск 0405)"
+    )
+    assert (
+        demo_mod._search_display_name("Министерство финансов Республики Беларусь", "004400", None)
+        == "Минфин РБ (выпуск 004400)"
+    )
+    assert demo_mod._search_display_name("Минфин РБ 2030", "x-1", None) == "Минфин РБ 2030"
+    assert demo_mod._search_display_name(None, "MF-LB-BYN-0400", None) == "MF-LB-BYN-0400"
 
 
 def test_bond_detail_returns_history_and_schedule() -> None:

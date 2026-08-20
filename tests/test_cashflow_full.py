@@ -87,9 +87,7 @@ def test_act360_basic():
 def test_thirty_360_month_end_rule(d1, d2):
     # 30/360 clamps both day-ends to 30.
     expected = (
-        360 * (d2.year - d1.year)
-        + 30 * (d2.month - d1.month)
-        + (min(d2.day, 30) - min(d1.day, 30))
+        360 * (d2.year - d1.year) + 30 * (d2.month - d1.month) + (min(d2.day, 30) - min(d1.day, 30))
     ) / 360.0
     assert year_fraction(d1, d2, "30/360") == pytest.approx(expected)
 
@@ -102,7 +100,9 @@ def test_thirty_360_known_value():
 
 
 def test_act_act_same_year_uses_calendar_days():
-    assert year_fraction(date(2024, 1, 1), date(2024, 12, 31), "ACT/ACT") == pytest.approx(365 / 366)
+    assert year_fraction(date(2024, 1, 1), date(2024, 12, 31), "ACT/ACT") == pytest.approx(
+        365 / 366
+    )
 
 
 def test_act_act_spanning_years():

@@ -34,6 +34,7 @@ router = APIRouter(prefix="/api/v1", tags=["nlp"])
 class ChatRequest(BaseModel):
     message: str
     context: dict[str, Any] | None = None
+    user_id: int | None = None
 
 
 class ChatResponse(BaseModel):
@@ -453,7 +454,11 @@ async def api_chat(req: ChatRequest):
         market = await _build_market_context()
         system_prompt += "ТЕКУЩИЙ РЫНОК:\n" + market + "\n\n"
 
-    reply = await llm_completion(system_prompt, req.message)
+    reply = await llm_completion(
+        system_prompt,
+        req.message,
+        user=str(req.user_id) if req.user_id else None,
+    )
     if reply:
         return ChatResponse(reply=reply, sources=sources)
 

@@ -36,9 +36,10 @@ from typing import Any
 DISTRIBUTION_MAX_PRICE_PCT = 80.0
 DISTRIBUTION_MIN_YTM_PCT = 30.0
 
-# 2. Сверхвысокорисковые: YTM > 100% или цена < 30% номинала
+# 2. Сверхвысокорисковые: YTM > 100% или цена < 30% / > 150% номинала
 EXTREME_MAX_YTM_PCT = 100.0
 EXTREME_MIN_PRICE_PCT = 30.0
+EXTREME_MAX_PRICE_PCT = 150.0
 
 # 3. Аномалия: z > ANOMALY_Z_SIGMA при минимуме аналогов ANOMALY_MIN_PEERS
 ANOMALY_Z_SIGMA = 4.0
@@ -165,6 +166,14 @@ def check_eligibility(
             eligible=False,
             kind="extreme_risk",
             reason=f"Цена {price_pct:.1f}% от номинала — сверхвысокий риск",
+        )
+
+    if price_pct is not None and price_pct > EXTREME_MAX_PRICE_PCT:
+        return EligibilityResult(
+            internal_id=internal_id,
+            eligible=False,
+            kind="extreme_risk",
+            reason=f"Цена {price_pct:.1f}% от номинала — невозможная премия (ошибка данных)",
         )
 
     if ytm_pct is not None and peer_ytms:

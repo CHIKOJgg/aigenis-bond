@@ -39,8 +39,13 @@ def test_score_factor_impact_classification():
 
 def test_score_factor_as_dict():
     f = ScoreFactor("yield", "Доходность", 5.0, "detail").as_dict()
-    assert f == {"component": "yield", "label": "Доходность", "points": 5.0,
-                 "impact": "positive", "detail": "detail"}
+    assert f == {
+        "component": "yield",
+        "label": "Доходность",
+        "points": 5.0,
+        "impact": "positive",
+        "detail": "detail",
+    }
 
 
 def test_yield_detail_buckets():
@@ -90,8 +95,14 @@ def test_explain_score_builds_factors_and_verdict():
 
 
 def test_explain_score_strengths_weaknesses_capped():
-    b = ScoreBreakdown(yield_component=5, currency_component=4, duration_component=3,
-                       liquidity_component=-1, credit_risk_component=-2, inflation_component=-3)
+    b = ScoreBreakdown(
+        yield_component=5,
+        currency_component=4,
+        duration_component=3,
+        liquidity_component=-1,
+        credit_risk_component=-2,
+        inflation_component=-3,
+    )
     explained = explain_score(_score(b), currency="BYN", ytm_pct=10)
     assert len(explained.strengths) <= 3
     assert len(explained.weaknesses) <= 3

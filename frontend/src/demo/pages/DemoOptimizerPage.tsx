@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { TrendingUp, Sliders, AlertCircle, PieChart, Activity, ExternalLink } from 'lucide-react';
+import { TrendingUp, Sliders, AlertCircle, PieChart, Activity, ExternalLink, Loader2 } from 'lucide-react';
 import { runPortfolioOptimizer, STRATEGY_LABELS } from '../demo-api';
 import type { PortfolioOptimizationResponse } from '../demo-api';
 import { fetchLiveOptimize } from '../live-demo-api';
@@ -24,6 +24,7 @@ export default function DemoOptimizerPage() {
   const market = routeMarket === 'MOEX' ? 'MOEX' : 'BCSE';
 
   const [capital, setCapital] = useState(50000);
+  const [capitalError, setCapitalError] = useState<string | null>(null);
   const [currency, setCurrency] = useState(market === 'MOEX' ? 'RUB' : 'BYN');
   const [strategy, setStrategy] = useState('Balanced');
   const [data, setData] = useState<PortfolioOptimizationResponse | null>(null);
@@ -122,11 +123,27 @@ export default function DemoOptimizerPage() {
           <span style={{ fontSize: 13, color: '#717680', fontWeight: 500 }}>Сумма инвестиций:</span>
           <input
             type="number"
+            aria-label="Сумма инвестиций"
+            min={1}
+            step={1000}
             value={capital}
-            onChange={(e) => setCapital(Number(e.target.value) || 10000)}
-            style={{ width: 110, border: 'none', fontWeight: 700, fontSize: 15, color: '#01121a', outline: 'none' }}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw.trim() === '') { setCapitalError(null); return; }
+              const v = Number(raw);
+              if (!Number.isFinite(v) || v <= 0) {
+                setCapitalError('Сумма инвестиций должна быть больше 0');
+                return;
+              }
+              setCapitalError(null);
+              setCapital(v);
+            }}
+            style={{ width: 120, border: 'none', fontWeight: 700, fontSize: 15, color: '#01121a', outline: 'none' }}
           />
           <span style={{ fontSize: 13, color: '#717680', fontWeight: 600 }}>{currency}</span>
+          {capitalError && (
+            <div style={{ color: '#e03400', fontSize: 12, marginTop: 4, width: '100%', flexBasis: '100%' }}>{capitalError}</div>
+          )}
         </div>
 
         <div style={{ display: 'flex', background: '#eef3f5', padding: 3, borderRadius: 8 }}>
@@ -199,7 +216,8 @@ export default function DemoOptimizerPage() {
 
       {loading && (
         <div style={{ textAlign: 'center', padding: 40, color: '#717680' }}>
-          Загрузка данных...
+          <Loader2 size={22} className="animate-spin" />
+          <div style={{ marginTop: 8 }}>Загрузка данных...</div>
         </div>
       )}
 
@@ -277,7 +295,7 @@ export default function DemoOptimizerPage() {
                   <PieChart size={20} color="#0B526B" />
                   Целевая Аллокация Портфеля
                 </div>
-                <span style={{ fontSize: 11, color: '#8fa0a8' }}>Нажмите на бумагу для аналитики</span>
+                <span style={{ fontSize: 11, color: '#64747c' }}>Нажмите на бумагу для аналитики</span>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -306,7 +324,7 @@ export default function DemoOptimizerPage() {
                         <td style={{ padding: 10, fontWeight: 600, color: '#0B526B' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span>{formatBondDisplayName(a.name, a.internal_id, a.isin)}</span>
-                            <ExternalLink size={12} color="#8fa0a8" />
+                            <ExternalLink size={12} color="#64747c" />
                           </div>
                         </td>
                         <td style={{ padding: 10, color: '#0B526B', fontWeight: 600 }}>
@@ -331,7 +349,7 @@ export default function DemoOptimizerPage() {
                   <Activity size={20} color="#0B526B" />
                   Сгенерированные Биржевые Ордера
                 </div>
-                <span style={{ fontSize: 11, color: '#8fa0a8' }}>Клик для детального анализа</span>
+                <span style={{ fontSize: 11, color: '#64747c' }}>Клик для детального анализа</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {res.order_tickets.map((ticket, idx) => (
@@ -363,7 +381,7 @@ export default function DemoOptimizerPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13, color: '#01121a' }}>
                         <span style={{ background: '#06b663', color: '#fff', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>{ticket.action}</span>
                         <span>{formatBondDisplayName(ticket.name, ticket.internal_id)}</span>
-                        <ExternalLink size={12} color="#8fa0a8" />
+                        <ExternalLink size={12} color="#64747c" />
                       </div>
                       <div style={{ fontSize: 12, color: '#717680', marginTop: 4 }}>
                         {ticket.rationale}

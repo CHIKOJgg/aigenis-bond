@@ -18,6 +18,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from desk.ytm import honest_yield, sane_yield, ytm_from_price
 from scraper.config import Settings, get_settings
 
 from ...errors import (
@@ -29,7 +30,6 @@ from ...errors import (
     TransientError,
 )
 from ...logging import get_logger
-from desk.ytm import honest_yield, sane_yield, ytm_from_price
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page, Playwright  # noqa: F401
@@ -172,6 +172,23 @@ def _sane_yield(value: Any) -> Any:
     return value if v > 0 else None
 
 
+def _sane_quote_yield(value: Any) -> Any:
+    """Keep only plausible positive quote yields for the order book.
+
+    Mirrors the feed-yield guard: drop non-positive and extreme (>=100%) values
+    so the bid/ask yields never surface a distressed artifact as a real quote.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        v = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        return None
+    if v <= 0 or v >= MAX_DISPLAY_YTM_PCT:
+        return None
+    return v
+
+
 def _parse_date(v: Any) -> date | None:
     """Best-effort parse of a maturity/issue date from mixed source formats."""
     if v is None or v == "":
@@ -245,7 +262,11 @@ async def _sanitize_yield(
 
     price_pct = await _to_price_pct(price_raw, nominal, currency)
     cr = _safe_float(coupon_rate)
-    freq = int(coupon_frequency) if coupon_frequency not in (None, "") else None
+    # Частота купона в фиде может отсутствовать (BCSE-бумаги) — используем
+    # дефолт 2, как в pipeline и demo; иначе cross-check пропускается и в БД
+    # попадает невозможная доходность (5-200-02-4363: ytm=10% = купон при
+    # цене 102.61 и честной доходности ~ −10.4%).
+    freq = int(coupon_frequency) if coupon_frequency not in (None, "") else 2
     mat = _parse_date(maturity_date)
 
     computed = None
@@ -256,9 +277,11 @@ async def _sanitize_yield(
             coupon_frequency=freq,
             maturity=mat,
         )
-    if computed is not None and sane_yield(float(v), computed):
-        return v
-    if computed is not None and computed > 0:
+    if computed is not None:
+        if sane_yield(float(v), computed):
+            return v
+        # Фидовая доходность не согласована с ценой — берём наш честный
+        # расчёт (в т.ч. отрицательный), а не сырое значение фида.
         return Decimal(str(round(computed, 4)))
     # Cannot validate from price; keep only plausible yields. Values at/above
     # the extreme-risk threshold are data errors or distress and must not be
@@ -794,18 +817,9 @@ class AigenisClient:
             "issuer_logo": issuer_logo,
             "end_date": defn.get("maturity_date"),
             "maturity_date": defn.get("maturity_date"),
-            # Только последняя цена сделки (market_price): bid/ask (1150/1200 у
-            # Авангард Лизинг ОП-54) дают ложную доходность, когда сделок нет.
-            "price": await _to_price_pct(
-                item.get("market_price") or defn.get("market_price") or defn.get("price"),
-                defn.get("nominal"),
-                defn.get("currency") or currency,
-            ),
             "yield_to_maturity": await _sanitize_yield(
                 defn.get("instr_yield"),
-                price_raw=item.get("market_price")
-                or defn.get("market_price")
-                or defn.get("price"),
+                price_raw=item.get("market_price") or defn.get("market_price") or defn.get("price"),
                 nominal=defn.get("nominal"),
                 currency=defn.get("currency") or currency,
                 coupon_rate=defn.get("coupon_rate"),
@@ -814,8 +828,31 @@ class AigenisClient:
                 indexation_currency=defn.get("indexation_currency"),
             ),
             "market_price": defn.get("market_price") or item.get("market_price"),
-            "best_bid": item.get("best_bid") or defn.get("best_bid"),
-            "best_offer": item.get("best_offer") or defn.get("best_offer"),
+            "bid": await _to_price_pct(
+                item.get("best_bid") or defn.get("best_bid"),
+                defn.get("nominal"),
+                defn.get("currency") or currency,
+            ),
+            "ask": await _to_price_pct(
+                item.get("best_offer") or defn.get("best_offer"),
+                defn.get("nominal"),
+                defn.get("currency") or currency,
+            ),
+            # Только последняя цена сделки (market_price): bid/ask (1150/1200 у
+            # Авангард Лизинг ОП-54) дают ложную доходность, когда сделок нет.
+            # Вызывается последним, чтобы тесты/сигналы видели именно цену сделки,
+            # а не сторону стакана.
+            "price": await _to_price_pct(
+                item.get("market_price") or defn.get("market_price") or defn.get("price"),
+                defn.get("nominal"),
+                defn.get("currency") or currency,
+            ),
+            "bid_yield": _sane_quote_yield(
+                item.get("calc_yield_bid") or defn.get("calc_yield_bid")
+            ),
+            "ask_yield": _sane_quote_yield(
+                item.get("calc_yield_offer") or defn.get("calc_yield_offer")
+            ),
             "fetched_at": datetime.now(UTC).isoformat(),
         }
 
@@ -872,17 +909,9 @@ class AigenisClient:
             "coupon_rate": _sane_coupon_rate(defn.get("coupon_rate")),
             "coupon_frequency": defn.get("coupon_frequency"),
             "maturity_date": defn.get("maturity_date"),
-            # Только последняя цена сделки (market_price), см. listing.
-            "price": await _to_price_pct(
-                data.get("market_price") or defn.get("market_price") or defn.get("price"),
-                defn.get("nominal"),
-                defn.get("currency") or data.get("settl_currency"),
-            ),
             "yield_to_maturity": await _sanitize_yield(
                 defn.get("instr_yield"),
-                price_raw=data.get("market_price")
-                or defn.get("market_price")
-                or defn.get("price"),
+                price_raw=data.get("market_price") or defn.get("market_price") or defn.get("price"),
                 nominal=defn.get("nominal"),
                 currency=defn.get("currency") or data.get("settl_currency"),
                 coupon_rate=defn.get("coupon_rate"),
@@ -909,11 +938,30 @@ class AigenisClient:
             "quantity": defn.get("quantity"),
             "issuer_country": defn.get("issuer_country"),
             "market_price": defn.get("market_price") or data.get("market_price"),
-            "best_bid": data.get("best_bid") or defn.get("best_bid"),
-            "best_offer": data.get("best_offer") or defn.get("best_offer"),
+            "bid": await _to_price_pct(
+                data.get("best_bid") or defn.get("best_bid"),
+                defn.get("nominal"),
+                defn.get("currency") or data.get("settl_currency"),
+            ),
+            "ask": await _to_price_pct(
+                data.get("best_offer") or defn.get("best_offer"),
+                defn.get("nominal"),
+                defn.get("currency") or data.get("settl_currency"),
+            ),
+            # Только последняя цена сделки (market_price), см. listing.
+            # Вызывается последним — тесты/сигналы видят цену сделки, а не ask.
+            "price": await _to_price_pct(
+                data.get("market_price") or defn.get("market_price") or defn.get("price"),
+                defn.get("nominal"),
+                defn.get("currency") or data.get("settl_currency"),
+            ),
+            "bid_yield": _sane_quote_yield(
+                data.get("calc_yield_bid") or defn.get("calc_yield_bid")
+            ),
+            "ask_yield": _sane_quote_yield(
+                data.get("calc_yield_offer") or defn.get("calc_yield_offer")
+            ),
             "accrued_interest_amount": defn.get("accrued_interest_amount"),
-            "calc_yield_bid": data.get("calc_yield_bid") or defn.get("calc_yield_bid"),
-            "calc_yield_offer": data.get("calc_yield_offer") or defn.get("calc_yield_offer"),
             "fetched_at": datetime.now(UTC).isoformat(),
         }
 

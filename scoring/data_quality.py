@@ -27,9 +27,14 @@ MAX_DATA_AGE_HOURS = 48
 MIN_PRICE_NOMINAL_RATIO_PCT = 1.0
 MAX_PRICE_NOMINAL_RATIO_PCT = 500.0
 
-# YTM bounds: за пределами — явная ошибка данных
+# YTM bounds: за пределами — явная ошибка данных. Потолок согласован с
+# портфельным eligibility-гейтом (scoring/eligibility.EXTREME_MAX_YTM_PCT = 100):
+# бумага, слишком рискованная для включения в портфель (YTM > 100%), не должна ни
+# скориться, ни показываться как жизнеспособная возможность. Для реального
+# высокодоходного долга (фронтир) YTM редко превышает 40-60%, так что 100% —
+# безопасный предел «явной ошибки / экстремального дистресса».
 MIN_REALISTIC_YTM = -10.0
-MAX_REALISTIC_YTM = 500.0
+MAX_REALISTIC_YTM = 100.0
 
 # Купон bounds
 MAX_REALISTIC_COUPON = 100.0

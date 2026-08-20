@@ -38,7 +38,9 @@ def test_ns_rate_converges_to_beta0_at_long_tenor():
 def _point(tenor, rate):
     from desk.models import CurvePoint
 
-    return CurvePoint(tenor=tenor, years={"1Y": 1.0, "2Y": 2.0, "5Y": 5.0, "10Y": 10.0}[tenor], rate_pct=rate)
+    return CurvePoint(
+        tenor=tenor, years={"1Y": 1.0, "2Y": 2.0, "5Y": 5.0, "10Y": 10.0}[tenor], rate_pct=rate
+    )
 
 
 def test_fit_empty_returns_zeros():
@@ -75,8 +77,12 @@ def test_solve_flat_yield_par_bond():
     from desk.cashflow import pricing_cashflows
 
     flows = pricing_cashflows(
-        nominal=1000, coupon_rate_pct=10, coupon_frequency=2,
-        maturity=date(2029, 1, 1), asof=date(2024, 1, 1), issue_date=date(2024, 1, 1),
+        nominal=1000,
+        coupon_rate_pct=10,
+        coupon_frequency=2,
+        maturity=date(2029, 1, 1),
+        asof=date(2024, 1, 1),
+        issue_date=date(2024, 1, 1),
     )
     # price at par (100% of 1000 = 1000) -> flat ~ 10%
     flat = solve_flat_yield(flows, 1000.0)
@@ -95,7 +101,15 @@ def test_solve_flat_yield_none_for_nonpositive_price():
 # --------------------------------------------------------------------------- #
 # compute_spreads
 # --------------------------------------------------------------------------- #
-def _spread_bond(internal_id="B", ytm=10.0, price=100.0, coupon=10.0, freq=2, currency="BYN", maturity=date(2029, 1, 1)):
+def _spread_bond(
+    internal_id="B",
+    ytm=10.0,
+    price=100.0,
+    coupon=10.0,
+    freq=2,
+    currency="BYN",
+    maturity=date(2029, 1, 1),
+):
     return SimpleNamespace(
         internal_id=internal_id,
         yield_to_maturity=ytm,
@@ -136,7 +150,11 @@ def test_compute_spreads_rich_when_price_above_model():
 
 
 def test_compute_spreads_skips_missing_curve():
-    reports = compute_spreads([_spread_bond(currency="XXX")], {"BYN": NelsonSiegelParams(beta0=10, beta1=0, beta2=0, tau=2)}, asof=date(2024, 1, 1))
+    reports = compute_spreads(
+        [_spread_bond(currency="XXX")],
+        {"BYN": NelsonSiegelParams(beta0=10, beta1=0, beta2=0, tau=2)},
+        asof=date(2024, 1, 1),
+    )
     assert reports == []
 
 
@@ -162,7 +180,9 @@ def test_compute_spreads_sorted_by_abs_mispricing():
 # --------------------------------------------------------------------------- #
 # curve_from_bonds (eligibility-aware)
 # --------------------------------------------------------------------------- #
-def _eligible_bond(internal_id="E", ytm=10.0, price=100.0, currency="BYN", maturity=date(2029, 1, 1)):
+def _eligible_bond(
+    internal_id="E", ytm=10.0, price=100.0, currency="BYN", maturity=date(2029, 1, 1)
+):
     return SimpleNamespace(
         internal_id=internal_id,
         yield_to_maturity=ytm,

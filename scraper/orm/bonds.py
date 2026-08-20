@@ -62,6 +62,14 @@ class BondORM(Base):
     price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
     yield_to_maturity: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
 
+    # Реальный стакан (order book): лучшая котировка покупки (bid) и продажи
+    # (ask) в процентах от номинала, плюс доходность к погашению каждой стороны.
+    # Источник — Aigenis best_bid/best_offer/calc_yield_bid/calc_yield_offer.
+    bid: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    ask: Mapped[Decimal | None] = mapped_column(Numeric(20, 6), nullable=True)
+    bid_yield: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    ask_yield: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+
     amortization: Mapped[str | None] = mapped_column(String(16), nullable=True)
     offer_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -107,18 +115,26 @@ class BondORM(Base):
     @validates(
         "nominal",
         "price",
+        "bid",
+        "ask",
         "issue_volume",
         "exchange_rate_on_start",
         "coupon_rate",
         "yield_to_maturity",
+        "bid_yield",
+        "ask_yield",
     )
     def _validate_numeric(self, key: str, value: object) -> object:
         # NUMERIC(20, 6) columns overflow above ~1e14; NUMERIC(14, 4) above ~1e10.
-        max_abs = 1e13 if key in {"nominal", "price", "issue_volume", "exchange_rate_on_start"} else 1e9
+        max_abs = (
+            1e13
+            if key in {"nominal", "price", "bid", "ask", "issue_volume", "exchange_rate_on_start"}
+            else 1e9
+        )
         return _clamp_numeric(value, max_abs)
 
     @validates("term_days", "quantity")
-    def _validate_int(self, key: str, value: object) -> object:
+    def _validate_int(self, _key: str, value: object) -> object:
         if value is None:
             return None
         try:

@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
+import re
 import sys
 import time
 from datetime import UTC, date, datetime, timedelta
@@ -89,14 +91,13 @@ async def _warm_demo_cache() -> None:
         ("moex", "BYN", 2000),
     ):
         try:
-            asyncio.create_task(_get_market_snapshot(market, currency, limit))
+            warm_task = asyncio.create_task(_get_market_snapshot(market, currency, limit))
+            del warm_task
         except Exception:
             logger.warning("demo_cache_warm_failed", market=market, currency=currency)
 
 
-async def _build_market_snapshot(
-    market: str, currency: str | None, limit: int
-) -> dict[str, Any]:
+async def _build_market_snapshot(market: str, currency: str | None, limit: int) -> dict[str, Any]:
     loop = asyncio.get_event_loop()
     async with session_scope() as session:
         stmt = (
@@ -104,6 +105,7 @@ async def _build_market_snapshot(
             .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
             .where(func.lower(BondORM.market) == market.lower())
             .where(BondORM.status == "active")
+            .where(BondORM.price.isnot(None))
             .order_by(BondORM.fetched_at.desc(), BondORM.name.asc())
             .limit(limit)
         )
@@ -115,13 +117,21 @@ async def _build_market_snapshot(
     for bond, score in rows:
         try:
             payload = await loop.run_in_executor(None, _fast_bond_payload, bond, score)
-            bonds.append(payload)
         except Exception:
             logger.warning(
                 "demo_bond_payload_failed",
                 internal_id=bond.internal_id,
                 error="payload build failed, skipped",
             )
+            continue
+        # Keep only market-plausible quotes: bids/prices outside a 10–150%
+        # of-face band are corrupted source values (e.g. 294% or 1% of face),
+        # not real market prices. Excluding them keeps the demo consistent
+        # with observable market data instead of showing impossible quotes.
+        p = payload.get("price")
+        if p is None or p < 10 or p > 150:
+            continue
+        bonds.append(payload)
     as_of = max((b["fetched_at"] for b in bonds if b["fetched_at"]), default=None)
     return {
         "source": "Aigenis official feed",
@@ -134,10 +144,8 @@ async def _build_market_snapshot(
     }
 
 
-async def _get_market_snapshot(
-    market: str, currency: str | None, limit: int
-) -> dict[str, Any]:
-    key = f"{market}|{str(currency)}|{limit}"
+async def _get_market_snapshot(market: str, currency: str | None, limit: int) -> dict[str, Any]:
+    key = f"{market}|{currency!s}|{limit}"
     now = time.monotonic()
     cached = _market_cache.get(key)
     if cached is not None and (now - cached[0]) < _MARKET_CACHE_TTL:
@@ -163,41 +171,83 @@ async def _get_market_snapshot(
         _market_inflight.pop(key, None)
 
 
+def _search_display_name(name: str | None, internal_id: str | None, isin: str | None) -> str | None:
+    """Mirror the frontend formatBondDisplayName() so search matches what the
+    UI actually displays. The feed stores BCSE sovereign issues under the
+    generic issuer title ("Министерство финансов Республики Беларусь"),
+    while the UI shows "Минфин РБ (выпуск 0400)" — searching "минфин" must
+    find them."""
+    if not name:
+        return isin or internal_id or None
+    clean = name.strip()
+    if (
+        re.match(r"^министерство финансов( республики беларусь)?$", clean, re.IGNORECASE)
+        or clean.lower() == "минфин"
+    ):
+        raw = internal_id or isin or ""
+        raw = re.sub(
+            r"^(demo-bond-)?(BCSE|MOEX|MF-(?:LB|SB)-(?:BYN|USD|RUB))-?",
+            "",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        return f"Минфин РБ (выпуск {raw})" if raw else "Минфин РБ"
+    return clean
+
+
 async def _build_search_snapshot(
     term: str, market: str | None, currency: str | None, limit: int
 ) -> dict[str, Any]:
     loop = asyncio.get_event_loop()
+    q = term.strip().lower()
     async with session_scope() as session:
         stmt = (
             select(BondORM, BondScoreORM)
             .outerjoin(BondScoreORM, BondORM.internal_id == BondScoreORM.internal_id)
             .where(BondORM.status == "active")
-            .where(
-                or_(
-                    BondORM.name.ilike(f"%{term}%"),
-                    BondORM.issuer.ilike(f"%{term}%"),
-                    BondORM.isin.ilike(f"%{term}%"),
-                    BondORM.internal_id.ilike(f"%{term}%"),
-                )
-            )
+            .where(BondORM.price.isnot(None))
         )
         if market:
             stmt = stmt.where(func.lower(BondORM.market) == market.lower())
         if currency:
             stmt = stmt.where(BondORM.currency == currency.upper())
-        rows = (await session.execute(stmt.order_by(BondORM.name.asc()).limit(limit))).all()
+        rows = (await session.execute(stmt)).all()
+
+    # Match on raw fields plus the UI display-name alias, so a search for
+    # "минфин" (or "минфин рб") finds the sovereign BCSE issues shown in the
+    # table even though their stored name is the generic issuer title.
+    matched: list[tuple[BondORM, BondScoreORM | None]] = []
+    for bond, score in rows:
+        display = _search_display_name(bond.name, bond.internal_id, bond.isin) or ""
+        haystack = " ".join(
+            filter(
+                None,
+                (bond.name, bond.issuer, bond.isin, bond.internal_id, display),
+            )
+        ).lower()
+        if q in haystack:
+            matched.append((bond, score))
+    matched.sort(key=lambda r: (r[0].name or "").lower())
+    matched = matched[:limit]
 
     bonds: list[dict[str, Any]] = []
-    for bond, score in rows:
+    for bond, score in matched:
         try:
             payload = await loop.run_in_executor(None, _fast_bond_payload, bond, score)
-            bonds.append(payload)
         except Exception:
             logger.warning(
                 "demo_search_payload_failed",
                 internal_id=bond.internal_id,
                 error="payload build failed, skipped",
             )
+            continue
+        # Same market-plausibility guard as the market-data browser: drop
+        # corrupted quotes outside the 10–150% of-face band so search never
+        # surfaces impossible prices.
+        p = payload.get("price")
+        if p is None or p < 10 or p > 150:
+            continue
+        bonds.append(payload)
     return {
         "query": term,
         "market": market,
@@ -210,7 +260,7 @@ async def _build_search_snapshot(
 async def _get_search_snapshot(
     term: str, market: str | None, currency: str | None, limit: int
 ) -> dict[str, Any]:
-    key = f"{term}|{str(market)}|{str(currency)}|{limit}"
+    key = f"{term}|{market!s}|{currency!s}|{limit}"
     now = time.monotonic()
     cached = _market_cache.get(key)
     if cached is not None and (now - cached[0]) < _MARKET_CACHE_TTL:
@@ -253,13 +303,22 @@ def _issuer_risk_payload(
 ) -> dict[str, Any]:
     """Expose the engine's explainable issuer-risk view, not a credit rating."""
     from scoring.engine import _classify_issuer
+    from scoring.issuer_risk import lookup_issuer_profile, profile_risk_ladder
 
-    credit = credit_component if credit_component is not None else -2.0
+    profile = lookup_issuer_profile(issuer)
+    credit = (
+        profile.credit
+        if profile is not None
+        else (credit_component if credit_component is not None else -2.0)
+    )
     tier = _classify_issuer(issuer)
 
     if status in {"defaulted", "delisted"}:
         score, level = 15.0, "Критический"
         basis = "Статус выпуска указывает на дефолт или делистинг"
+    elif profile is not None:
+        score, level = profile_risk_ladder(credit)
+        basis = profile.basis
     elif is_government or tier == "sovereign" or credit >= 10:
         score, level = 90.0, "Очень низкий"
         basis = "Суверенный / государственный профиль эмитента"
@@ -282,23 +341,70 @@ def _issuer_risk_payload(
         score, level = 36.0, "Высокий"
         basis = "Отрицательный кредитный компонент корпоративного эмитента"
 
-    return {
+    payload = {
         "score": score,
         "level": level,
         "basis": basis,
         "credit_component": round(credit, 2),
         "method": "Reward/Risk engine: issuer classification + credit component + status",
     }
+    if profile is not None:
+        payload["issuer_profile"] = profile.key
+        payload["profile_kind"] = profile.kind
+        payload["sources"] = list(profile.sources)
+    return payload
 
 
 STRATEGY_PROFILES: dict[str, dict[str, float]] = {
-    "Conservative": {"baseReturn": 9.5, "volatility": 2.5, "maxDrawdown": 1.5, "riskFree": 4.0, "var95": 1.0},
-    "Balanced": {"baseReturn": 12.4, "volatility": 4.2, "maxDrawdown": 3.2, "riskFree": 4.0, "var95": 2.1},
-    "Carry Trade": {"baseReturn": 13.5, "volatility": 5.0, "maxDrawdown": 4.5, "riskFree": 4.0, "var95": 2.9},
-    "Metals++": {"baseReturn": 11.5, "volatility": 6.5, "maxDrawdown": 6.0, "riskFree": 4.0, "var95": 3.8},
-    "Dollarization": {"baseReturn": 11.0, "volatility": 5.5, "maxDrawdown": 5.0, "riskFree": 4.0, "var95": 3.2},
-    "Aggressive": {"baseReturn": 15.0, "volatility": 6.0, "maxDrawdown": 5.5, "riskFree": 4.0, "var95": 3.4},
-    "Maximum Reward/Risk": {"baseReturn": 16.5, "volatility": 7.5, "maxDrawdown": 7.0, "riskFree": 4.0, "var95": 4.3},
+    "Conservative": {
+        "baseReturn": 9.5,
+        "volatility": 2.5,
+        "maxDrawdown": 1.5,
+        "riskFree": 4.0,
+        "var95": 1.0,
+    },
+    "Balanced": {
+        "baseReturn": 12.4,
+        "volatility": 4.2,
+        "maxDrawdown": 3.2,
+        "riskFree": 4.0,
+        "var95": 2.1,
+    },
+    "Carry Trade": {
+        "baseReturn": 13.5,
+        "volatility": 5.0,
+        "maxDrawdown": 4.5,
+        "riskFree": 4.0,
+        "var95": 2.9,
+    },
+    "Metals++": {
+        "baseReturn": 11.5,
+        "volatility": 6.5,
+        "maxDrawdown": 6.0,
+        "riskFree": 4.0,
+        "var95": 3.8,
+    },
+    "Dollarization": {
+        "baseReturn": 11.0,
+        "volatility": 5.5,
+        "maxDrawdown": 5.0,
+        "riskFree": 4.0,
+        "var95": 3.2,
+    },
+    "Aggressive": {
+        "baseReturn": 15.0,
+        "volatility": 6.0,
+        "maxDrawdown": 5.5,
+        "riskFree": 4.0,
+        "var95": 3.4,
+    },
+    "Maximum Reward/Risk": {
+        "baseReturn": 16.5,
+        "volatility": 7.5,
+        "maxDrawdown": 7.0,
+        "riskFree": 4.0,
+        "var95": 4.3,
+    },
 }
 
 # Упорядоченный список стратегий по возрастанию базовой доходности — гарантирует
@@ -359,22 +465,25 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
         if bond.yield_to_maturity is not None and float(bond.yield_to_maturity) > 0
         else None
     )
-    ytm: float | None = honest_yield(
-        stored_ytm_pct=stored_ytm,
-        coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
-        indexation_currency=bond.indexation_currency,
-        currency=bond.currency,
-    )
-    computed_ytm = False
     price_pct = to_price_pct(bond.price, bond.nominal)
     metal_no_coupon = is_metal_bond(bond.currency, bond.indexation_currency) and (
         bond.coupon_rate is None or float(bond.coupon_rate) <= 0.01
     )
+    ytm: float | None = None
+    computed_ytm = False
+    # Эффективная доходность, которую инвестор реально получит при покупке
+    # сейчас, — всегда пересчитываем из АКТУАЛЬНОЙ рыночной цены (по последним
+    # данным), а не из возможно устаревшего сохранённого значения. Отрицательное
+    # решение тоже принимается: цена выше «справедливой» у коротких бумаг даёт
+    # реальный убыток, и честный отрицательный YTM лучше невозможного
+    # положительного из фида (см. 21C22516: 6.89% при погашении через 16 дней).
+    # Бумаги без фиксированного купона (coupon_rate <= 0.01: флоатеры и
+    # бескупонные) не пересчитываются — их YTM по нулевому купону бессмысленен.
     if (
-        ytm is None
-        and not metal_no_coupon
+        not metal_no_coupon
         and price_pct is not None
         and bond.coupon_rate is not None
+        and float(bond.coupon_rate) > 0.01
         and bond.maturity_date is not None
     ):
         try:
@@ -387,13 +496,26 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
             )
         except Exception:
             solved = None
-        if solved is not None and solved > 0:
+        if solved is not None:
             ytm = round(solved, 4)
             computed_ytm = True
+    # Запасной вариант: сохранённая (фидовая) доходность, когда ценовая
+    # переоценка невозможна (нет купона/погашения или нестандартный инструмент).
+    if ytm is None:
+        ytm = honest_yield(
+            stored_ytm_pct=stored_ytm,
+            coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+            indexation_currency=bond.indexation_currency,
+            currency=bond.currency,
+        )
+        computed_ytm = False
 
     # Guard against impossible feed values: a demanding client must never see
     # YTM > 100% or a negative price. Treat as "no data" instead of serving noise.
-    if ytm is not None and (ytm > 100.0 or ytm < -5.0):
+    # Собственный пересчёт (computed_ytm) проверен биссекцией по реальной цене —
+    # для него отрицательная доходность является честным результатом и не
+    # отбрасывается (иначе 21C22516 снова покажет невозможные 6.89%).
+    if ytm is not None and (ytm > 100.0 or (ytm < -5.0 and not computed_ytm)):
         ytm = None
         computed_ytm = False
     if price_pct is not None and price_pct <= 0:
@@ -524,6 +646,29 @@ def _bond_analytics(bond: BondORM) -> dict[str, Any]:
 DATA_ROOT = Path(__file__).resolve().parents[1] / "demo-data" / "v1"
 
 
+def _score_stale(score_row: BondScoreORM, fresh_ytm: float | None) -> bool:
+    """Предвычисленный score из bond_scores построен по хранимому YTM на момент
+    загрузки фида, а ``ytm`` в payload — свежий честный пересчёт по текущей
+    цене. Если yield-компонента breakdown противоречит свежему YTM (21C22516:
+    score 69 «по купону» при YTM −21.85%; RU000A0JWTL6: yield_component 11.74
+    при YTM −28.28), сохранённый score не показываем — он будет пересчитан
+    на лету, чтобы таблица и карточка не противоречили друг другу."""
+    try:
+        bd = score_row.breakdown or {}
+        yc = bd.get("yield_component")
+        if yc is None:
+            return False
+        yc = float(yc)
+        if fresh_ytm is None or fresh_ytm <= 0:
+            return yc > 0.0
+        if fresh_ytm <= 40:
+            return abs(fresh_ytm - yc) > 1.0
+        implied = 40.0 + 2.0 * math.log(fresh_ytm - 39.0)
+        return abs(implied - yc) > 1.5
+    except Exception:
+        return False
+
+
 def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[str, Any]:
     """Lightweight payload for the list endpoint — reads pre-computed scores."""
     ref = date.today()
@@ -532,22 +677,21 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         if bond.yield_to_maturity and float(bond.yield_to_maturity) > 0
         else None
     )
-    ytm = honest_yield(
-        stored_ytm_pct=stored_ytm,
-        coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
-        indexation_currency=bond.indexation_currency,
-        currency=bond.currency,
-    )
     price_pct = to_price_pct(bond.price, bond.nominal)
     computed_ytm = False
     metal_no_coupon = is_metal_bond(bond.currency, bond.indexation_currency) and (
         bond.coupon_rate is None or float(bond.coupon_rate) <= 0.01
     )
+    ytm: float | None = None
+    # Эффективная доходность при покупке сейчас — пересчитываем из актуальной
+    # цены (по последним данным), а не из возможно устаревшего сохранённого YTM.
+    # Отрицательное решение принимается (убыток при цене выше справедливой),
+    # а бумаги без фиксированного купона (флоатеры/бескупонные) не трогаем.
     if (
-        ytm is None
-        and not metal_no_coupon
+        not metal_no_coupon
         and price_pct is not None
         and bond.coupon_rate is not None
+        and float(bond.coupon_rate) > 0.01
         and bond.maturity_date is not None
     ):
         try:
@@ -558,14 +702,23 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
                 bond.maturity_date,
                 ref,
             )
-            if solved and solved > 0:
+            if solved is not None:
                 ytm = round(solved, 4)
                 computed_ytm = True
         except Exception:
             pass
+    if ytm is None:
+        ytm = honest_yield(
+            stored_ytm_pct=stored_ytm,
+            coupon_rate_pct=float(bond.coupon_rate) if bond.coupon_rate is not None else None,
+            indexation_currency=bond.indexation_currency,
+            currency=bond.currency,
+        )
+        computed_ytm = False
 
-    # Guard against impossible feed values (see _bond_analytics).
-    if ytm is not None and (ytm > 100.0 or ytm < -5.0):
+    # Guard against impossible feed values (see _bond_analytics): фидовый YTM
+    # не должен быть ниже -5%, но собственный пересчёт по цене — честен.
+    if ytm is not None and (ytm > 100.0 or (ytm < -5.0 and not computed_ytm)):
         ytm = None
         computed_ytm = False
     if price_pct is not None and price_pct <= 0:
@@ -615,9 +768,12 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
     # Быстрый путь: предвычисленный score из bond_scores (никаких вызовов
     # тяжёлого scoring-движка на каждый бонд списка). Explanation не хранится
     # в bond_scores — UI подставляет фикстурное или считает в карточке.
+    # Погашенные бумаги не оцениваются (см. _bond_analytics): скрываем
+    # устаревший сохранённый score, чтобы таблица совпадала с карточкой.
     score_payload = None
     explanation = None
-    if score_row is not None:
+    matured = bond.maturity_date is not None and bond.maturity_date < ref
+    if score_row is not None and not matured and not _score_stale(score_row, ytm):
         try:
             score_payload = {
                 "score": round(float(score_row.score), 2),
@@ -683,7 +839,7 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         "coupon_rate": float(bond.coupon_rate) if bond.coupon_rate is not None else None,
         "coupon_frequency": bond.coupon_frequency,
         "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
-        "price": float(bond.price) if bond.price is not None else None,
+        "price": to_price_pct(bond.price, bond.nominal),
         "yield_to_maturity": ytm,
         "computed_ytm": computed_ytm,
         "distressed": distressed,
@@ -704,7 +860,7 @@ def _fast_bond_payload(bond: BondORM, score_row: BondScoreORM | None) -> dict[st
         "is_government": bool(bond.is_government),
         "in_stock": bond.in_stock,
         "guarantor": bond.guarantor,
-        "maturity_term_text": bond.maturity_term_text,
+        "maturity_term_text": _humanize_term_text(bond.maturity_term_text),
         "coupon_description": bond.coupon_description,
         "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
         "term_days": bond.term_days,
@@ -762,7 +918,7 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         "coupon_rate": float(bond.coupon_rate) if bond.coupon_rate is not None else None,
         "coupon_frequency": bond.coupon_frequency,
         "maturity_date": bond.maturity_date.isoformat() if bond.maturity_date else None,
-        "price": float(bond.price) if bond.price is not None else None,
+        "price": to_price_pct(bond.price, bond.nominal),
         # Source YTM if present, otherwise computed from price/coupon/maturity.
         "yield_to_maturity": analytics["yield_to_maturity"],
         "computed_ytm": analytics["computed_ytm"],
@@ -784,7 +940,7 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         "is_government": bool(bond.is_government),
         "in_stock": bond.in_stock,
         "guarantor": bond.guarantor,
-        "maturity_term_text": bond.maturity_term_text,
+        "maturity_term_text": _humanize_term_text(bond.maturity_term_text),
         "coupon_description": bond.coupon_description,
         "fetched_at": bond.fetched_at.isoformat() if bond.fetched_at else None,
         "term_days": bond.term_days,
@@ -792,6 +948,24 @@ def _bond_payload(bond: BondORM, analytics: dict[str, Any]) -> dict[str, Any]:
         if analytics.get("accrued_interest") is not None
         else None,
     }
+
+
+def _humanize_term_text(raw: Any) -> str | None:
+    """Рендер maturity_term_text; сырые float-лет из фида нормализуются
+    (0.1178082191780822 -> «0.12 г.»)."""
+    if raw is None or str(raw).strip() == "":
+        return None
+    s = str(raw).strip()
+    try:
+        years = float(s)
+    except (TypeError, ValueError):
+        return s
+    if not math.isfinite(years) or years >= 30:
+        return s
+    if abs(years - round(years)) < 0.005:
+        return f"{round(years)} г."
+    text = f"{years:.2f}".rstrip("0").rstrip(".")
+    return f"{text} г."
 
 
 @router.get("/market-data")
@@ -866,7 +1040,7 @@ async def demo_bond_detail(internal_id: str) -> dict[str, Any]:
     payload["history"] = [
         {
             "date": h.date.isoformat(),
-            "price": float(h.price) if h.price is not None else None,
+            "price": to_price_pct(h.price, bond.nominal),
             "yield": float(h.yield_) if h.yield_ is not None else None,
         }
         for h in reversed(history_rows)
@@ -936,9 +1110,7 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
     # сопоставленные с эмитентом через ту же базу персон, что и добавляемая
     # бумага, — чтобы «до» и «после» измерялись в одних и тех же единицах
     # (по эмитенту, а не по названию позиции).
-    issuer_by_id = {
-        b.get("internal_id"): b.get("issuer") for b in persona if b.get("internal_id")
-    }
+    issuer_by_id = {b.get("internal_id"): b.get("issuer") for b in persona if b.get("internal_id")}
     before_concentration: dict[str, float] = {}
     for pos in template.get("positions") or []:
         pos_id = str(pos.get("instrument_id") or pos.get("name") or "demo")
@@ -1005,9 +1177,7 @@ def _build_impact(req: PortfolioImpactRequest) -> PortfolioImpactResponse:
             real_dur = None
         if real_dur is None or real_dur <= 0:
             md = _as_date(bond.get("maturity_date"))
-            real_dur = (
-                max((md - DEMO_ASOF).days / 365.25, 0.5) if md is not None else 3.0
-            )
+            real_dur = max((md - DEMO_ASOF).days / 365.25, 0.5) if md is not None else 3.0
         bond_duration = real_dur
 
     after_yield = before_yield * (1.0 - alloc) + bond_yield * alloc
@@ -1074,6 +1244,56 @@ async def portfolio_impact(req: PortfolioImpactRequest) -> PortfolioImpactRespon
     return _build_impact(req)
 
 
+def _enrich_ytm_for_curves(bonds: list[BondORM]) -> list[BondORM]:
+    """The production DB stores ``yield_to_maturity`` as 0.0 for BCSE/MOEX rows;
+    the UI derives YTM from price/coupon on the fly, but the desk curve and
+    relative-value engines need a real YTM. Compute it here (matching the demo's
+    frozen ``DEMO_ASOF`` snapshot) so the downstream engine sees live analytics
+    instead of an all-zero curve that produces a meaningless slope=0.
+    """
+    ref = DEMO_ASOF
+    for b in bonds:
+        stored = (
+            float(b.yield_to_maturity)
+            if b.yield_to_maturity and float(b.yield_to_maturity) > 0
+            else None
+        )
+        ytm = honest_yield(
+            stored_ytm_pct=stored,
+            coupon_rate_pct=float(b.coupon_rate) if b.coupon_rate is not None else None,
+            indexation_currency=b.indexation_currency,
+            currency=b.currency,
+        )
+        price_pct = to_price_pct(b.price, b.nominal)
+        metal_no_coupon = is_metal_bond(b.currency, b.indexation_currency) and (
+            b.coupon_rate is None or float(b.coupon_rate) <= 0.01
+        )
+        if (
+            ytm is None
+            and not metal_no_coupon
+            and price_pct is not None
+            and b.coupon_rate is not None
+            and b.maturity_date is not None
+        ):
+            try:
+                solved = ytm_from_price(
+                    price_pct=price_pct,
+                    coupon_rate_pct=float(b.coupon_rate),
+                    coupon_frequency=int(b.coupon_frequency or 2),
+                    maturity=b.maturity_date,
+                    asof=ref,
+                )
+                if solved is not None and solved > 0:
+                    ytm = round(solved, 4)
+            except Exception:
+                pass
+        if ytm is not None and (ytm > 100.0 or ytm < -5.0):
+            ytm = None
+        if ytm is not None:
+            b.yield_to_maturity = ytm  # type: ignore[assignment]
+    return bonds
+
+
 @router.get("/desk/curve")
 async def demo_desk_curve(
     currency: str = Query("BYN"),
@@ -1089,12 +1309,13 @@ async def demo_desk_curve(
         if market and market.lower() in ("bcse", "moex"):
             stmt = stmt.where(func.lower(BondORM.market) == market.lower())
         bonds = list((await session.execute(stmt)).scalars().all())
+        _enrich_ytm_for_curves(bonds)
         try:
             from desk.yield_curve import curve_from_bonds, fit_nelson_siegel
 
             yc = curve_from_bonds(bonds)
             params = fit_nelson_siegel(yc.points) if len(yc.points) >= 3 else None
-            return {
+            payload = {
                 "currency": currency.upper(),
                 "market": market.upper() if market else "ALL",
                 "points": [p.model_dump() for p in yc.points],
@@ -1103,13 +1324,18 @@ async def demo_desk_curve(
             }
         except Exception as exc:
             logger.warning("demo_curve_failed", currency=currency.upper(), error=str(exc))
-            return {
+            payload = {
                 "currency": currency.upper(),
                 "market": market.upper() if market else "ALL",
                 "points": [],
                 "params": None,
                 "slope": 0.0,
             }
+        # _enrich_ytm_for_curves mutates ORM instances so the desk engine sees a
+        # real YTM; roll the session back so a read-only demo endpoint never
+        # writes computed values into the database.
+        await session.rollback()
+        return payload
 
 
 @router.get("/desk/rv")
@@ -1127,14 +1353,19 @@ async def demo_desk_rv(
         if market and market.lower() in ("bcse", "moex"):
             stmt = stmt.where(func.lower(BondORM.market) == market.lower())
         bonds = list((await session.execute(stmt)).scalars().all())
+        _enrich_ytm_for_curves(bonds)
         try:
             from desk.relative_value import relative_value_signals
 
             signals = relative_value_signals(bonds)
-            return [s.model_dump() for s in signals[:50]]
+            payload = [s.model_dump() for s in signals[:50]]
         except Exception as exc:
             logger.warning("demo_rv_failed", currency=currency.upper(), error=str(exc))
-            return []
+            payload = []
+        # Read-only guarantee: never persist the enrichment mutations (see
+        # /desk/curve for details).
+        await session.rollback()
+        return payload
 
 
 class StressTestRequest(BaseModel):
@@ -1533,7 +1764,9 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
                         .where(BondORM.maturity_date.is_not(None))
                         .where(BondORM.maturity_date > min_mat_date)
                     )
-                ).scalars().all()
+                )
+                .scalars()
+                .all()
             )
 
         # Eligibility gate: дистрибуция, сверхвысокорисковые и аномалии
@@ -1853,6 +2086,7 @@ async def demo_portfolio_optimize(req: OptimizationRequest) -> dict[str, Any]:
 # User-defined portfolio optimizer & calculator (no fixed strategies)
 # ---------------------------------------------------------------------------
 
+
 class CustomOptimizeRequest(BaseModel):
     internal_ids: list[str] = Field(
         ..., description="Bonds the user wants in their custom portfolio"
@@ -1978,9 +2212,7 @@ async def demo_custom_optimize(req: CustomOptimizeRequest) -> dict[str, Any]:
             "Недостаточно капитала для покупки хотя бы одного лота по выбранным бумагам. "
             "Увеличьте сумму инвестиций."
         )
-    other_ccy = sorted(
-        {str(getattr(b, "currency", "") or "").upper() for b in bonds} - {currency}
-    )
+    other_ccy = sorted({str(getattr(b, "currency", "") or "").upper() for b in bonds} - {currency})
     if other_ccy:
         warning_parts.append(
             f"В портфеле есть бумаги в валюте, отличной от {currency}: "
@@ -2047,7 +2279,9 @@ async def demo_custom_calculate(req: CustomCalculateRequest) -> dict[str, Any]:
             "warning": "По выбранным идентификаторам не найдено активных ликвидных облигаций.",
         }
 
-    holdings = [(h.internal_id, float(h.amount)) for h in req.holdings if h.internal_id in found_ids]
+    holdings = [
+        (h.internal_id, float(h.amount)) for h in req.holdings if h.internal_id in found_ids
+    ]
     if not holdings:
         return {
             "mode": "calculate",
@@ -2073,10 +2307,7 @@ async def _fetch_bonds_by_ids_async(session: Any, internal_ids: list[str]) -> li
     # Fetch regardless of status so a bond that exists but is inactive/matured
     # is excluded with a proper ``status`` reason (not mislabeled ``not_found``).
     # ``filter_eligible`` then drops non-active bonds with kind="status".
-    stmt = (
-        _select(BondORM)
-        .where(BondORM.internal_id.in_(internal_ids))
-    )
+    stmt = _select(BondORM).where(BondORM.internal_id.in_(internal_ids))
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

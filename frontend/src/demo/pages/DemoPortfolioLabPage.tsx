@@ -16,6 +16,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { fetchLiveMarket, fetchLiveSearch } from '../live-demo-api';
+import { searchAllBonds } from '../demo-api';
 import {
   fetchCustomOptimize,
   fetchCustomCalculate,
@@ -235,6 +236,7 @@ export default function DemoPortfolioLabPage() {
   const market = routeMarket === 'MOEX' ? 'MOEX' : 'BCSE';
 
   const [liveBonds, setLiveBonds] = useState<DemoBond[]>([]);
+  const [marketFailed, setMarketFailed] = useState(false);
 
   // ----- My Portfolio (demo user) -----
   const [userResult, setUserResult] = useState<CustomCalculateResponse | null>(null);
@@ -288,8 +290,10 @@ export default function DemoPortfolioLabPage() {
     try {
       const snap = await fetchLiveMarket(market.toLowerCase(), 'ALL');
       setLiveBonds(snap.bonds);
+      setMarketFailed(false);
     } catch {
       setLiveBonds([]);
+      setMarketFailed(true);
     }
   }, [market]);
 
@@ -320,6 +324,7 @@ export default function DemoPortfolioLabPage() {
         setUserResult(res);
       } catch {
         setUserResult(null);
+        setMarketFailed(true);
       } finally {
         setLoadingUser(false);
       }
@@ -376,7 +381,7 @@ export default function DemoPortfolioLabPage() {
         const r = await fetchLiveSearch(q, market.toLowerCase());
         setSearchResults(r.bonds.slice(0, 20));
       } catch {
-        setSearchResults([]);
+        setSearchResults(searchAllBonds(q, market).slice(0, 20));
       } finally {
         setSearching(false);
       }
@@ -477,9 +482,17 @@ export default function DemoPortfolioLabPage() {
           {DEMO_PERSONA.name} · {DEMO_PERSONA.label} · цель: «{DEMO_PERSONA.goal}». Реальные
           показатели по удерживаемым бумагам.
         </p>
-        {loadingUser && <Loading text="Загрузка портфеля пользователя..." />}
+        {loadingUser && (
+          <div style={{ minHeight: 480, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 24 }}>
+            <Loading text="Загрузка портфеля пользователя..." />
+          </div>
+        )}
         {!loadingUser && !userResult && (
-          <Empty text="Нет доступных облигаций для формирования демо-портфеля." />
+          <Empty
+            text={marketFailed
+              ? 'Live-источник недоступен — демо-портфель не сформирован.'
+              : 'Нет доступных облигаций для формирования демо-портфеля.'}
+          />
         )}
         {!loadingUser && userResult && (
           <>
@@ -515,6 +528,7 @@ export default function DemoPortfolioLabPage() {
               <span style={{ fontSize: 13, color: '#717680', fontWeight: 500 }}>Капитал:</span>
               <input
                 type="number"
+                aria-label="Капитал"
                 value={capital}
                 onChange={(e) => setCapital(Number(e.target.value) || 10000)}
                 style={{ width: 110, border: 'none', fontWeight: 700, fontSize: 15, color: '#01121a', outline: 'none' }}
@@ -576,6 +590,7 @@ export default function DemoPortfolioLabPage() {
             <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>Поиск облигаций</div>
             <input
               type="text"
+              aria-label="Поиск облигаций"
               placeholder="Название, ISIN, эмитент, ID..."
               value={query}
               onChange={(e) => {
@@ -592,7 +607,7 @@ export default function DemoPortfolioLabPage() {
               }}
             />
             <div style={{ marginTop: 8, maxHeight: 320, overflowY: 'auto' }}>
-              {searching && <div style={{ fontSize: 12, color: '#8fa0a8' }}>Поиск...</div>}
+              {searching && <div style={{ fontSize: 12, color: '#64747c' }}>Поиск...</div>}
               {!searching &&
                 searchResults.map((b) => (
                   <div
@@ -609,7 +624,7 @@ export default function DemoPortfolioLabPage() {
                       <div style={{ fontWeight: 600, color: '#0B526B' }}>
                         {formatBondDisplayName(b.name, b.internal_id, b.isin)}
                       </div>
-                      <div style={{ fontSize: 11, color: '#8fa0a8' }}>
+                      <div style={{ fontSize: 11, color: '#64747c' }}>
                         YTM {formatYtm(b.yield_to_maturity)} · {b.currency}
                       </div>
                     </div>
@@ -619,7 +634,7 @@ export default function DemoPortfolioLabPage() {
                       style={{
                         border: 'none',
                         background: selectedIds.includes(b.internal_id) ? '#eef3f5' : '#0B526B',
-                        color: selectedIds.includes(b.internal_id) ? '#8fa0a8' : '#fff',
+                        color: selectedIds.includes(b.internal_id) ? '#64747c' : '#fff',
                         borderRadius: 6,
                         padding: '6px 10px',
                         cursor: 'pointer',
@@ -640,7 +655,7 @@ export default function DemoPortfolioLabPage() {
             </div>
             <div style={{ marginTop: 8, maxHeight: 320, overflowY: 'auto' }}>
               {selectedIds.length === 0 && (
-                <div style={{ fontSize: 13, color: '#8fa0a8' }}>Портфель пуст — добавьте бумаги слева.</div>
+                <div style={{ fontSize: 13, color: '#64747c' }}>Портфель пуст — добавьте бумаги слева.</div>
               )}
               {selectedIds.map((id) => {
                 const b = bondMap[id];
@@ -671,6 +686,7 @@ export default function DemoPortfolioLabPage() {
                         <span style={{ fontSize: 12, color: '#717680' }}>Сумма:</span>
                         <input
                           type="number"
+                          aria-label={`Сумма позиции в ${currency}`}
                           value={amounts[id] ?? 10000}
                           onChange={(e) => setAmount(id, Number(e.target.value) || 0)}
                           style={{ width: 120, padding: '4px 8px', borderRadius: 6, border: '1px solid #d6e2e6', fontSize: 13 }}
@@ -705,6 +721,7 @@ export default function DemoPortfolioLabPage() {
 
           <input
             type="text"
+            aria-label="Название портфеля"
             placeholder="Название портфеля..."
             value={portfolioName}
             onChange={(e) => setPortfolioName(e.target.value)}
@@ -867,7 +884,7 @@ function Loading({ text }: { text: string }) {
 }
 
 function Empty({ text }: { text: string }) {
-  return <div style={{ padding: 16, color: '#8fa0a8', fontSize: 13 }}>{text}</div>;
+  return <div style={{ padding: 16, color: '#64747c', fontSize: 13 }}>{text}</div>;
 }
 
 function HoldingsTable({
@@ -913,7 +930,7 @@ function HoldingsTable({
                 <td style={{ padding: 10, fontWeight: 600, color: '#0B526B' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span>{formatBondDisplayName(h.name, h.internal_id)}</span>
-                    <ExternalLink size={12} color="#8fa0a8" />
+                    <ExternalLink size={12} color="#64747c" />
                   </div>
                 </td>
                 <td style={{ padding: 10, color: '#0B526B', fontWeight: 600 }}>{h.weight_pct.toFixed(1)}%</td>

@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY"]
+Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY", "CHF", "GBP", "JPY", "KZT"]
 
 
 class Settings(BaseSettings):

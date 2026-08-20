@@ -320,8 +320,8 @@ export function MarketsOverview({ onPick }: { onPick?: (cur: string) => void }) 
   useEffect(() => {
     Promise.all([
       api.stats().then((s) => s.by_currency).catch(() => ({}) as Record<string, number>),
-      api.bonds.list({ limit: 1000 }).catch(() => [] as Bond[]),
-      api.scores({ limit: 1000 }).catch(() => [] as BondScore[]),
+      api.bonds.list({ limit: 2000 }).catch(() => [] as Bond[]),
+      api.scores({ limit: 2000 }).catch(() => [] as BondScore[]),
     ])
       .then(([byCur, bonds, sc]) => {
         const scoreMap: Record<string, number> = {};

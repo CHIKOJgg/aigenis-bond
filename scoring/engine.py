@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
+from scoring.issuer_risk import lookup_issuer_profile
 from scoring.models import BondScore, ScoreBreakdown
 
 CURRENCY_BONUS: dict[str, float] = {
@@ -281,6 +282,9 @@ def _credit_risk_component(issuer: str | None, status: str) -> float:
         return -12.0
     if status == "defaulted":
         return -35.0
+    profile = lookup_issuer_profile(issuer)
+    if profile is not None:
+        return profile.credit
     tier = _classify_issuer(issuer)
     return _CREDIT_TIERS.get(tier, -3.0)
 
@@ -445,6 +449,10 @@ def score_bond(
     nominal_f = float(nominal) if nominal is not None else None
     from desk.ytm import is_metal_bond, to_price_pct, ytm_from_price
 
+    # `score_bond` accepts RAW absolute prices (e.g. 600 RUB for a 1000 nominal),
+    # so it must normalize via to_price_pct. Ingested DB `bonds.price` is already
+    # a percent-of-face; callers that operate purely on stored rows should prefer
+    # the stored value directly to avoid re-normalizing >500%-of-face quotes.
     price_pct = to_price_pct(price_f, nominal_f) if price_f is not None else None
 
     # Металлические бумаги без реального купона (золото/серебро/платина в
@@ -490,8 +498,17 @@ def score_bond(
                     if 0 < s < 1000:
                         ytm_pct = round(s, 4)
 
-            # Case 3: Unpriced bond with coupon rate -> par yield
-            if (ytm_pct is None or ytm_pct <= 0) and coupon_pct is not None and coupon_pct > 0:
+            # Case 3: Unpriced bond with coupon rate -> par yield. Только для
+            # бумаг БЕЗ рыночной цены: при наличии цены честно решённый
+            # отрицательный YTM (цена выше «справедливой» у коротких бумаг) —
+            # это реальный ожидаемый убыток, и подмена его купоном завышает
+            # score (21C22516: YTM −21.85% получил yield_component 7.0 = купон).
+            if (
+                (ytm_pct is None or ytm_pct <= 0)
+                and price_pct is None
+                and coupon_pct is not None
+                and coupon_pct > 0
+            ):
                 ytm_pct = coupon_pct
 
             # Case 4: No usable yield could be derived from price, coupon or

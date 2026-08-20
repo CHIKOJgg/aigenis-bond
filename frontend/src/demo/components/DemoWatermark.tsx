@@ -14,7 +14,7 @@ export default function DemoWatermark() {
       <span
         style={{
           fontSize: 11,
-          color: 'rgba(0,75,101,0.08)',
+          color: 'rgba(0,75,101,0.85)',
           fontWeight: 600,
           letterSpacing: 1,
           textTransform: 'uppercase',

@@ -119,7 +119,7 @@ jobs:
       - name: Install
         run: npm ci
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: E2E smoke test
         run: npm run test:e2e
       # Visual regression (npm run test:e2e:visual) runs locally against the

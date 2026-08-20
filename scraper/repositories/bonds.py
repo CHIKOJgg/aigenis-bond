@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Iterable, Sequence
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select, update
@@ -31,6 +32,37 @@ def _safe_numeric(value: Any, max_abs: float) -> Any:
         return None
     return value
 
+
+# Государственные облигации РБ (ВГДО) в BYN выпускаются только с номиналом
+# 1000 BYN. Фид aigenis.by изредка приносит мусорные номиналы (1.0, 50, 100,
+# 200) — из-за этого UI показывает «100% · 1.01 BYN» вместо «1 001 BYN».
+# Нормализуем на импорте (и для новых строк, и при обновлении существующих).
+MINFIN_BYN_NOMINAL = 1000
+_MINFIN_BYN_ID_PREFIX = "MF-LB-BYN-"
+
+
+def _sanitize_nominal(internal_id: str, nominal: Any) -> Any:
+    if (
+        nominal is not None
+        and internal_id.startswith(_MINFIN_BYN_ID_PREFIX)
+    ):
+        try:
+            f = float(nominal)
+        except (TypeError, ValueError):
+            return nominal
+        if 0 < f < MINFIN_BYN_NOMINAL:
+            from scraper.logging import get_logger
+
+            get_logger("scraper.bonds").warning(
+                "minfin_nominal_sanitized",
+                internal_id=internal_id,
+                nominal=f,
+                corrected=MINFIN_BYN_NOMINAL,
+            )
+            return Decimal(MINFIN_BYN_NOMINAL)
+    return nominal
+
+
 # Маппинг internal_id → читаемое имя облигации.
 # Заполняется из XLSX-данных при enrich_from_xlsx(), плюс хардкоженные
 # известные сопоставления на случай, если XLSX недоступен.
@@ -54,15 +86,29 @@ def _is_technical_name(name: str) -> bool:
     return len(cleaned) < 2 or (cleaned.isupper() and len(cleaned) < 5)
 
 
+# Имя облигации может нести суффикс валютной индексации номинала
+# (напр. «Айгенис Оп17_BYN→USD» или «АВАНГАРД ЛИЗИНГ Оп38 BYN ▶️ USD»). Бумага
+# НОМИНИРОВАНА в BYN — индексация на USD/EUR/RUB это лишь корректировка
+# номинала, а не валюта расчётов. Суффикс сбивает с толку (выглядит как
+# $-бумага) и ломает единообразие отображения, поэтому убираем его из имени.
+_CURRENCY_SUFFIX_RE = re.compile(r"\s*_?BYN\s*[▶→➡➜]\ufe0f?\s*(USD|EUR|RUB)", re.IGNORECASE)
+
+
+def _strip_currency_suffix(name: str | None) -> str | None:
+    if not name:
+        return name
+    return _CURRENCY_SUFFIX_RE.sub("", name).strip()
+
+
 def _enrich_bond_name(bond: Bond) -> str:
     """Построить читаемое имя облигации из доступных полей."""
     # 1. Если есть прямой маппинг по internal_id
     if bond.internal_id in BOND_NAME_MAP:
         return BOND_NAME_MAP[bond.internal_id]
 
-    # 2. Если имя уже читаемое — оставляем
+    # 2. Если имя уже читаемое — оставляем (убрав суффикс валютной индексации)
     if bond.name and not _is_technical_name(bond.name):
-        return bond.name
+        return _strip_currency_suffix(bond.name)
 
     # 3. Если есть issuer — строим "Issuer #N"
     if bond.issuer and not _is_technical_name(bond.issuer):
@@ -79,8 +125,8 @@ def _enrich_bond_name(bond: Bond) -> str:
             base,
         ).strip()
         if bond.issue_number is not None:
-            return f"{base} #{bond.issue_number}"
-        return base
+            return _strip_currency_suffix(f"{base} #{bond.issue_number}")
+        return _strip_currency_suffix(base)
 
     # 4. Fallback — делаем internal_id более читаемым
     iid = bond.internal_id
@@ -101,12 +147,16 @@ def _bond_to_orm(bond: Bond) -> dict:
         "issuer": bond.issuer,
         "issuer_logo": bond.issuer_logo,
         "currency": bond.currency,
-        "nominal": _safe_numeric(bond.nominal, 1e13),
+        "nominal": _sanitize_nominal(bond.internal_id, _safe_numeric(bond.nominal, 1e13)),
         "coupon_rate": _safe_numeric(bond.coupon_rate, 1e9),
         "coupon_frequency": bond.coupon_frequency,
         "maturity_date": bond.maturity_date,
         "price": _safe_numeric(bond.price, 1e13),
         "yield_to_maturity": _safe_numeric(bond.yield_to_maturity, 1e9),
+        "bid": _safe_numeric(bond.bid, 1e13),
+        "ask": _safe_numeric(bond.ask, 1e13),
+        "bid_yield": _safe_numeric(bond.bid_yield, 1e9),
+        "ask_yield": _safe_numeric(bond.ask_yield, 1e9),
         "amortization": bond.amortization,
         "offer_date": bond.offer_date,
         "start_date": bond.start_date,

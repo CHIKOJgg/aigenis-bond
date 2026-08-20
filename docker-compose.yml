@@ -343,9 +343,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${API_MEM_LIMIT:-512M}
+          # 512M было впритык: при 2 воркерах первый MOEX-запрос после
+          # рестарта убивал worker по OOM (502). 1G даёт запас на пики.
+          memory: ${API_MEM_LIMIT:-1G}
         reservations:
-          memory: ${API_MEM_RESERVE:-256M}
+          memory: ${API_MEM_RESERVE:-512M}
 
   # --------------------------------------------------------------------------
   # Certbot — Let's Encrypt SSL certificate management

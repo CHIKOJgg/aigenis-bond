@@ -3,10 +3,12 @@
 import re
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from math import isfinite
 from typing import Any
 
 from scraper.errors import ParseError
 from scraper.models import Bond, BondHistory, is_government_issuer
+from scraper.sources.aigenis.isin_overrides import override_isin
 
 
 def _coerce_date(value: Any) -> date | None:
@@ -89,6 +91,24 @@ def parse_listing_items(items: list[dict[str, Any]], currency: str) -> list[dict
     return out
 
 
+def _humanize_term_text(raw: Any) -> str | None:
+    """Нормализует maturity_term_text: фид иногда шлёт сырой float лет
+    (0.1178082191780822) вместо человекочитаемой строки."""
+    if raw is None or str(raw).strip() == "":
+        return None
+    s = str(raw).strip()
+    try:
+        years = float(s)
+    except (TypeError, ValueError):
+        return s
+    if not isfinite(years) or years >= 30:
+        return s
+    if abs(years - round(years)) < 0.005:
+        return f"{round(years)} г."
+    text = f"{years:.2f}".rstrip("0").rstrip(".")
+    return f"{text} г."
+
+
 def parse_bond_payload(
     payload: dict[str, Any],
     *,
@@ -126,11 +146,15 @@ def parse_bond_payload(
         yield_to_maturity=_first_not_none(
             payload.get("yield_to_maturity"), payload.get("ytm"), payload.get("yield")
         ),
+        bid=payload.get("bid"),
+        ask=payload.get("ask"),
+        bid_yield=payload.get("bid_yield"),
+        ask_yield=payload.get("ask_yield"),
         amortization=payload.get("amortization"),
         offer_date=_coerce_date(payload.get("offer_date")),
         start_date=_coerce_date(payload.get("start_date")),
         end_date=_coerce_date(payload.get("end_date")),
-        isin=payload.get("isin"),
+        isin=override_isin(str(internal_id), payload.get("isin")),
         status=payload.get("status", "unknown"),
         is_government=is_government_issuer(payload.get("issuer")),
         registration_number=payload.get("registration_number") or payload.get("reg_number"),
@@ -139,7 +163,9 @@ def parse_bond_payload(
         income_method=payload.get("income_method"),
         in_stock=payload.get("in_stock"),
         guarantor=payload.get("guarantor"),
-        maturity_term_text=payload.get("maturity_term_text") or payload.get("maturity_term"),
+        maturity_term_text=_humanize_term_text(
+            payload.get("maturity_term_text") or payload.get("maturity_term")
+        ),
         coupon_description=payload.get("coupon_description"),
         coupon_schedule=payload.get("coupon_schedule"),
         raw=payload,

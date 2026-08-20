@@ -182,18 +182,22 @@ def test_bond_cashflows_day_count_adjusts_amount():
 # annual_income
 # --------------------------------------------------------------------------- #
 def test_annual_income_basic():
-    assert annual_income(amount_invested=Decimal("1000"), coupon_rate=Decimal("10"), price=Decimal("100")) == Decimal("100")
+    assert annual_income(
+        amount_invested=Decimal("1000"), coupon_rate=Decimal("10"), price=Decimal("100")
+    ) == Decimal("100")
 
 
 def test_annual_income_zero_for_no_coupon():
-    assert annual_income(amount_invested=Decimal("1000"), coupon_rate=Decimal("0")) == Decimal("0.00")
+    assert annual_income(amount_invested=Decimal("1000"), coupon_rate=Decimal("0")) == Decimal(
+        "0.00"
+    )
 
 
 def test_annual_income_below_par_more_face():
     # price 95 -> more face -> more annual income
-    assert annual_income(amount_invested=Decimal("1000"), coupon_rate=Decimal("10"), price=Decimal("95")) == pytest.approx(
-        Decimal("105.26"), abs=Decimal("0.01")
-    )
+    assert annual_income(
+        amount_invested=Decimal("1000"), coupon_rate=Decimal("10"), price=Decimal("95")
+    ) == pytest.approx(Decimal("105.26"), abs=Decimal("0.01"))
 
 
 # --------------------------------------------------------------------------- #
@@ -220,20 +224,28 @@ def test_portfolio_income_totals():
 
 
 def test_portfolio_income_next_payment_present():
-    res = portfolio_income([_holding(maturity="2026-01-01", coupon_rate=10, freq=2)], from_date=date(2024, 2, 1))
+    res = portfolio_income(
+        [_holding(maturity="2026-01-01", coupon_rate=10, freq=2)], from_date=date(2024, 2, 1)
+    )
     assert res["next_payment"] is not None
 
 
 def test_portfolio_income_monthly_calendar_sum_equals_horizon():
-    res = portfolio_income([_holding(coupon_rate=12, freq=2)], from_date=date(2024, 1, 1), horizon_months=12)
+    res = portfolio_income(
+        [_holding(coupon_rate=12, freq=2)], from_date=date(2024, 1, 1), horizon_months=12
+    )
     total = sum(m["amount"] for m in res["monthly_calendar"])
     # horizon income over 12 months ~ annual income (coupons fall in window)
     assert total > 0
 
 
 def test_portfolio_income_fx_scales():
-    byn = portfolio_income([_holding(currency="BYN")], from_date=date(2024, 1, 1), fx_rates={"BYN": 1.0})
-    usd = portfolio_income([_holding(currency="USD")], from_date=date(2024, 1, 1), fx_rates={"USD": 3.0})
+    byn = portfolio_income(
+        [_holding(currency="BYN")], from_date=date(2024, 1, 1), fx_rates={"BYN": 1.0}
+    )
+    usd = portfolio_income(
+        [_holding(currency="USD")], from_date=date(2024, 1, 1), fx_rates={"USD": 3.0}
+    )
     assert usd["annual_income"] == pytest.approx(byn["annual_income"] * 3, abs=0.01)
 
 

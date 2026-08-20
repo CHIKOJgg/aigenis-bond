@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY"]
+Currency = Literal["USD", "BYN", "EUR", "RUB", "XAU", "XAG", "XPT", "CNY", "CHF", "JPY", "KZT"]
 CouponFrequency = Literal[1, 2, 4, 12]
 Amortization = Literal["none", "partial", "full"]
 BondStatus = Literal["active", "delisted", "matured", "offer", "unknown"]
@@ -60,6 +60,13 @@ class Bond(BaseModel):
     maturity_date: date | None = None
     price: Decimal | None = None
     yield_to_maturity: Decimal | None = None
+
+    # Реальный стакан: лучшая котировка покупки (bid) и продажи (ask) в
+    # процентах от номинала, плюс доходность к погашению каждой стороны.
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+    bid_yield: Decimal | None = None
+    ask_yield: Decimal | None = None
 
     amortization: Amortization | None = None
     offer_date: date | None = None
@@ -122,6 +129,10 @@ class Bond(BaseModel):
         "coupon_rate",
         "yield_to_maturity",
         "price",
+        "bid",
+        "ask",
+        "bid_yield",
+        "ask_yield",
         "nominal",
         "issue_volume",
         "exchange_rate_on_start",

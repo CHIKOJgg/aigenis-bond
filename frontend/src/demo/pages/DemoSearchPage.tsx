@@ -27,7 +27,6 @@ export default function DemoSearchPage() {
   const [market, setMarket] = useState<MarketFilter>(initialMarket);
   const [results, setResults] = useState<DemoBond[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [source, setSource] = useState<'live' | 'fixtures' | ''>('');
 
   useEffect(() => {
@@ -35,13 +34,11 @@ export default function DemoSearchPage() {
     if (!term) {
       setResults([]);
       setSource('');
-      setError('');
       return;
     }
     setSearchParams({ q: term, market }, { replace: true });
     let cancelled = false;
     setLoading(true);
-    setError('');
     (async () => {
       try {
         const data = await fetchLiveSearch(term, market === 'ALL' ? undefined : market);
@@ -89,6 +86,7 @@ export default function DemoSearchPage() {
         <Search size={18} style={{ color: '#516c79', flexShrink: 0 }} />
         <input
           type="search"
+          aria-label="Поиск облигаций"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Введите название, эмитента, ISIN или код…"
@@ -135,8 +133,6 @@ export default function DemoSearchPage() {
           </span>
         )}
       </div>
-
-      {error && <div style={{ color: '#b42318', marginBottom: 8, fontSize: 13 }}>{error}</div>}
 
       {results.length > 0 && (
         <div style={{ overflowX: 'auto' }}>

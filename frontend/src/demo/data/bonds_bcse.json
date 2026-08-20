@@ -492,7 +492,7 @@
     "status": "active",
     "is_government": true,
     "fetched_at": "2026-08-06T09:42:00+03:00",
-    "accrued_interest": 15.4781
+    "accrued_interest": 1.5478
   },
   {
     "internal_id": "demo-bond-aigenis-op35-gold",
@@ -532,7 +532,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0012
+    "accrued_interest": 0.0004
   },
   {
     "internal_id": "demo-bond-aigenis-op43-silver",
@@ -572,7 +572,7 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.004
+    "accrued_interest": 0.0008
   },
   {
     "internal_id": "demo-bond-aigenis-op42-platinum",
@@ -612,6 +612,6 @@
     "status": "active",
     "is_government": false,
     "fetched_at": "2026-08-14T09:30:00+03:00",
-    "accrued_interest": 0.0013
+    "accrued_interest": 0.0008
   }
 ]

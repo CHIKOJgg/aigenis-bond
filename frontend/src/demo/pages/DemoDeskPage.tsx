@@ -27,6 +27,11 @@ interface RVSignal {
   rationale: string;
 }
 
+const MARKET_CURRENCIES: Record<'BCSE' | 'MOEX', Array<'BYN' | 'USD' | 'RUB' | 'EUR'>> = {
+  BCSE: ['BYN', 'USD', 'RUB', 'EUR'],
+  MOEX: ['RUB', 'USD', 'EUR'],
+};
+
 export default function DemoDeskPage() {
   const [searchParams] = useSearchParams();
   const routeMarket = (searchParams.get('market') ?? 'BCSE').toUpperCase();
@@ -35,10 +40,6 @@ export default function DemoDeskPage() {
   // Only offer currencies that actually have bonds on the selected market.
   // (e.g. MOEX has no BYN-denominated issues, so selecting BYN would render
   // an empty "not enough points" curve — guard against that here.)
-  const MARKET_CURRENCIES: Record<'BCSE' | 'MOEX', Array<'BYN' | 'USD' | 'RUB' | 'EUR'>> = {
-    BCSE: ['BYN', 'USD', 'RUB', 'EUR'],
-    MOEX: ['RUB', 'USD', 'EUR'],
-  };
   const availableCurrencies = MARKET_CURRENCIES[market];
 
   const [currency, setCurrency] = useState<'BYN' | 'USD' | 'RUB' | 'EUR'>(
@@ -49,6 +50,7 @@ export default function DemoDeskPage() {
   const [curvePoints, setCurvePoints] = useState<CurvePoint[]>([]);
   const [signals, setSignals] = useState<RVSignal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     // Reset to a currency that actually exists for the market.
@@ -64,13 +66,15 @@ export default function DemoDeskPage() {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    
+    setFailed(false);
+
     Promise.all([
-      fetchLiveDeskCurve(currency, market.toLowerCase()).catch(() => ({ points: [] })),
-      fetchLiveDeskRv(currency, market.toLowerCase()).catch(() => []),
+      fetchLiveDeskCurve(currency, market.toLowerCase()).catch(() => null),
+      fetchLiveDeskRv(currency, market.toLowerCase()).catch(() => null),
     ]).then(([curveRes, rvRes]) => {
       if (!active) return;
-      setCurvePoints(curveRes.points || []);
+      setFailed(curveRes === null || rvRes === null);
+      setCurvePoints(curveRes?.points || []);
       setSignals(Array.isArray(rvRes) ? rvRes : []);
       setLoading(false);
     });
@@ -91,12 +95,12 @@ export default function DemoDeskPage() {
           backgroundColor: '#ffffff',
           padding: '20px 24px',
           borderRadius: 12,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+          border: '1px solid #d6e2e6',
         }}
       >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: '#01121a' }}>
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#01121a' }}>
               Институциональный Desk & Relative Value
             </h1>
             <span
@@ -148,7 +152,7 @@ export default function DemoDeskPage() {
           backgroundColor: '#ffffff',
           padding: 24,
           borderRadius: 12,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+          border: '1px solid #d6e2e6',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -159,10 +163,15 @@ export default function DemoDeskPage() {
         </div>
 
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#8fa0a8' }}>Загрузка кривой...</div>
+          <div style={{ padding: 40, textAlign: 'center', color: '#64747c' }}>Загрузка кривой...</div>
         ) : curvePoints.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#8fa0a8' }}>
+          <div style={{ padding: 40, textAlign: 'center', color: '#64747c' }}>
             Недостаточно рыночных точек для построения кривой {currency}
+            {failed && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#64747c' }}>
+                Live-источник недоступен — данные не получены
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -201,7 +210,7 @@ export default function DemoDeskPage() {
           backgroundColor: '#ffffff',
           padding: 24,
           borderRadius: 12,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+          border: '1px solid #d6e2e6',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -211,14 +220,19 @@ export default function DemoDeskPage() {
               Оценка аномалий цен & Z-Score ({currency})
             </h2>
           </div>
-          <span style={{ fontSize: 12, color: '#8fa0a8' }}>Сигналы переоценки / недооценки</span>
+          <span style={{ fontSize: 12, color: '#64747c' }}>Сигналы переоценки / недооценки</span>
         </div>
 
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#8fa0a8' }}>Расчёт сигналов...</div>
+          <div style={{ padding: 40, textAlign: 'center', color: '#64747c' }}>Расчёт сигналов...</div>
         ) : signals.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#8fa0a8' }}>
+          <div style={{ padding: 40, textAlign: 'center', color: '#64747c' }}>
             Все выпуски торгуются в пределах справедливых спредов
+            {failed && (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#64747c' }}>
+                Live-источник недоступен — данные не получены
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -254,7 +268,7 @@ export default function DemoDeskPage() {
                       <td style={{ padding: '12px', color: '#01121a' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: 13, color: '#0B526B' }}>
                           <span>{displayName}</span>
-                          <ExternalLink size={12} color="#8fa0a8" />
+                          <ExternalLink size={12} color="#64747c" />
                         </div>
                         <div style={{ fontSize: 11, color: '#717680', marginTop: 2 }}>{displayId}</div>
                       </td>

@@ -13,8 +13,15 @@ from scoring.eligibility import (
 )
 
 
-def _bond(internal_id="B", price=100.0, ytm=10.0, status="active", currency="BYN",
-          maturity=date(2028, 1, 1), nominal=1000):
+def _bond(
+    internal_id="B",
+    price=100.0,
+    ytm=10.0,
+    status="active",
+    currency="BYN",
+    maturity=date(2028, 1, 1),
+    nominal=1000,
+):
     return SimpleNamespace(
         internal_id=internal_id,
         price=price,
@@ -27,8 +34,13 @@ def _bond(internal_id="B", price=100.0, ytm=10.0, status="active", currency="BYN
 
 
 def test_check_eligibility_normal_bond_passes():
-    res = check_eligibility(internal_id="B", price_pct=100.0, ytm_pct=10.0,
-                            status="active", maturity_date=date(2028, 1, 1))
+    res = check_eligibility(
+        internal_id="B",
+        price_pct=100.0,
+        ytm_pct=10.0,
+        status="active",
+        maturity_date=date(2028, 1, 1),
+    )
     assert res.eligible is True
 
 
@@ -40,8 +52,9 @@ def test_check_eligibility_excluded_status():
 
 
 def test_check_eligibility_expired_maturity():
-    res = check_eligibility(internal_id="B", price_pct=100, ytm_pct=10,
-                            status="active", maturity_date=date(2020, 1, 1))
+    res = check_eligibility(
+        internal_id="B", price_pct=100, ytm_pct=10, status="active", maturity_date=date(2020, 1, 1)
+    )
     assert res.eligible is False
     assert res.kind == "expired"
 
@@ -83,17 +96,27 @@ def test_check_eligibility_extreme_low_price():
 
 def test_check_eligibility_anomaly_detected_against_peers():
     peers = [4.0, 6.0, 8.0, 10.0, 12.0, 15.0]
-    res = check_eligibility(internal_id="B", price_pct=100, ytm_pct=57.6,
-                            status="active", peer_ytms=peers,
-                            maturity_date=date(2028, 1, 1))
+    res = check_eligibility(
+        internal_id="B",
+        price_pct=100,
+        ytm_pct=57.6,
+        status="active",
+        peer_ytms=peers,
+        maturity_date=date(2028, 1, 1),
+    )
     assert res.eligible is False
     assert res.kind == "anomaly"
 
 
 def test_check_eligibility_anomaly_skipped_with_few_peers():
-    res = check_eligibility(internal_id="B", price_pct=100, ytm_pct=57.6,
-                            status="active", peer_ytms=[4.0, 6.0, 8.0],
-                            maturity_date=date(2028, 1, 1))
+    res = check_eligibility(
+        internal_id="B",
+        price_pct=100,
+        ytm_pct=57.6,
+        status="active",
+        peer_ytms=[4.0, 6.0, 8.0],
+        maturity_date=date(2028, 1, 1),
+    )
     assert res.eligible is True
 
 

@@ -121,6 +121,12 @@ def test_calculate_fixed_uses_amounts():
 
 def test_bond_helpers():
     b = FakeBond("X", ytm=10.0, coupon=8.0, price=100.0)
-    assert bond_ytm(b) == 10.0
+    # Цена = номинал: честный YTM ≈ купон (8.0), а не устаревший фидовый 10.0.
+    assert abs(bond_ytm(b) - 8.0) < 0.1
     assert bond_current_yield(b) == 8.0
     assert bond_duration(b) > 0
+
+
+def test_bond_ytm_honest_negative():
+    b = FakeBond("X", ytm=10.0, coupon=10.0, price=102.61, maturity_days=42)
+    assert bond_ytm(b) < 0.0

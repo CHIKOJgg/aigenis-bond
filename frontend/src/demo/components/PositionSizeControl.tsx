@@ -157,6 +157,7 @@ export default function PositionSizeControl({ bond, allocationPct, onChange, onL
           <div style={{ position: 'relative', flex: 1, minWidth: 120 }}>
             <input
               type="text"
+              name="allocation-pct"
               inputMode="decimal"
               aria-label="Свой процент портфеля"
               placeholder="Свой %"
@@ -179,6 +180,7 @@ export default function PositionSizeControl({ bond, allocationPct, onChange, onL
         <div style={{ position: 'relative' }}>
           <input
             type="text"
+            name="position-byn"
             inputMode="numeric"
             aria-label="Сумма позиции в BYN"
             placeholder="Например, 12 500"
@@ -197,6 +199,7 @@ export default function PositionSizeControl({ bond, allocationPct, onChange, onL
           <div style={{ position: 'relative' }}>
             <input
               type="text"
+              name="position-qty"
               inputMode="numeric"
               aria-label="Количество облигаций"
               placeholder={unitAmount ? 'Например, 25' : 'Выберите бумагу сначала'}

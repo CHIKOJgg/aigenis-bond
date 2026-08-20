@@ -149,8 +149,12 @@ def _make_plan(strategy="Balanced"):
         max_drift_observed=0.08,
         actions=[
             RebalanceAction(
-                internal_id="A", side="buy", amount=Decimal("1000"),
-                weight_before=0.1, weight_after=0.2, reason="drift",
+                internal_id="A",
+                side="buy",
+                amount=Decimal("1000"),
+                weight_before=0.1,
+                weight_after=0.2,
+                reason="drift",
             )
         ],
         expected_return=0.11,

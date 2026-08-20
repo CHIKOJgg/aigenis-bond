@@ -170,6 +170,28 @@ export function BondDetailContent({ bond, onSubscribe, onOpenCompany, onOpenBond
               <DetailRow label={t('common.lastUpdated')} value={bond.fetched_at ? new Date(bond.fetched_at).toLocaleString() : '-'} />
             </dl>
 
+            {(bond.bid != null || bond.ask != null) && (
+              <div className="mt-4 bg-[#f5f9fb] rounded-xl p-4 border border-[#d6e2e6]">
+                <h4 className="font-semibold text-[#01121a] mb-2">Стакан (order book)</h4>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-[#717680]">Bid (покупка)</span>
+                    <span className="font-mono text-[#01121a]">{bond.bid?.toFixed(2)}</span>
+                    {bond.bid_yield != null && (
+                      <span className="text-xs text-[#516c79]">{bond.bid_yield.toFixed(2)}%</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-[#717680]">Ask (продажа)</span>
+                    <span className="font-mono text-[#01121a]">{bond.ask?.toFixed(2)}</span>
+                    {bond.ask_yield != null && (
+                      <span className="text-xs text-[#516c79]">{bond.ask_yield.toFixed(2)}%</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mt-4 flex flex-wrap gap-2">
               <button onClick={showAnalysis} className="bg-[#f8fafb] hover:bg-[#eef3f5] text-sm text-[#01121a] px-3 py-2 rounded-lg transition-colors border border-[#d6e2e6]">{t('detail.analyze')}</button>
               <button onClick={showCashflow} className="bg-[#f8fafb] hover:bg-[#eef3f5] text-sm text-[#01121a] px-3 py-2 rounded-lg transition-colors border border-[#d6e2e6]">{t('detail.income')}</button>

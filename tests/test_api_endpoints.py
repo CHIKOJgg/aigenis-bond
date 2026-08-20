@@ -136,7 +136,7 @@ def test_list_bonds_validation():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
             assert (await client.get("/api/v1/bonds", params={"limit": 0})).status_code == 400
-            assert (await client.get("/api/v1/bonds", params={"limit": 1001})).status_code == 400
+            assert (await client.get("/api/v1/bonds", params={"limit": 2001})).status_code == 400
             assert (await client.get("/api/v1/bonds", params={"offset": -1})).status_code == 400
 
     _run(run)

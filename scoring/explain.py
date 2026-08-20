@@ -97,8 +97,13 @@ _VERDICTS: dict[str, tuple[str, str]] = {
 
 
 def _yield_detail(ytm_pct: float | None) -> str:
-    if ytm_pct is None or ytm_pct <= 0:
+    if ytm_pct is None:
         return "Доходность к погашению не указана — оценить сложно."
+    if ytm_pct <= 0:
+        return (
+            f"Доходность к погашению отрицательная ({ytm_pct:.1f}%) — "
+            "покупка по текущей цене убыточна."
+        )
     if ytm_pct >= 12:
         return f"Высокая доходность к погашению {ytm_pct:.1f}% годовых."
     if ytm_pct >= 7:
@@ -120,13 +125,28 @@ def _currency_detail(currency: str) -> str:
 
 
 def _duration_detail(points: float) -> str:
+    # The score's «duration» factor is a time-to-maturity proxy (years to
+    # redemption), NOT the cashflow Macaulay/Modified duration shown on the bond
+    # card. It measures the interest-rate-risk horizon: the longer the bond, the
+    # more its price can swing when rates move, so long maturities pull the score
+    # down (and short ones lift it).
     if points >= 15:
-        return "Короткий срок до погашения — низкий процентный риск."
+        return (
+            "Короткий срок до погашения (фактор дюрации по времени до оферты/погашения) "
+            "— низкий процентный риск, цена слабо реагирует на ставку."
+        )
     if points >= 10:
-        return "Средний срок до погашения — умеренный процентный риск."
+        return (
+            "Средний срок до погашения — умеренный процентный риск. "
+            "Полная дюрация Маколея/модифицированная (по денежным потокам и YTM) "
+            "показана в карточке облигации."
+        )
     if points <= -10:
-        return "Длинный срок до погашения — высокий процентный риск."
-    return "Срок до погашения — сбалансированный."
+        return (
+            "Длинный срок до погашения — высокий процентный риск: при росте ставок "
+            "длинные бумаги дешевеют сильнее."
+        )
+    return "Срок до погашения — сбалансированный процентный риск."
 
 
 def _liquidity_detail(points: float) -> str:
@@ -161,7 +181,7 @@ def _coupon_detail(points: float, coupon_pct: float | None) -> str:
     if points > 0:
         return f"Купон {coupon_pct:.1f}% — стабильный денежный поток."
     if points < 0:
-        return f"Низкий/нулевой купон {coupon_pct:.1f}% — дисконтная облигация."
+        return f"Низкий/нулевой купон {coupon_pct:.1f}% — доходность достигается за счёт роста цены (дисконтная бумага) или переменного купона."
     return f"Купон {coupon_pct:.1f}% — на уровне рынка."
 
 

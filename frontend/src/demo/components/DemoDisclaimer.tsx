@@ -7,7 +7,7 @@ export default function DemoDisclaimer() {
         padding: '10px 32px',
         borderTop: '1px solid var(--demo-border, #d6e2e6)',
         fontSize: 12,
-        color: '#717680',
+        color: '#5c666f',
         textAlign: 'center',
         backgroundColor: '#fafafa',
       }}
